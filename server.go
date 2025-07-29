@@ -90,6 +90,7 @@ func main() {
 	if batchRead <= 0 {
 		batchRead = math.MaxInt32 // unlimited batch read
 	}
+	duel.DeckManger.LoadLFList()
 	ss := &Server{
 		network:   "tcp",
 		addr:      fmt.Sprintf(":%d", port),

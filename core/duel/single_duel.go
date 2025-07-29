@@ -3,6 +3,7 @@ package duel
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"github.com/duke-git/lancet/v2/condition"
 	"github.com/sjm1327605995/goygopro/core/duel/room"
 	"github.com/sjm1327605995/goygopro/core/utils"
@@ -357,10 +358,20 @@ func (s *SingleDuel) UpdateDeck(dp *DuelPlayer, pData []byte) {
 	var valid = true
 	length := len(pData)
 	var deckBuf protocol.CTOSDeckData
-	_, err := binary.Decode(pData, binary.LittleEndian, &deckBuf)
+
+	_, err := binary.Decode(pData, binary.LittleEndian, &deckBuf.CTOSDeckDataBase)
 	if err != nil {
+		fmt.Println(err)
 		return
 	}
+	reader := bytes.NewReader(pData[8:])
+	deckBuf.List = make([]uint32, deckBuf.MainC+deckBuf.SideC)
+	err = binary.Read(reader, binary.LittleEndian, deckBuf.List)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
 	if deckBuf.MainC < 0 || deckBuf.MainC > protocol.MAINC_MAX {
 		valid = false
 	} else if deckBuf.SideC < 0 || deckBuf.SideC > protocol.SIDEC_MAX {

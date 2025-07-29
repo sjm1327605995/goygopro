@@ -36,9 +36,12 @@ type HostRequest struct {
 }
 
 type CTOSDeckData struct {
+	CTOSDeckDataBase
+	List []uint32 //MAINC_MAX + SIDEC_MAX
+}
+type CTOSDeckDataBase struct {
 	MainC int32
 	SideC int32
-	List  [MAINC_MAX + SIDEC_MAX]uint32
 }
 type CTOSHandResult struct {
 	Res uint8

@@ -129,9 +129,9 @@ func (d *DuelPlayer) HandleCTOSPacket(data []byte) {
 			}
 		}
 		if pkt.Info.Mode == MODE_SINGLE {
-			d.Game = &SingleDuel{}
+			d.Game = &SingleDuel{Observers: make(map[string]*DuelPlayer)}
 		} else if pkt.Info.Mode == MODE_MATCH {
-			d.Game = &SingleDuel{MatchMode: true}
+			d.Game = &SingleDuel{Observers: make(map[string]*DuelPlayer), MatchMode: true}
 		} else if pkt.Info.Mode == MODE_TAG {
 			//duel_mode = new TagDuel();
 			//duel_mode->etimer = event_new(net_evbase, 0, EV_TIMEOUT | EV_PERSIST, TagDuel::TagTimer, duel_mode);

@@ -36,7 +36,7 @@ type deckManager struct {
 	_datas map[uint32]*CardDataC
 }
 
-var DeckManger *deckManager
+var DeckManger = new(deckManager)
 
 type LFList struct {
 	Hash     uint32
@@ -253,7 +253,11 @@ func (d *deckManager) GetCodePointer(code uint32) *CardDataC {
 }
 
 func (d *deckManager) LoadDeck(deck *Deck, dbuf []uint32, mainc, sidec int32, isPacklist bool) uint32 {
-	deck.Clear()
+	if deck == nil {
+		deck = new(Deck)
+	} else {
+		deck.Clear()
+	}
 	var errorcode uint32
 	var cd *ocgcore.CardData
 
