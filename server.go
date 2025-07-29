@@ -56,8 +56,6 @@ func (s *Server) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 	return
 }
 
-var DefaultMode duel.IDuelMode
-
 func (s *Server) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	codec := c.Context().(*duel.SimpleCodec)
 	for {
@@ -72,7 +70,7 @@ func (s *Server) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		if len(data) == 0 {
 			return gnet.None
 		}
-		duel.HandleCTOSPacket(codec.Player, DefaultMode, data)
+		codec.Player.HandleCTOSPacket(data)
 	}
 	return
 }
