@@ -6,6 +6,7 @@ require (
 	github.com/antlabs/timer v0.1.4
 	github.com/duke-git/lancet/v2 v2.3.6
 	github.com/ebitengine/purego v0.8.4
+	github.com/ghostiam/binstruct v1.4.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/orcaman/concurrent-map/v2 v2.0.1

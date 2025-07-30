@@ -1,9 +1,8 @@
 package duel
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
+	"github.com/ghostiam/binstruct"
 	"github.com/panjf2000/gnet/v2"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/protocol"
@@ -83,18 +82,18 @@ func (d *DuelPlayer) HandleCTOSPacket(data []byte) {
 			return
 		}
 		var pkt protocol.CTOSHandResult
-		binary.Decode(pData, binary.LittleEndian, &pkt)
+		binstruct.UnmarshalLE(pData, &pkt)
 		d.Game.HandResult(d, pkt.Res)
 	case network.CTOS_TP_RESULT:
 		if d.Game == nil {
 			return
 		}
 		var pkt protocol.CTOSTPResult
-		binary.Decode(pData, binary.LittleEndian, &pkt)
+		binstruct.UnmarshalLE(pData, &pkt)
 		d.Game.TPResult(d, pkt.Res)
 	case network.CTOS_PLAYER_INFO:
 		var pkt protocol.CTOSPlayerInfo
-		_, err := binary.Decode(pData, binary.LittleEndian, &pkt)
+		err := binstruct.UnmarshalLE(pData, &pkt)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -107,7 +106,7 @@ func (d *DuelPlayer) HandleCTOSPacket(data []byte) {
 			return
 		}
 		var pkt protocol.CTOSCreateGame
-		binary.Decode(pData, binary.LittleEndian, &pkt)
+		binstruct.UnmarshalLE(pData, &pkt)
 		if pkt.Info.Rule > CURRENT_RULE {
 			pkt.Info.Rule = CURRENT_RULE
 		}
@@ -148,13 +147,16 @@ func (d *DuelPlayer) HandleCTOSPacket(data []byte) {
 		//StartBroadcast()
 
 	case network.CTOS_JOIN_GAME:
-		if d.Game == nil {
-			d.Game = &SingleDuel{}
-			d.Game.JoinGame(d, bytes.NewReader(pData), true)
-		} else {
-			d.Game.JoinGame(d, bytes.NewReader(pData), false)
+		var pkt protocol.CTOSJoinGame
+		err := binstruct.UnmarshalLE(pData, &pkt)
+		if err != nil {
+			panic(err)
+			return
 		}
-
+		roomId := string(utf16.Decode(pkt.Pass[:]))
+		room, isCreator := DefaultManager.JoinRoom(roomId, d)
+		d.Game = room.DuelMode
+		d.Game.JoinGame(d, &pkt, isCreator)
 	case network.CTOS_LEAVE_GAME:
 		if d.Game == nil {
 			return
@@ -185,7 +187,7 @@ func (d *DuelPlayer) HandleCTOSPacket(data []byte) {
 			return
 		}
 		var packet protocol.CTOSKick
-		binary.Decode(pData, binary.LittleEndian, &packet)
+		binstruct.UnmarshalLE(pData, &packet)
 		d.Game.PlayerKick(d, packet.Pos)
 	case network.CTOS_HS_START:
 		if d.Game == nil || d.Game.BaseMode().Duel != nil {

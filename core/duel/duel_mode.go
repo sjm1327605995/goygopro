@@ -12,7 +12,7 @@ import (
 type IDuelMode interface {
 	BaseMode() *DuelMode
 	Chat(dp *DuelPlayer, pData []byte)
-	JoinGame(dp *DuelPlayer, pData io.Reader, isCreator bool)
+	JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCreator bool)
 	LeaveGame(dp *DuelPlayer)
 	ToDuelList(dp *DuelPlayer)
 	ToObserver(dp *DuelPlayer)
@@ -192,7 +192,7 @@ func (d *DuelMode) Chat(dp *DuelPlayer, pData []byte) {
 	panic("implement me")
 }
 
-func (d DuelMode) JoinGame(dp *DuelPlayer, pData io.Reader, isCreator bool) {
+func (d DuelMode) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCreator bool) {
 	//TODO implement me
 	panic("implement me")
 }

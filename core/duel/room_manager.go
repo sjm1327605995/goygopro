@@ -1,4 +1,4 @@
-package room
+package duel
 
 import (
 	cmap "github.com/orcaman/concurrent-map/v2"
@@ -33,7 +33,7 @@ func (m *Manager) JoinRoom(roomID string, player IPlayer) (room *Room, isHost bo
 		return room, false
 	}
 	room = NewRoom(roomID)
-
+	room.DuelMode = &SingleDuel{Observers: make(map[string]*DuelPlayer)}
 	addSuccess := m.rooms.SetIfAbsent(roomID, room)
 	if addSuccess {
 		return room, true

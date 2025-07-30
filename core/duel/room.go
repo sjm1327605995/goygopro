@@ -1,4 +1,4 @@
-package room
+package duel
 
 import (
 	cmap "github.com/orcaman/concurrent-map/v2"
@@ -6,9 +6,10 @@ import (
 
 // Room 表示一个游戏房间
 type Room struct {
-	ID      string                              // 房间ID
-	Name    string                              // 房间名称
-	Players cmap.ConcurrentMap[string, IPlayer] // 玩家列表，key是玩家ID
+	ID       string // 房间ID
+	Name     string // 房间名称
+	DuelMode IDuelMode
+	Players  cmap.ConcurrentMap[string, IPlayer] // 玩家列表，key是玩家ID
 }
 
 // Player 表示房间中的一个玩家

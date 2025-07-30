@@ -5,15 +5,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/duke-git/lancet/v2/condition"
-	"github.com/sjm1327605995/goygopro/core/duel/room"
+	"github.com/ghostiam/binstruct"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
-	"io"
 	"math/rand"
 	"time"
-	"unicode/utf16"
 )
 
 const PRO_VERSION = 0x1361
@@ -53,15 +51,7 @@ func (s *SingleDuel) Chat(dp *DuelPlayer, pData []byte) {
 	}
 }
 
-func (s *SingleDuel) JoinGame(dp *DuelPlayer, pData io.Reader, isCreator bool) {
-	var pkt protocol.CTOSJoinGame
-	err := binary.Read(pData, binary.LittleEndian, &pkt)
-	if err != nil {
-		panic(err)
-		return
-	}
-	roomId := string(utf16.Decode(pkt.Pass[:]))
-	_, isCreator = room.DefaultManager.JoinRoom(roomId, dp)
+func (s *SingleDuel) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCreator bool) {
 
 	if !isCreator {
 		if dp.Type != 0xff {
@@ -358,20 +348,11 @@ func (s *SingleDuel) UpdateDeck(dp *DuelPlayer, pData []byte) {
 	var valid = true
 	length := len(pData)
 	var deckBuf protocol.CTOSDeckData
-
-	_, err := binary.Decode(pData, binary.LittleEndian, &deckBuf.CTOSDeckDataBase)
+	err := binstruct.UnmarshalLE(pData, &deckBuf)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	reader := bytes.NewReader(pData[8:])
-	deckBuf.List = make([]uint32, deckBuf.MainC+deckBuf.SideC)
-	err = binary.Read(reader, binary.LittleEndian, deckBuf.List)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
 	if deckBuf.MainC < 0 || deckBuf.MainC > protocol.MAINC_MAX {
 		valid = false
 	} else if deckBuf.SideC < 0 || deckBuf.SideC > protocol.SIDEC_MAX {

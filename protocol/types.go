@@ -24,7 +24,7 @@ type HostInfo struct {
 	NoCheckDeck   uint8
 	NoShuffleDeck uint8
 	// byte padding[3]
-	padding   [3]byte
+	Padding   [3]byte
 	StartLp   int32
 	StartHand uint8
 	DrawCount uint8
@@ -36,13 +36,11 @@ type HostRequest struct {
 }
 
 type CTOSDeckData struct {
-	CTOSDeckDataBase
-	List []uint32 //MAINC_MAX + SIDEC_MAX
-}
-type CTOSDeckDataBase struct {
 	MainC int32
 	SideC int32
+	List  []uint32 `bin:"len:MainC+SideC"` //MAINC_MAX + SIDEC_MAX
 }
+
 type CTOSHandResult struct {
 	Res uint8
 }
@@ -72,7 +70,7 @@ type CTOSKick struct {
 }
 type STOCErrorMsg struct {
 	Msg     uint8
-	padding [3]byte
+	Padding [3]byte
 	Code    uint32
 }
 type STOCHandResult struct {
