@@ -54,22 +54,23 @@ func (s *SingleDuel) Chat(dp *DuelPlayer, pData []byte) {
 func (s *SingleDuel) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCreator bool) {
 
 	if !isCreator {
-		if dp.Type != 0xff {
-			var scem = protocol.STOCErrorMsg{Msg: network.ERRMSG_JOINERROR}
-			s.SendPacketDataToPlayer(dp, network.STOC_ERROR_MSG, scem)
-			_ = s.DisconnetPlayer(dp)
-			return
-		}
-
-		if pkt.Version != PRO_VERSION {
-			var scem = protocol.STOCErrorMsg{
-				Msg:  network.ERRMSG_VERERROR,
-				Code: PRO_VERSION,
-			}
-			s.SendPacketDataToPlayer(dp, network.STOC_ERROR_MSG, scem)
-			_ = s.DisconnetPlayer(dp)
-			return
-		}
+		//TODO
+		//if dp.Type != 0xff {
+		//	var scem = protocol.STOCErrorMsg{Msg: network.ERRMSG_JOINERROR}
+		//	s.SendPacketDataToPlayer(dp, network.STOC_ERROR_MSG, scem)
+		//	_ = s.DisconnetPlayer(dp)
+		//	return
+		//}
+		//
+		//if pkt.Version != PRO_VERSION {
+		//	var scem = protocol.STOCErrorMsg{
+		//		Msg:  network.ERRMSG_VERERROR,
+		//		Code: PRO_VERSION,
+		//	}
+		//	s.SendPacketDataToPlayer(dp, network.STOC_ERROR_MSG, scem)
+		//	_ = s.DisconnetPlayer(dp)
+		//	return
+		//}
 		var jpass [20]uint16
 		utils.NullTerminate(pkt.Pass[:], 0)
 		copy(jpass[:], pkt.Pass[:])
@@ -143,7 +144,7 @@ func (s *SingleDuel) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCrea
 		var scpe protocol.STOCHsPlayerEnter
 		copy(scpe.Name[:], s.players[0].Name[:])
 		scpe.Pos = 0
-		s.SendPacketDataToPlayer(s.players[0], network.STOC_HS_PLAYER_ENTER, scpe)
+		s.SendPacketDataToPlayer(dp, network.STOC_HS_PLAYER_ENTER, scpe)
 		if s.ready[0] {
 			var scpc protocol.STOCHsPlayerChange
 			scpc.Status = network.PLAYERCHANGE_READY
@@ -154,7 +155,7 @@ func (s *SingleDuel) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCrea
 		var scpe protocol.STOCHsPlayerEnter
 		copy(scpe.Name[:], s.players[1].Name[:])
 		scpe.Pos = 1
-		s.SendPacketDataToPlayer(s.players[1], network.STOC_HS_PLAYER_ENTER, scpe)
+		s.SendPacketDataToPlayer(dp, network.STOC_HS_PLAYER_ENTER, scpe)
 		if s.ready[1] {
 			var scpc protocol.STOCHsPlayerChange
 			scpc.Status = 0x10 | network.PLAYERCHANGE_READY
