@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/sjm1327605995/goygopro/ocgcore"
 	"log/slog"
 )
 

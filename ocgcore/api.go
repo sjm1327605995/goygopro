@@ -2,7 +2,6 @@ package ocgcore
 
 import "C"
 import (
-	"fmt"
 	"github.com/ebitengine/purego"
 	"os"
 	"path/filepath"
@@ -163,7 +162,6 @@ func (o *OCGApi) Dispose() {
 func (o *OCGApi) defaultScriptReader(scriptNamePtr uintptr, slen *int) *byte {
 
 	scriptName := GoString(scriptNamePtr)
-	fmt.Println(scriptName)
 	scriptPath := filepath.Join(API.scriptDirectory, scriptName)
 	data, err := os.ReadFile(scriptPath)
 	if err != nil {
@@ -174,7 +172,7 @@ func (o *OCGApi) defaultScriptReader(scriptNamePtr uintptr, slen *int) *byte {
 	return unsafe.SliceData(data)
 }
 func (o *OCGApi) defaultCardReader(code uint32, pData *CardData) uint {
-	fmt.Println(code)
+
 	return uint(code)
 }
 func (o *OCGApi) defaultOnMessageHandler(duelPtr uintptr, msgType uint32) uint {

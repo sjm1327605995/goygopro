@@ -237,33 +237,14 @@ func (d *deckManager) CheckDeck(deck *Deck, lfhash uint32, rule int) uint32 {
 	return 0
 }
 
-func (d *deckManager) GetData(code uint32) *ocgcore.CardData {
-	data, has := d._datas[code]
-	if has {
-		return &data.CardData
-	}
-	return nil
-}
-func (d *deckManager) GetCodePointer(code uint32) *CardDataC {
-	data, has := d._datas[code]
-	if has {
-		return data
-	}
-	return nil
-}
-
 func (d *deckManager) LoadDeck(deck *Deck, dbuf []uint32, mainc, sidec int32, isPacklist bool) uint32 {
-	if deck == nil {
-		deck = new(Deck)
-	} else {
-		deck.Clear()
-	}
+
 	var errorcode uint32
 	var cd *ocgcore.CardData
 
 	for i := int32(0); i < mainc; i++ {
 		code := dbuf[i]
-		cd = d.GetData(code)
+		cd = DefaultDataManager.GetData(code)
 		if cd == nil {
 			errorcode = code
 			continue
@@ -273,23 +254,23 @@ func (d *deckManager) LoadDeck(deck *Deck, dbuf []uint32, mainc, sidec int32, is
 			continue
 		}
 		if isPacklist {
-			deck.Main = append(deck.Main, d.GetCodePointer(code))
+			deck.Main = append(deck.Main, DefaultDataManager.GetCodePointer(code))
 			continue
 		}
 		if cd.Type&ocgcore.TYPES_EXTRA_DECK != 0 {
 			if len(deck.Extra) < EXTRA_MAX_SIZE {
-				deck.Extra = append(deck.Extra, d.GetCodePointer(code))
+				deck.Extra = append(deck.Extra, DefaultDataManager.GetCodePointer(code))
 			}
 		} else {
 			if len(deck.Main) < DECK_MAX_SIZE {
-				deck.Main = append(deck.Main, d.GetCodePointer(code))
+				deck.Main = append(deck.Main, DefaultDataManager.GetCodePointer(code))
 			}
 		}
 	}
 
 	for i := int32(0); i < sidec; i++ {
 		code := dbuf[mainc+i]
-		cd = d.GetData(code)
+		cd = DefaultDataManager.GetData(code)
 		if cd == nil {
 			errorcode = code
 			continue
@@ -299,7 +280,7 @@ func (d *deckManager) LoadDeck(deck *Deck, dbuf []uint32, mainc, sidec int32, is
 			continue
 		}
 		if len(deck.Side) < SIDE_MAX_SIZE {
-			deck.Side = append(deck.Side, d.GetCodePointer(code))
+			deck.Side = append(deck.Side, DefaultDataManager.GetCodePointer(code))
 		}
 	}
 

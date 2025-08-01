@@ -3,9 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/panjf2000/gnet/v2"
 	"github.com/panjf2000/gnet/v2/pkg/logging"
 	"github.com/sjm1327605995/goygopro/core/duel"
+	"github.com/sjm1327605995/goygopro/ocgcore"
 	"math"
 	"sync/atomic"
 	"time"
@@ -63,7 +65,6 @@ func (s *Server) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		if err != nil {
 			return gnet.Close
 		}
-		fmt.Println(data)
 		if finish {
 			break
 		}
@@ -90,6 +91,11 @@ func main() {
 	if batchRead <= 0 {
 		batchRead = math.MaxInt32 // unlimited batch read
 	}
+
+	err := duel.DefaultDataManager.LoadDB("E:\\YGOPro2\\cdb\\cards.cdb")
+	if err != nil {
+		panic(err)
+	}
 	duel.DeckManger.LoadLFList()
 	ss := &Server{
 		network:   "tcp",
@@ -97,6 +103,21 @@ func main() {
 		multicore: multicore,
 		batchRead: batchRead,
 	}
-	err := gnet.Run(ss, ss.network+"://"+ss.addr, gnet.WithMulticore(multicore))
+	err = ocgcore.Init(ocgcore.WithRootPath("E:\\Go\\gopath\\goygopro"),
+		ocgcore.WithScriptDirectory("E:\\ygopro"),
+		ocgcore.WithCardReader(func(cardId uint32, card *ocgcore.CardData) uint {
+			cardData := duel.DefaultDataManager.GetData(cardId)
+			if cardData != nil {
+				*card = *cardData
+			} else {
+				return 0
+			}
+			return uint(cardId)
+		}),
+	)
+	if err != nil {
+		panic(err)
+	}
+	err = gnet.Run(ss, ss.network+"://"+ss.addr, gnet.WithMulticore(multicore))
 	logging.Infof("server exits with error: %v", err)
 }

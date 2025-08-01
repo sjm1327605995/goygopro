@@ -369,6 +369,11 @@ func (s *SingleDuel) UpdateDeck(dp *DuelPlayer, pData []byte) {
 		s.SendPacketDataToPlayer(dp, network.STOC_ERROR_MSG, scem)
 		return
 	}
+	if s.pDeck[dp.Type] == nil {
+		s.pDeck[dp.Type] = &Deck{}
+	} else {
+		s.pDeck[dp.Type].Clear()
+	}
 	if s.duelCount == 0 {
 		s.DeckError[dp.Type] = DeckManger.LoadDeck(s.pDeck[dp.Type], deckBuf.List[:], deckBuf.MainC, deckBuf.SideC, false)
 	} else {
