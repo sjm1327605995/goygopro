@@ -1,10 +1,11 @@
 package main
 
+import "C"
 import (
 	"fmt"
-	"github.com/jmoiron/sqlx"
+	_ "github.com/mattn/go-sqlite3"
+	duel2 "github.com/sjm1327605995/goygopro/core/duel"
 	"github.com/sjm1327605995/goygopro/ocgcore"
-	"log/slog"
 )
 
 // Locations
@@ -35,45 +36,43 @@ const (
 )
 
 func main() {
-	sqlxDb, err := sqlx.Open("sqlite3", "E:\\YGOPro2\\cdb\\cards.cdb")
+
+	err := duel2.DefaultDataManager.LoadDB("E:\\ygopro\\cards.cdb")
+
 	if err != nil {
 		panic(err)
 	}
-	dataManager := NewDataManager(sqlxDb)
-	err = dataManager.ReadDB()
-	if err != nil {
-		panic(err)
-	}
+	//	func(cardId uint32, card *ocgcore.CardData) uint {
+	//			cardData, has := dataManager.GetCardData(cardId)
+	//			if has {
+	//				card.Alias = cardData.Alias
+	//				card.Setcode = cardData.Setcode
+	//				card.Type = cardData.Type
+	//				card.Attack = cardData.Attack
+	//				card.Defense = cardData.Defense
+	//				card.Level = uint32(cardData.Level)
+	//				card.RScale = uint32(cardData.RScale)
+	//				card.LinkMarker = cardData.LinkMarker
+	//				card.Race = cardData.Race
+	//				card.Attribute = cardData.Attribute
+	//			} else {
+	//				return 0
+	//			}
+	//			return uint(cardId)
+	//		}
 	err = ocgcore.Init(ocgcore.WithRootPath("E:\\Go\\gopath\\goygopro"),
-		ocgcore.WithScriptDirectory("E:\\Go\\gopath\\src\\go-ygocore"),
-		ocgcore.WithCardReader(func(cardId uint32, card *ocgcore.CardData) uint {
-			cardData, has := dataManager.GetCardData(cardId)
-			if has {
-				card.Alias = cardData.Alias
-				card.Setcode = cardData.Setcode
-				card.Type = cardData.Type
-				card.Attack = cardData.Attack
-				card.Defense = cardData.Defense
-				card.Level = uint32(cardData.Level)
-				card.RScale = uint32(cardData.RScale)
-				card.LinkMarker = cardData.LinkMarker
-				card.Race = cardData.Race
-				card.Attribute = cardData.Attribute
-			} else {
-				return 0
-			}
-			return uint(cardId)
+		ocgcore.WithScriptDirectory("E:\\ygo"),
+
+		ocgcore.WithCardReader(func(cardId uint32) *ocgcore.CardData {
+			return duel2.DefaultDataManager.GetData(cardId)
 		}),
 	)
 	if err != nil {
 		panic(err)
 	}
 
-	duel := ocgcore.NewDuel(170000)
-
-	duel.SetErrorHandler(func(message string) {
-		slog.Error(message)
-	})
+	duel := ocgcore.NewDuel(100)
+	fmt.Println(duel)
 	duel.InitPlayers(8000, 5, 1)
 	var (
 		mainCards = []uint32{14124483, 9411399, 9411399, 18094166, 18094166, 18094166, 40044918, 40044918, 59392529, 50720316, 50720316, 27780618, 27780618, 16605586, 16605586, 22865492, 22865492, 23434538, 23434538, 14558127, 14558127,
@@ -94,8 +93,11 @@ func main() {
 	}
 	qbuf := make([]byte, ocgcore.SIZE_QUERY_BUFFER)
 	data := duel.QueryFieldCard(uint8(0), ocgcore.LOCATION_EXTRA, 0xe81fff, qbuf, true)
-	fmt.Println(data)
+	fmt.Println(qbuf[:data])
 	data = duel.QueryFieldCard(uint8(1), ocgcore.LOCATION_EXTRA, 0xe81fff, qbuf, true)
-	fmt.Println(data)
+	fmt.Println(qbuf[:data])
 	duel.Start(5)
+	var buff = make([]byte, 0x2000)
+	duel.GetMessage(buff)
+	fmt.Println(buff)
 }

@@ -1,8 +1,10 @@
 package ocgcore
 
+import "C"
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"math/rand"
 	"sync"
 )
@@ -93,7 +95,7 @@ func (d *Duel) QueryFieldCount(player uint8, location uint8) int {
 
 // QueryFieldCard 查询场地卡片
 // QueryFieldCard(int player, CardLocation location, int flag = 0xFFFFFF & ~(int)Query.ReasonCard, bool useCache = false)
-func (d *Duel) QueryFieldCard(player uint8, location uint8, flag int32, buff []byte, useCache bool) int32 {
+func (d *Duel) QueryFieldCard(player uint8, location uint8, flag uint32, buff []byte, useCache bool) int32 {
 	return API.QueryFieldCard(d.duelPtr, player, location, flag, buff, btoi(useCache))
 
 }
@@ -102,20 +104,19 @@ const SIZE_QUERY_BUFFER = 0x4000
 
 // QueryCard(int player, int location, int sequence, int flag = 0xFFFFFF & ~(int)Query.ReasonCard, bool useCache = false)
 func (d *Duel) QueryFieldCardDef(player uint8, location uint8) int32 {
-	flag := 0xFFFFFF &^ int(QueryReasonCard) // Go中的按位取反运算符是^
+	flag := 0xFFFFFF &^ uint32(QueryReasonCard) // Go中的按位取反运算符是^
 	var buff = make([]byte, SIZE_QUERY_BUFFER)
-	return d.QueryFieldCard(player, location, int32(flag), buff, false)
+	return d.QueryFieldCard(player, location, flag, buff, false)
 }
 
 // QueryCard 查询卡片
-func (d *Duel) QueryCard(player uint8, location uint8, sequence uint8, flag int32,buff []byte, useCache bool) int32 {
+func (d *Duel) QueryCard(player uint8, location uint8, sequence uint8, flag int32, buff []byte, useCache bool) int32 {
 	return API.QueryCard(d.duelPtr, player, location, sequence, flag, buff, btoi(useCache))
 
-
 }
-func (d *Duel) QueryCardDef(player uint8, location uint8, sequence uint8,buff []byte) int32{
+func (d *Duel) QueryCardDef(player uint8, location uint8, sequence uint8, buff []byte) int32 {
 	flag := 0xFFFFFF &^ int(QueryReasonCard) // Go中的按位取反运算符是^
-	return d.QueryCard(player, location, sequence, int32(flag),buff, false)
+	return d.QueryCard(player, location, sequence, int32(flag), buff, false)
 }
 
 // QueryFieldInfo 查询场地信息
@@ -146,10 +147,11 @@ func (d *Duel) Dispose() {
 }
 
 // OnMessage 处理消息
-func (d *Duel) OnMessage(messageType uint32) {
+func (d *Duel) OnMessage(size uint32) {
 	arr := make([]byte, 256)
 	API.GetLogMessage(d.duelPtr, arr)
 	message := string(bytes.TrimRight(arr, "\x00"))
+	fmt.Println(message)
 	if d.errorHandler != nil {
 		d.errorHandler(message)
 	}

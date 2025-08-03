@@ -541,7 +541,7 @@ func (s *SingleDuel) TPResult(dp *DuelPlayer, tp byte) {
 	startBuf := make([]byte, 32)
 	pBuf := bytes.NewBuffer(startBuf[:0])
 	utils.BatchWrite(pBuf, binary.LittleEndian,
-		int8(ocgcore.MSG_START), int8(0), int32(s.HostInfo.DuelRule),
+		int8(ocgcore.MSG_START), int8(0), int8(s.HostInfo.DuelRule),
 		s.HostInfo.StartLp, s.HostInfo.StartLp,
 		int16(s.Duel.QueryFieldCount(0, ocgcore.LOCATION_DECK)),
 		int16(s.Duel.QueryFieldCount(0, ocgcore.LOCATION_EXTRA)),
@@ -561,6 +561,8 @@ func (s *SingleDuel) TPResult(dp *DuelPlayer, tp byte) {
 	}
 	s.RefreshExtraDef(0)
 	s.RefreshExtraDef(1)
+	fmt.Println("opt", opt)
+	opt = 5
 	s.Duel.Start(int32(opt))
 	if s.HostInfo.TimeLimit != 0 {
 		s.timeElapsed = 0
@@ -587,7 +589,7 @@ func (s *SingleDuel) Process() {
 			if engLen > len(buff) {
 				buff = make([]byte, engLen)
 			}
-			s.Duel.GetMessage(buff[:engLen])
+			s.Duel.GetMessage(buff)
 			stop = s.Analyze(buff[:engLen])
 		}
 
@@ -1003,12 +1005,13 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				s.RefreshSzone(1, 0x181fff, 0)
 			}
 		case ocgcore.MSG_NEW_TURN:
-			s.RefreshMzoneDef(0)
-			s.RefreshMzoneDef(1)
-			s.RefreshSzoneDef(0)
-			s.RefreshSzoneDef(1)
 			s.RefreshHandDef(0)
 			s.RefreshHandDef(1)
+			s.RefreshSzoneDef(0)
+			s.RefreshSzoneDef(1)
+			s.RefreshMzoneDef(0)
+			s.RefreshMzoneDef(1)
+
 			pbuf++
 			s.timeLimit[0] = int16(s.HostInfo.TimeLimit)
 			s.timeLimit[1] = int16(s.HostInfo.TimeLimit)
@@ -1607,7 +1610,7 @@ func (s *SingleDuel) SingleTimer() {
 func (s *SingleDuel) RefreshExtraDef(player int) {
 	s.RefreshExtra(player, 0xe81fff, 1)
 }
-func (s *SingleDuel) RefreshExtra(player int, flag int32, useCache int) {
+func (s *SingleDuel) RefreshExtra(player int, flag uint32, useCache int) {
 	buff := make([]byte, ocgcore.SIZE_QUERY_BUFFER)
 	length := s.writeUpdateData(player, int(ocgcore.LOCATION_EXTRA), flag, buff, useCache)
 	s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, buff[:length+3])
@@ -1616,24 +1619,26 @@ func (s *SingleDuel) RefreshMzoneDef(player int) {
 	s.RefreshMzone(player, 0x881fff, 1)
 
 }
-func (s *SingleDuel) RefreshMzone(player int, flag int32, useCache int) {
+func (s *SingleDuel) RefreshMzone(player int, flag uint32, useCache int) {
 	buff := make([]byte, ocgcore.SIZE_QUERY_BUFFER)
 	data := s.writeUpdateData(player, int(ocgcore.LOCATION_MZONE), flag, buff, useCache)
 	s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, data)
 
 }
-func (s *SingleDuel) writeUpdateData(player int, location int, flag int32, qbuf []byte, use_cache int) int {
+func (s *SingleDuel) writeUpdateData(player int, location int, flag uint32, qbuf []byte, use_cache int) int {
 	flag |= ocgcore.QUERY_CODE | ocgcore.QUERY_POSITION
-	utils.BatchWrite(bytes.NewBuffer(qbuf[:0]),
-		binary.LittleEndian,
-		int8(ocgcore.MSG_UPDATE_DATA),
-		int8(player), int8(location))
-	return int(s.Duel.QueryFieldCard(uint8(player), uint8(location), flag, qbuf, use_cache != 0))
+	qbuf[0] = ocgcore.MSG_UPDATE_DATA
+	qbuf[1] = byte(player)
+	qbuf[2] = byte(location)
+
+	n := int(s.Duel.QueryFieldCard(uint8(player), uint8(location), flag, qbuf, use_cache != 0))
+	fmt.Println(n)
+	return n
 }
 func (s *SingleDuel) RefreshSzoneDef(player int) {
 	s.RefreshSzone(player, 0x681fff, 1)
 }
-func (s *SingleDuel) RefreshSzone(player int, flag int32, useCache int) {
+func (s *SingleDuel) RefreshSzone(player int, flag uint32, useCache int) {
 	buff := make([]byte, ocgcore.SIZE_QUERY_BUFFER)
 	length := int32(s.writeUpdateData(player, int(ocgcore.LOCATION_SZONE), flag, buff, useCache))
 	s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, buff[:length+3])
@@ -1644,7 +1649,11 @@ func (s *SingleDuel) RefreshSzone(player int, flag int32, useCache int) {
 
 	for qLen < length {
 		var clen int32
-		_ = utils.BatchDecode(buff[qBuf:], &qBuf, binary.LittleEndian, &clen)
+		err := utils.BatchDecode(buff[qBuf:], &qBuf, binary.LittleEndian, &clen)
+		if err != nil {
+			fmt.Println(err)
+			panic(err)
+		}
 		qLen += clen
 		if clen < ocgcore.LEN_HEADER {
 			continue
@@ -1665,7 +1674,7 @@ func (s *SingleDuel) RefreshSzone(player int, flag int32, useCache int) {
 func (s *SingleDuel) RefreshHandDef(player int) {
 	s.RefreshHand(player, 0x681fff, 1)
 }
-func (s *SingleDuel) RefreshHand(player int, flag int32, useCache int) {
+func (s *SingleDuel) RefreshHand(player int, flag uint32, useCache int) {
 	buff := make([]byte, ocgcore.SIZE_QUERY_BUFFER)
 	length := int32(s.writeUpdateData(player, int(ocgcore.LOCATION_HAND), flag, buff, useCache))
 	s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, buff[:length+3])

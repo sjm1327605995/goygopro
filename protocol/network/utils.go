@@ -6,8 +6,8 @@ import (
 )
 
 func GetPosition(data []byte, offset int) uint32 {
-	return binary.LittleEndian.Uint32(data[offset:])
-
+	info := binary.LittleEndian.Uint32(data[offset:])
+	return info >> 24
 }
 
 type BufferIO struct {

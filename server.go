@@ -92,7 +92,7 @@ func main() {
 		batchRead = math.MaxInt32 // unlimited batch read
 	}
 
-	err := duel.DefaultDataManager.LoadDB("E:\\YGOPro2\\cdb\\cards.cdb")
+	err := duel.DefaultDataManager.LoadDB("E:\\ygopro\\cards.cdb")
 	if err != nil {
 		panic(err)
 	}
@@ -104,15 +104,9 @@ func main() {
 		batchRead: batchRead,
 	}
 	err = ocgcore.Init(ocgcore.WithRootPath("E:\\Go\\gopath\\goygopro"),
-		ocgcore.WithScriptDirectory("E:\\ygopro"),
-		ocgcore.WithCardReader(func(cardId uint32, card *ocgcore.CardData) uint {
-			cardData := duel.DefaultDataManager.GetData(cardId)
-			if cardData != nil {
-				*card = *cardData
-			} else {
-				return 0
-			}
-			return uint(cardId)
+		ocgcore.WithScriptDirectory("E:\\ygo"),
+		ocgcore.WithCardReader(func(cardId uint32) *ocgcore.CardData {
+			return duel.DefaultDataManager.GetData(cardId)
 		}),
 	)
 	if err != nil {
