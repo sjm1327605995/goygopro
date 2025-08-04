@@ -20,7 +20,7 @@ int32_t preload_script(intptr_t pduel, const char* script, int32_t len);
 typedef struct {
 uint32_t code;
 uint32_t alias;
-uint64_t setcode;
+uint16_t  setcode[16];
 uint32_t type;
 uint32_t level;
 uint32_t attribute;

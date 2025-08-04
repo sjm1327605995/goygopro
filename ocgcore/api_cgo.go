@@ -41,24 +41,13 @@ func goMessageHandler(data C.longlong, size C.uint32_t) {
 //export goCardReader
 func goCardReader(cardID C.uint32_t, data *C.card_data) C.uint32_t {
 	card := _cardReader(uint32(cardID))
-	if card == nil {
-		data.code = C.uint32_t(0)
-		data.alias = C.uint32_t(0)
-		data.setcode = C.uint64_t(0)
-		data._type = C.uint32_t(0)
-		data.level = C.uint32_t(0)
-		data.attribute = C.uint32_t(0)
-		data.race = C.uint32_t(0)
-		data.attack = C.int32_t(0)
-		data.defense = C.int32_t(0)
-		data.lscale = C.uint32_t(0)
-		data.rscale = C.uint32_t(0)
-		data.link_marker = C.uint32_t(0)
-		return 0
-	} else {
+	fmt.Printf("goCardReader%+v\n", card)
+	if card != nil {
 		data.code = C.uint32_t(card.Code)
 		data.alias = C.uint32_t(card.Alias)
-		data.setcode = C.uint64_t(card.Setcode[0])
+		for i := 0; i < 16; i++ {
+			data.setcode[i] = C.uint16_t(card.Setcode[i])
+		}
 		data._type = C.uint32_t(card.Type)
 		data.level = C.uint32_t(card.Level)
 		data.attribute = C.uint32_t(card.Attribute)
@@ -70,7 +59,7 @@ func goCardReader(cardID C.uint32_t, data *C.card_data) C.uint32_t {
 		data.link_marker = C.uint32_t(card.LinkMarker)
 		return C.uint32_t(card.Code)
 	}
-
+	return 0
 }
 
 // 声明类型

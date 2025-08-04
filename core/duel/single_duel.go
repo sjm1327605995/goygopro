@@ -1631,7 +1631,7 @@ func (s *SingleDuel) writeUpdateData(player int, location int, flag uint32, qbuf
 	qbuf[1] = byte(player)
 	qbuf[2] = byte(location)
 
-	n := int(s.Duel.QueryFieldCard(uint8(player), uint8(location), flag, qbuf, use_cache != 0))
+	n := int(s.Duel.QueryFieldCard(uint8(player), uint8(location), flag, qbuf[3:], use_cache != 0))
 	fmt.Println(n)
 	return n
 }
@@ -1655,7 +1655,7 @@ func (s *SingleDuel) RefreshSzone(player int, flag uint32, useCache int) {
 			panic(err)
 		}
 		qLen += clen
-		if clen < ocgcore.LEN_HEADER {
+		if clen <= ocgcore.LEN_HEADER {
 			continue
 		}
 		position := network.GetPosition(buff[qBuf:], 8)

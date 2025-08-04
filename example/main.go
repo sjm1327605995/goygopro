@@ -2,7 +2,6 @@ package main
 
 import "C"
 import (
-	"fmt"
 	_ "github.com/mattn/go-sqlite3"
 	duel2 "github.com/sjm1327605995/goygopro/core/duel"
 	"github.com/sjm1327605995/goygopro/ocgcore"
@@ -72,7 +71,7 @@ func main() {
 	}
 
 	duel := ocgcore.NewDuel(100)
-	fmt.Println(duel)
+
 	duel.InitPlayers(8000, 5, 1)
 	var (
 		mainCards = []uint32{89631139, 89631139, 89631139, 18094166, 18094166, 18094166, 40044918, 40044918, 59392529, 50720316, 50720316, 27780618, 27780618, 16605586, 16605586, 22865492, 22865492, 23434538, 23434538, 14558127, 14558127,
@@ -92,12 +91,12 @@ func main() {
 		duel.AddCard(exidCards[i], 1, LOCATION_EXTRA)
 	}
 	qbuf := make([]byte, ocgcore.SIZE_QUERY_BUFFER)
-	data := duel.QueryFieldCard(uint8(0), ocgcore.LOCATION_EXTRA, 0xe81fff, qbuf, true)
-	fmt.Println(qbuf[:data])
-	data = duel.QueryFieldCard(uint8(1), ocgcore.LOCATION_EXTRA, 0xe81fff, qbuf, true)
-	fmt.Println(qbuf[:data])
+	_ = duel.QueryFieldCard(uint8(0), ocgcore.LOCATION_EXTRA, 0xe81fff, qbuf, true)
+
+	_ = duel.QueryFieldCard(uint8(1), ocgcore.LOCATION_EXTRA, 0xe81fff, qbuf, true)
+
 	duel.Start(5)
 	var buff = make([]byte, 0x2000)
 	duel.GetMessage(buff)
-	fmt.Println(buff)
+
 }
