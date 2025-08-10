@@ -2,9 +2,12 @@ package main
 
 import "C"
 import (
+	"encoding/hex"
+	"fmt"
 	_ "github.com/mattn/go-sqlite3"
 	duel2 "github.com/sjm1327605995/goygopro/core/duel"
 	"github.com/sjm1327605995/goygopro/ocgcore"
+	"time"
 )
 
 // Locations
@@ -70,33 +73,66 @@ func main() {
 		panic(err)
 	}
 
-	duel := ocgcore.NewDuel(100)
+	go func() {
+		duel := ocgcore.NewDuel(100)
 
-	duel.InitPlayers(8000, 5, 1)
-	var (
-		mainCards = []uint32{89631139, 89631139, 89631139, 18094166, 18094166, 18094166, 40044918, 40044918, 59392529, 50720316, 50720316, 27780618, 27780618, 16605586, 16605586, 22865492, 22865492, 23434538, 23434538, 14558127, 14558127,
-			13650422, 83965310, 81439173, 8949584, 8949584, 32807846, 52947044, 45906428, 24094653, 21143940, 21143940, 21143940, 48130397, 24224830, 24224830, 12071500, 24299458, 24299458, 10045474}
-		exidCards = []uint32{73580471, 79606837, 79606837, 79606837, 21521304, 27552504, 1174075, 1174075, 1174075, 73898890, 73898890, 72336818, 41999284, 94259633, 94259633}
-	)
-	for i := len(mainCards) - 1; i >= 0; i-- {
-		duel.AddCard(mainCards[i], 0, LOCATION_DECK)
-	}
-	for i := len(exidCards) - 1; i >= 0; i-- {
-		duel.AddCard(exidCards[i], 0, LOCATION_EXTRA)
-	}
-	for i := len(mainCards) - 1; i >= 0; i-- {
-		duel.AddCard(mainCards[i], 1, LOCATION_DECK)
-	}
-	for i := len(exidCards) - 1; i >= 0; i-- {
-		duel.AddCard(exidCards[i], 1, LOCATION_EXTRA)
-	}
-	qbuf := make([]byte, ocgcore.SIZE_QUERY_BUFFER)
-	_ = duel.QueryFieldCard(uint8(0), ocgcore.LOCATION_EXTRA, 0xe81fff, qbuf, true)
+		duel.InitPlayers(8000, 5, 1)
+		var (
+			mainCards = []uint32{89631139, 89631139, 89631139, 18094166, 18094166, 18094166, 40044918, 40044918, 59392529, 50720316, 50720316, 27780618, 27780618, 16605586, 16605586, 22865492, 22865492, 23434538, 23434538, 14558127, 14558127,
+				13650422, 83965310, 81439173, 8949584, 8949584, 32807846, 52947044, 45906428, 24094653, 21143940, 21143940, 21143940, 48130397, 24224830, 24224830, 12071500, 24299458, 24299458, 10045474}
+			exidCards = []uint32{73580471, 79606837, 79606837, 79606837, 21521304, 27552504, 1174075, 1174075, 1174075, 73898890, 73898890, 72336818, 41999284, 94259633, 94259633}
+		)
+		for i := len(mainCards) - 1; i >= 0; i-- {
+			duel.AddCard(mainCards[i], 0, LOCATION_DECK)
+		}
+		for i := len(exidCards) - 1; i >= 0; i-- {
+			duel.AddCard(exidCards[i], 0, LOCATION_EXTRA)
+		}
+		for i := len(mainCards) - 1; i >= 0; i-- {
+			duel.AddCard(mainCards[i], 1, LOCATION_DECK)
+		}
+		for i := len(exidCards) - 1; i >= 0; i-- {
+			duel.AddCard(exidCards[i], 1, LOCATION_EXTRA)
+		}
+		fmt.Println(duel.QueryFieldCount(0, ocgcore.LOCATION_DECK))
 
-	_ = duel.QueryFieldCard(uint8(1), ocgcore.LOCATION_EXTRA, 0xe81fff, qbuf, true)
+		fmt.Println(duel.QueryFieldCount(0, ocgcore.LOCATION_EXTRA))
+		fmt.Println(duel.QueryFieldCount(1, ocgcore.LOCATION_DECK))
 
-	duel.Start(5)
-	var buff = make([]byte, 0x2000)
-	duel.GetMessage(buff)
+		fmt.Println(duel.QueryFieldCount(1, ocgcore.LOCATION_EXTRA))
+
+		qbuf := make([]byte, ocgcore.SIZE_QUERY_BUFFER)
+		_ = duel.QueryFieldCard(uint8(0), ocgcore.LOCATION_EXTRA, 0xe81fff, qbuf, true)
+
+		_ = duel.QueryFieldCard(uint8(1), ocgcore.LOCATION_EXTRA, 0xe81fff, qbuf, true)
+
+		duel.Start(5)
+		var (
+			buff = make([]byte, ocgcore.SIZE_MESSAGE_BUFFER)
+			//engFlag uint32
+			engLen int
+		)
+
+		result := duel.Process()
+		engLen = int(result & ocgcore.PROCESSOR_BUFFER_LEN)
+		//engFlag = result & ocgcore.PROCESSOR_FLAG
+		if engLen > 0 {
+			if engLen > len(buff) {
+				buff = make([]byte, engLen)
+			}
+			duel.GetMessage(buff)
+			msgBuff := buff[:engLen]
+			fmt.Println(hex.EncodeToString(msgBuff))
+			qqB := make([]byte, ocgcore.SIZE_QUERY_BUFFER)
+			var flag = uint32(0x881fff)
+			flag |= ocgcore.QUERY_CODE | ocgcore.QUERY_POSITION
+			qqB[0] = ocgcore.MSG_UPDATE_DATA
+			qqB[1] = byte(0)
+			qqB[2] = ocgcore.LOCATION_MZONE
+			length := duel.QueryFieldCard(0, ocgcore.LOCATION_MZONE, flag, qbuf[3:], true)
+			fmt.Println(qbuf[3 : length+3])
+		}
+	}()
+	time.Sleep(time.Second * 5)
 
 }

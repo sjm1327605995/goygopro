@@ -2,6 +2,8 @@ package duel
 
 import (
 	"encoding/binary"
+	"encoding/hex"
+	"fmt"
 	"github.com/antlabs/timer"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol"
@@ -176,6 +178,7 @@ func (d *DuelMode) SendPacketDataToPlayer(dp *DuelPlayer, proto byte, data any) 
 	binary.LittleEndian.PutUint16(d.buff[:], uint16(n+1))
 	d.buff[2] = proto
 	if dp != nil {
+		fmt.Println("SendPacketDataToPlayer", dp.Type, hex.EncodeToString(d.buff[:d.buffOffset]))
 		_, _ = dp.Write(d.buff[:d.buffOffset])
 	}
 }
