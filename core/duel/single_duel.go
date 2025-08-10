@@ -3,7 +3,6 @@ package duel
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"github.com/duke-git/lancet/v2/condition"
 	"github.com/ghostiam/binstruct"
@@ -593,7 +592,6 @@ func (s *SingleDuel) Process() {
 				buff = make([]byte, engLen)
 			}
 			s.Duel.GetMessage(buff)
-			fmt.Println("hex", hex.EncodeToString(buff[:engLen]))
 			stop = s.Analyze(buff[:engLen])
 		}
 
@@ -791,7 +789,7 @@ func (s *SingleDuel) DuelEndProc() {
 //				s    uint8
 //				ss   uint8
 //			)
-//			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &code, &l, &s, &ss)
+//			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &code, &l, &s, &ss)
 //			if c != player {
 //				binary.Encode(msgBuffer[pbufw:], binary.LittleEndian, int32(0))
 //			}
@@ -807,13 +805,13 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 	i := 0
 	for pbuf < len(msgBuffer) {
 		i++
-		//if i == 2 {
-		//	fmt.Println("Analyze2!!!!!!!!!!!!!!")
-		//}
+		if i == 2 {
+			fmt.Println("Analyze2!!!!!!!!!!!!!!")
+		}
 
 		var engType uint8
 		//offset = pbuf
-		err := utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &engType)
+		err := utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &engType)
 		if err != nil {
 			panic(err)
 		}
@@ -832,7 +830,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				data   int32
 			)
-			utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &typ, &player, &data)
+			utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &typ, &player, &data)
 			switch typ {
 			case 1, 2, 3, 5:
 				s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, msgBuffer[:pbuf])
@@ -853,7 +851,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				typ    uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &typ)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &typ)
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, msgBuffer[:pbuf])
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
@@ -875,9 +873,9 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			pbuf += int(count * 11)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &count)
 			pbuf += int(count * +2)
 			s.RefreshMzoneDef(0)
 			s.RefreshMzoneDef(1)
@@ -893,17 +891,17 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			pbuf += int(count * 7)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &count)
 			pbuf += int(count * 7)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &count)
 			pbuf += int(count * 7)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &count)
 			pbuf += int(count * 7)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &count)
 			pbuf += int(count * 7)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &count)
 			pbuf += int(count*11 + 3)
 			s.RefreshMzoneDef(0)
 			s.RefreshMzoneDef(1)
@@ -918,7 +916,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			var (
 				player uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player)
 			pbuf += 12
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, msgBuffer[:pbuf])
@@ -927,7 +925,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			var (
 				player uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player)
 			pbuf += 4
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, msgBuffer[:pbuf])
@@ -937,7 +935,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			pbuf += int(count * 4)
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, msgBuffer[:pbuf])
@@ -947,9 +945,9 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player)
 			pbuf += 3
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &count)
 			var c uint8
 			for i := uint8(0); i < count; i++ {
 				pbufw = pbuf
@@ -959,7 +957,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 					s    uint8
 					ss   uint8
 				)
-				_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &code, &l, &s, &ss)
+				_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &code, &l, &s, &ss)
 				if c != player {
 					binary.Encode(msgBuffer[pbufw:], binary.LittleEndian, int32(0))
 				}
@@ -972,9 +970,9 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player)
 			pbuf += 4
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &count)
 			var c uint8
 			for i := uint8(0); i < count; i++ {
 				pbufw = pbuf
@@ -984,12 +982,12 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 					s    uint8
 					ss   uint8
 				)
-				_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &code, &l, &s, &ss)
+				_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &code, &l, &s, &ss)
 				if c != player {
 					binary.Encode(msgBuffer[pbufw:], binary.LittleEndian, int32(0))
 				}
 			}
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &count)
 			for i := uint8(0); i < count; i++ {
 				pbufw = pbuf
 				var (
@@ -998,7 +996,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 					s    uint8
 					ss   uint8
 				)
-				_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &code, &l, &s, &ss)
+				_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &code, &l, &s, &ss)
 				if c != player {
 					binary.Encode(msgBuffer[pbufw:], binary.LittleEndian, int32(0))
 				}
@@ -1011,24 +1009,24 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			pbuf += int(10 + count*13)
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, msgBuffer[pbuf])
 			return 1
 		case ocgcore.MSG_SELECT_PLACE, ocgcore.MSG_SELECT_DISFIELD:
 			var player uint8
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player)
 			pbuf += 5
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, msgBuffer[:pbuf])
 			return 1
 		case ocgcore.MSG_SELECT_COUNTER:
 			var player uint8
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player)
 			pbuf += 4
 			var count uint8
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &count)
 			pbuf += int(count * 9)
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, msgBuffer[:pbuf])
@@ -1036,12 +1034,12 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 		case ocgcore.MSG_SELECT_SUM:
 			pbuf += 1
 			var player uint8
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player)
 			pbuf += 6
 			var count uint8
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &count)
 			pbuf += int(count * 11)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &count)
 			pbuf += int(count * 11)
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, msgBuffer[:pbuf])
@@ -1051,7 +1049,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			pbuf += int(count * 7)
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, msgBuffer[:pbuf])
 			s.ReSendToPlayer(s.players[1])
@@ -1063,7 +1061,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			pbuf += int(count * 7)
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, msgBuffer[:pbuf])
 			s.ReSendToPlayer(s.players[1])
@@ -1075,7 +1073,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			if msgBuffer[pbuf+5] != ocgcore.LOCATION_DECK {
 				pbuf += int(count) * 7
 				s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, msgBuffer[:pbuf])
@@ -1091,7 +1089,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			var (
 				player uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player)
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, msgBuffer[:pbuf])
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
@@ -1102,7 +1100,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			for i := uint8(0); i < count; i++ {
 				//TODO
 			}
@@ -1116,11 +1114,11 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, msgBuffer[:pbuf+int(count*4)])
 
 			for i := uint8(0); i < count; i++ {
-				_ = utils.BatchEncode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, int32(0))
+				_ = utils.BatchEncode(msgBuffer, &pbuf, binary.LittleEndian, int32(0))
 			}
 			s.SendPacketDataToPlayer(s.players[1-player], network.STOC_GAME_MSG, msgBuffer[:pbuf])
 			for _, v := range s.Observers {
@@ -1137,7 +1135,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			var (
 				player uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player)
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, msgBuffer[:pbuf])
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
@@ -1161,7 +1159,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				loc   uint8
 				count uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &loc, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &loc, &count)
 			pbuf += int(count) * 8
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, msgBuffer[:pbuf])
 			s.ReSendToPlayer(s.players[1])
@@ -1399,14 +1397,14 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			pbuf += int(count) * 4
 		case ocgcore.MSG_RANDOM_SELECTED:
 			var (
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			pbuf += int(count) * 4
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, msgBuffer[:pbuf])
 			s.ReSendToPlayer(s.players[1])
@@ -1417,7 +1415,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			var (
 				count uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &count)
 			pbuf += int(count) * 4
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, msgBuffer[:pbuf])
 			s.ReSendToPlayer(s.players[1])
@@ -1429,7 +1427,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			pbufw = pbuf
 			pbuf += int(count) * 4
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, msgBuffer[:pbuf])
@@ -1554,7 +1552,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			pbuf += int(count)
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, msgBuffer[:pbuf])
 			s.ReSendToPlayer(s.players[1])
@@ -1566,7 +1564,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			pbuf += int(count)
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, msgBuffer[:pbuf])
 			s.ReSendToPlayer(s.players[1])
@@ -1577,7 +1575,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			var (
 				player uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player)
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, msgBuffer[:pbuf])
 			return 1
@@ -1592,7 +1590,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			var (
 				player uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player)
 			pbuf += 5
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, msgBuffer[:pbuf])
@@ -1601,7 +1599,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			var (
 				player uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player)
 			pbuf += 5
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, msgBuffer[:pbuf])
@@ -1611,7 +1609,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				player uint8
 				count  uint8
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &player, &count)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &player, &count)
 			pbuf += int(count) * 4
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, msgBuffer[:pbuf])
@@ -1634,7 +1632,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			var (
 				code int32
 			)
-			_ = utils.BatchDecode(msgBuffer[pbuf:], &pbuf, binary.LittleEndian, &code)
+			_ = utils.BatchDecode(msgBuffer, &pbuf, binary.LittleEndian, &code)
 			if s.MatchMode {
 				s.matchKill = int(code)
 				s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, msgBuffer[:pbuf])
