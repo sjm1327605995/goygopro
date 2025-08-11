@@ -1,31 +1,69 @@
 package utils
 
 import (
-	"bytes"
-	"io"
+	"encoding/binary"
+	"fmt"
 )
 
-type Reader struct {
-	buff   *bytes.Reader
+type YGOReader struct {
+	buff   []byte
 	offset int
+	order  binary.ByteOrder
 }
 
-func NewReader(arr []byte) *Reader {
-	return &Reader{buff: bytes.NewReader(arr), offset: 0}
+func NewYGOReader(buff []byte, order binary.ByteOrder) *YGOReader {
+	return &YGOReader{
+		buff:  buff,
+		order: order,
+	}
 }
-func (r *Reader) Read(p []byte) (n int, err error) {
-	n, err = r.buff.Read(p)
-	r.offset += n
-	return
+func (y *YGOReader) Read(list ...any) error {
+	for i := range list {
+
+		n, err := binary.Decode(y.buff[y.offset:], y.order, list[i])
+		if err != nil {
+			return err
+		}
+		y.offset += n
+	}
+	return nil
 }
-func (r *Reader) Len() int {
-	return r.buff.Len()
+func (y *YGOReader) At(pos int) byte {
+
+	return y.buff[y.offset+pos]
 }
-func (r *Reader) Discord(n int) error {
-	_, err := r.buff.Seek(int64(n), io.SeekCurrent)
-	r.offset += n
-	return err
+func (y *YGOReader) Write(list ...any) error {
+	for i := range list {
+		n, err := binary.Encode(y.buff[y.offset:], y.order, list[i])
+		if err != nil {
+			return err
+		}
+		y.offset += n
+	}
+	return nil
 }
-func (r *Reader) Offset() int {
-	return r.offset
+func (y *YGOReader) Len() int {
+	return len(y.buff[y.offset:])
+}
+func (y *YGOReader) Bytes() []byte {
+	return y.buff[y.offset:]
+}
+
+func (y *YGOReader) Next(n int) error {
+	if y.offset+n > len(y.buff) {
+		return fmt.Errorf("out of range")
+	}
+	return nil
+}
+func (y *YGOReader) Clone() *YGOReader {
+	return &YGOReader{
+		buff:   y.buff,
+		offset: y.offset,
+	}
+}
+func (y *YGOReader) SubSlices(clone *YGOReader) []byte {
+	if clone.offset >= y.offset {
+		return nil
+	}
+	return y.buff[clone.offset:y.offset]
 }
