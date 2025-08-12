@@ -179,7 +179,10 @@ func (d *DuelMode) SendPacketDataToPlayer(dp *DuelPlayer, proto byte, data any) 
 	d.buff[2] = proto
 	if dp != nil {
 		fmt.Println("SendPacketDataToPlayer", dp.Type, hex.EncodeToString(d.buff[:d.buffOffset]))
-		_, _ = dp.Write(d.buff[:d.buffOffset])
+		_, err := dp.Write(d.buff[:d.buffOffset])
+		if err != nil {
+			fmt.Println("send", err)
+		}
 	}
 }
 func (d *DuelMode) DisconnetPlayer(dp *DuelPlayer) error {

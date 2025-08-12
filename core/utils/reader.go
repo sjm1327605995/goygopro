@@ -5,19 +5,22 @@ import (
 	"fmt"
 )
 
-type YGOReader struct {
+type YGOBuffer struct {
 	buff   []byte
 	offset int
 	order  binary.ByteOrder
 }
 
-func NewYGOReader(buff []byte, order binary.ByteOrder) *YGOReader {
-	return &YGOReader{
+func NewYGOBuffer(buff []byte, order binary.ByteOrder) *YGOBuffer {
+	return &YGOBuffer{
 		buff:  buff,
 		order: order,
 	}
 }
-func (y *YGOReader) Read(list ...any) error {
+func (y *YGOBuffer) Offset() int {
+	return y.offset
+}
+func (y *YGOBuffer) Read(list ...any) error {
 	for i := range list {
 
 		n, err := binary.Decode(y.buff[y.offset:], y.order, list[i])
@@ -28,11 +31,11 @@ func (y *YGOReader) Read(list ...any) error {
 	}
 	return nil
 }
-func (y *YGOReader) At(pos int) byte {
+func (y *YGOBuffer) At(pos int) byte {
 
 	return y.buff[y.offset+pos]
 }
-func (y *YGOReader) Write(list ...any) error {
+func (y *YGOBuffer) Write(list ...any) error {
 	for i := range list {
 		n, err := binary.Encode(y.buff[y.offset:], y.order, list[i])
 		if err != nil {
@@ -42,28 +45,34 @@ func (y *YGOReader) Write(list ...any) error {
 	}
 	return nil
 }
-func (y *YGOReader) Len() int {
+func (y *YGOBuffer) Len() int {
 	return len(y.buff[y.offset:])
 }
-func (y *YGOReader) Bytes() []byte {
+
+func (y *YGOBuffer) Bytes() []byte {
 	return y.buff[y.offset:]
 }
 
-func (y *YGOReader) Next(n int) error {
+func (y *YGOBuffer) Next(n int) error {
 	if y.offset+n > len(y.buff) {
 		return fmt.Errorf("out of range")
 	}
+	y.offset += n
 	return nil
 }
-func (y *YGOReader) Clone() *YGOReader {
-	return &YGOReader{
+func (y *YGOBuffer) Clone() *YGOBuffer {
+	return &YGOBuffer{
 		buff:   y.buff,
+		order:  y.order,
 		offset: y.offset,
 	}
 }
-func (y *YGOReader) SubSlices(clone *YGOReader) []byte {
-	if clone.offset >= y.offset {
+func (y *YGOBuffer) SubSlices(clone *YGOBuffer) []byte {
+	return y.SubSlicesOffset(clone, 0)
+}
+func (y *YGOBuffer) SubSlicesOffset(clone *YGOBuffer, offset int) []byte {
+	if y.offset >= clone.offset {
 		return nil
 	}
-	return y.buff[clone.offset:y.offset]
+	return y.buff[y.offset : clone.offset+offset]
 }

@@ -1,10 +1,5 @@
 package utils
 
-import (
-	"encoding/binary"
-	"io"
-)
-
 // Buffer 封装字节缓冲区并提供读写方法
 type Buffer struct {
 	data   []byte
@@ -110,45 +105,4 @@ func Wcscmp[T ~uint16 | ~rune](s1, s2 []T) int {
 			return 1
 		}
 	}
-}
-func BatchRead(reader io.Reader, order binary.ByteOrder, data ...any) error {
-	for _, v := range data {
-		err := binary.Read(reader, order, v)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-
-}
-func BatchWrite(writer io.Writer, order binary.ByteOrder, data ...any) error {
-	for _, v := range data {
-		err := binary.Write(writer, order, v)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-func BatchDecode(buff []byte, offset *int, order binary.ByteOrder, data ...any) error {
-	for _, v := range data {
-		n, err := binary.Decode(buff[*offset:], order, v)
-		if err != nil {
-			return err
-		}
-		*offset += n
-	}
-	return nil
-
-}
-func BatchEncode(buff []byte, offset *int, order binary.ByteOrder, data ...any) error {
-	for _, v := range data {
-		n, err := binary.Encode(buff[*offset:], order, v)
-		if err != nil {
-			return err
-		}
-		*offset += n
-	}
-	return nil
-
 }
