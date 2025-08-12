@@ -3117,13 +3117,12 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				s.RefreshSzone(1, 0x181fff, 0)
 			}
 		case ocgcore.MSG_NEW_TURN:
-			s.RefreshHandDef(0)
-			s.RefreshHandDef(1)
-			s.RefreshSzoneDef(0)
-			s.RefreshSzoneDef(1)
 			s.RefreshMzoneDef(0)
 			s.RefreshMzoneDef(1)
-
+			s.RefreshSzoneDef(0)
+			s.RefreshSzoneDef(1)
+			s.RefreshHandDef(0)
+			s.RefreshHandDef(1)
 			pbuf.Next(1)
 			s.timeLimit[0] = int16(s.HostInfo.TimeLimit)
 			s.timeLimit[1] = int16(s.HostInfo.TimeLimit)
@@ -3770,7 +3769,6 @@ func (s *SingleDuel) writeUpdateData(player int, location int, flag uint32, qbuf
 	qbuf[2] = byte(location)
 
 	n := int(s.Duel.QueryFieldCard(uint8(player), uint8(location), flag, qbuf[3:], use_cache != 0))
-	fmt.Println(n)
 	return n
 }
 func (s *SingleDuel) RefreshSzoneDef(player int) {
