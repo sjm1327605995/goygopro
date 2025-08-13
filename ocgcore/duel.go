@@ -3,7 +3,6 @@ package ocgcore
 import "C"
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -81,9 +80,7 @@ func (d *Duel) SetResponse(resp int32) {
 
 // SetResponseBytes 设置响应（字节数组）
 func (d *Duel) SetResponseBytes(resp []byte) error {
-	if len(resp) > 64 {
-		return errors.New("response too long")
-	}
+
 	API.SetResponseB(d.duelPtr, resp)
 	return nil
 }

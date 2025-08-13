@@ -2590,160 +2590,6 @@ func (s *SingleDuel) DuelEndProc() {
 	}
 }
 
-//func (s *SingleDuel) AnalyzeV2(msgBuffer []byte) int {
-//	var (
-//		engType = msgBuffer[0]
-//		msg     = msgBuffer[1:]
-//		reader  = bytes.NewBuffer(msg)
-//	)
-//	switch engType {
-//	case ocgcore.MSG_RETRY:
-//		s.WaitforResponse(s.lastResponse)
-//		s.SendPacketDataToPlayer(s.players[s.lastResponse], network.STOC_GAME_MSG, msg)
-//		return 1
-//	case ocgcore.MSG_HINT:
-//		var (
-//			typ    uint8
-//			player uint8
-//			data   int32
-//		)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &typ, &player, &data)
-//		switch typ {
-//		case 1, 2, 3, 5:
-//			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, reader.Bytes())
-//		case 4, 6, 7, 8, 9, 11:
-//			s.SendPacketDataToPlayer(s.players[1-player], network.STOC_GAME_MSG, reader.Bytes())
-//			for _, v := range s.Observers {
-//				s.ReSendToPlayer(v)
-//			}
-//		case 10:
-//			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, reader.Bytes())
-//			s.SendPacketDataToPlayer(s.players[1], network.STOC_GAME_MSG, reader.Bytes())
-//			for _, v := range s.Observers {
-//				s.ReSendToPlayer(v)
-//			}
-//		}
-//	case ocgcore.MSG_WIN:
-//		var (
-//			player uint8
-//			typ    uint8
-//		)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &player, &typ)
-//		s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, reader.Bytes())
-//		s.ReSendToPlayer(s.players[1])
-//		for _, v := range s.Observers {
-//			s.ReSendToPlayer(v)
-//		}
-//		if player > 1 {
-//			s.matchResult[s.duelCount] = player
-//			s.duelCount++
-//			s.tpPlayer = 1 - player
-//		} else {
-//			s.matchResult[s.duelCount] = 1 - player
-//			s.duelCount++
-//			s.tpPlayer = player
-//		}
-//		s.EndDuel()
-//		return 2
-//	case ocgcore.MSG_SELECT_BATTLECMD:
-//		var (
-//			player uint8
-//			count  uint8
-//		)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &player, &count)
-//		reader.Next(int(count) * 11)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &count)
-//		reader.Next(int(count)*8 + 2)
-//		s.RefreshMzoneDef(0)
-//		s.RefreshMzoneDef(1)
-//		s.RefreshSzoneDef(0)
-//		s.RefreshSzoneDef(1)
-//		s.RefreshHandDef(0)
-//		s.RefreshHandDef(1)
-//		s.WaitforResponse(player)
-//		s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, reader.Bytes())
-//		return 1
-//	case ocgcore.MSG_SELECT_IDLECMD:
-//		var (
-//			player uint8
-//			count  uint8
-//		)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &player, &count)
-//		reader.Next(int(count) * 7)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &count)
-//		reader.Next(int(count) * 7)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &count)
-//		reader.Next(int(count) * 7)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &count)
-//		reader.Next(int(count) * 7)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &count)
-//		reader.Next(int(count) * 7)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &count)
-//		reader.Next(int(count)*11 + 3)
-//		s.RefreshMzoneDef(0)
-//		s.RefreshMzoneDef(1)
-//		s.RefreshSzoneDef(0)
-//		s.RefreshSzoneDef(1)
-//		s.RefreshHandDef(1)
-//		s.WaitforResponse(player)
-//		s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, reader.Bytes())
-//		return 1
-//	case ocgcore.MSG_SELECT_EFFECTYN:
-//		var (
-//			player uint8
-//		)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &player)
-//		reader.Next(12)
-//		s.WaitforResponse(player)
-//		s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, reader.Bytes())
-//		return 1
-//	case ocgcore.MSG_SELECT_YESNO:
-//		var (
-//			player uint8
-//		)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &player)
-//		reader.Next(4)
-//		s.WaitforResponse(player)
-//		s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, reader.Bytes())
-//		return 1
-//	case ocgcore.MSG_SELECT_OPTION:
-//		var (
-//			player uint8
-//			count  uint8
-//		)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &player, &count)
-//		reader.Next(int(count) * 4)
-//		s.WaitforResponse(player)
-//		s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, reader.Bytes())
-//		return 1
-//	case ocgcore.MSG_SELECT_CARD, ocgcore.MSG_SELECT_TRIBUTE:
-//		var (
-//			player uint8
-//			count  uint8
-//		)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &player)
-//		reader.Next(3)
-//		_ = utils.BatchRead(reader, binary.LittleEndian, &count)
-//		var c uint8
-//		for i := uint8(0); i < count; i++ {
-//			pbufw = pbuf
-//			var (
-//				code int32
-//				l    uint8
-//				s    uint8
-//				ss   uint8
-//			)
-//			_ = pbuf.Read(  &code, &l, &s, &ss)
-//			if c != player {
-//				binary.Encode(msgBuffer[pbufw:], binary.LittleEndian, int32(0))
-//			}
-//		}
-//		s.WaitforResponse(player)
-//		s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG,pbuf.Bytes())
-//		return 1
-//	}
-//}
-
 func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 	pbuf := utils.NewYGOBuffer(msgBuffer, binary.LittleEndian)
 	pbufw, offset := pbuf.Clone(), pbuf.Clone()
@@ -2751,14 +2597,10 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 		offset = pbuf.Clone()
 
 		var engType uint8
-		//offset = pbuf
 		err := pbuf.Read(&engType)
 		if err != nil {
 			panic(err)
 		}
-		//if engType == 0 {
-		//	panic("engType==0")
-		//}
 		fmt.Println("engType", engType)
 		switch engType {
 		case ocgcore.MSG_RETRY:
@@ -3739,7 +3581,7 @@ func (s *SingleDuel) RefreshMzone(player int, flag uint32, useCache int) {
 	var (
 		qLen int32
 	)
-
+	qbuf.Next(3)
 	for qLen < length {
 		var clen int32
 		qbuf.Read(&clen)
@@ -3747,12 +3589,10 @@ func (s *SingleDuel) RefreshMzone(player int, flag uint32, useCache int) {
 		if clen < ocgcore.LEN_HEADER {
 			continue
 		}
-		position := network.GetPosition(qbuf.Bytes(), 8)
+		data := qbuf.Bytes()
+		position := network.GetPosition(data, 8)
 		if position&ocgcore.POS_FACEDOWN != 0 {
-			data := qbuf.Bytes()
-			for i := int32(0); i < clen-4; i++ {
-				data[i] = 0
-			}
+			copy(data[:clen-4], make([]byte, clen-4))
 		}
 		qbuf.Next(int(clen) - 4)
 	}
@@ -3783,7 +3623,7 @@ func (s *SingleDuel) RefreshSzone(player int, flag uint32, useCache int) {
 	var (
 		qLen int32
 	)
-
+	qbuf.Next(3)
 	for qLen < length {
 		var clen int32
 		qbuf.Read(&clen)
@@ -3791,12 +3631,10 @@ func (s *SingleDuel) RefreshSzone(player int, flag uint32, useCache int) {
 		if clen < ocgcore.LEN_HEADER {
 			continue
 		}
-		position := network.GetPosition(qbuf.Bytes(), 8)
+		data := qbuf.Bytes()
+		position := network.GetPosition(data, 8)
 		if position&ocgcore.POS_FACEDOWN != 0 {
-			data := qbuf.Bytes()
-			for i := int32(0); i < clen-4; i++ {
-				data[i] = 0
-			}
+			copy(data[:clen-4], make([]byte, clen-4))
 		}
 		qbuf.Next(int(clen) - 4)
 	}
@@ -3813,7 +3651,7 @@ func (s *SingleDuel) RefreshHand(player int, flag uint32, useCache int) {
 	qbuf := utils.NewYGOBuffer(queryBuffer, binary.LittleEndian)
 	length := int32(s.writeUpdateData(player, int(ocgcore.LOCATION_HAND), flag, qbuf.Bytes(), useCache))
 	s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, queryBuffer[:length+3])
-
+	qbuf.Next(3)
 	var (
 		qLen int32
 	)
@@ -3825,12 +3663,10 @@ func (s *SingleDuel) RefreshHand(player int, flag uint32, useCache int) {
 		if slen < ocgcore.LEN_HEADER {
 			continue
 		}
+		data := qbuf.Bytes()
 		position := network.GetPosition(qbuf.Bytes(), 8)
-		if position&ocgcore.POS_FACEDOWN != 0 {
-			data := qbuf.Bytes()
-			for i := int32(0); i < slen-4; i++ {
-				data[i] = 0
-			}
+		if position&ocgcore.POS_FACEUP == 0 {
+			copy(data[:slen-4], make([]byte, slen-4))
 		}
 		qbuf.Next(int(slen) - 4)
 	}
