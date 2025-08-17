@@ -2,7 +2,9 @@ package duel
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"github.com/panjf2000/gnet/v2"
 	"io"
 )
@@ -38,6 +40,6 @@ func (codec SimpleCodec) Decode(c gnet.Conn) ([]byte, bool, error) {
 	}
 
 	data, err := c.Next(packetLen + 2)
-
+	fmt.Println("req", hex.EncodeToString(data))
 	return data[2:], false, nil
 }
