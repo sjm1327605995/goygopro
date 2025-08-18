@@ -612,7 +612,6 @@ func (s *SingleDuel) Process() {
 			s.Duel.GetMessage(buff)
 			stop = s.Analyze(buff[:engLen])
 		}
-
 	}
 	if stop == 2 {
 		s.DuelEndProc()
@@ -678,6 +677,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 		fmt.Println("engType", engType)
 		switch engType {
 		case ocgcore.MSG_RETRY:
+			fmt.Println("坏")
 			s.WaitforResponse(s.lastResponse)
 			s.SendPacketDataToPlayer(s.players[s.lastResponse], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
@@ -885,6 +885,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			pbuf.Next(5)
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
+			return 1
 		case ocgcore.MSG_SELECT_COUNTER:
 			var player uint8
 			_ = pbuf.Read(&player)
