@@ -677,7 +677,6 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 		fmt.Println("engType", engType)
 		switch engType {
 		case ocgcore.MSG_RETRY:
-			fmt.Println("坏")
 			s.WaitforResponse(s.lastResponse)
 			s.SendPacketDataToPlayer(s.players[s.lastResponse], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
@@ -715,6 +714,10 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				s.ReSendToPlayer(v)
 			}
 			if player > 1 {
+				s.matchResult[s.duelCount] = 2
+				s.duelCount++
+				s.tpPlayer = 1 - player
+			} else if s.players[player] == s.pPlayers[player] {
 				s.matchResult[s.duelCount] = player
 				s.duelCount++
 				s.tpPlayer = 1 - player
@@ -733,7 +736,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			_ = pbuf.Read(&player, &count)
 			pbuf.Next(int(count) * 11)
 			_ = pbuf.Read(&count)
-			pbuf.Next(int(count) * 2)
+			pbuf.Next(int(count)*8 + 2)
 			s.RefreshMzoneDef(0)
 			s.RefreshMzoneDef(1)
 			s.RefreshSzoneDef(0)
@@ -830,16 +833,16 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			_ = pbuf.Read(&player)
 			pbuf.Next(4)
 			_ = pbuf.Read(&count)
+			var (
+				code int32
+				c    uint8
+				l    uint8
+				s1   uint8
+				ss   uint8
+			)
 			for i := uint8(0); i < count; i++ {
 				pbufw = pbuf.Clone()
-				var (
-					code int32
-					c    uint8
-					l    uint8
-					s    uint8
-					ss   uint8
-				)
-				_ = pbuf.Read(&code, &c, &l, &s, &ss)
+				_ = pbuf.Read(&code, &c, &l, &s1, &ss)
 				if c != player {
 					pbufw.Write(int32(0))
 				}
@@ -847,14 +850,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			_ = pbuf.Read(&count)
 			for i := uint8(0); i < count; i++ {
 				pbufw = pbuf.Clone()
-				var (
-					code int32
-					c    uint8
-					l    uint8
-					s    uint8
-					ss   uint8
-				)
-				_ = pbuf.Read(&code, &c, &l, &s, &ss)
+				_ = pbuf.Read(&code, &c, &l, &s1, &ss)
 				if c != player {
 					pbufw.Write(int32(0))
 				}
@@ -868,7 +864,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				count  uint8
 			)
 			_ = pbuf.Read(&player, &count)
-			pbuf.Next(int(10 + count*13))
+			pbuf.Next(int(9 + count*14))
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
@@ -918,6 +914,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			pbuf.Next(int(count) * 7)
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
+			return 1
 		case ocgcore.MSG_CONFIRM_DECKTOP:
 			var (
 				player uint8
@@ -1012,12 +1009,13 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			var (
 				player uint8
 			)
-			_ = pbuf.Read(binary.LittleEndian, &player)
+			_ = pbuf.Read(&player)
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+			s.RefreshGrave(player)
 		case ocgcore.MSG_REVERSE_DECK:
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
@@ -1192,6 +1190,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+			//TODO Check
 		case ocgcore.MSG_FLIPSUMMONED:
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
