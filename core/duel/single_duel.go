@@ -1015,7 +1015,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
-			s.RefreshGrave(player)
+			s.RefreshGraveDef(int(player))
 		case ocgcore.MSG_REVERSE_DECK:
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
@@ -1190,7 +1190,6 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
-			//TODO Check
 		case ocgcore.MSG_FLIPSUMMONED:
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
@@ -1281,7 +1280,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			)
 			_ = pbuf.Read(&player, &count)
 			pbuf.Next(int(count) * 4)
-			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
+			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
@@ -1778,6 +1777,19 @@ func (s *SingleDuel) RefreshHand(player int, flag uint32, useCache int) {
 }
 func (s *SingleDuel) RefreshSingleDef(player uint8, location uint8, sequence uint8) {
 	s.RefreshSingle(player, location, sequence, 0xf81fff)
+}
+func (s *SingleDuel) RefreshGraveDef(player int) {
+	s.RefreshGrave(player, 0x81fff, 1)
+}
+func (s *SingleDuel) RefreshGrave(player int, flag uint32, useCache int) {
+	queryBuffer := make([]byte, ocgcore.SIZE_QUERY_BUFFER)
+	qbuf := utils.NewYGOBuffer(queryBuffer, binary.LittleEndian)
+	length := int32(s.writeUpdateData(player, int(ocgcore.LOCATION_MZONE), flag, qbuf.Bytes(), useCache))
+	s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, queryBuffer[:length+3])
+	s.ReSendToPlayer(s.players[1])
+	for _, v := range s.Observers {
+		s.ReSendToPlayer(v)
+	}
 }
 func (s *SingleDuel) RefreshSingle(player uint8, location uint8, sequence uint8, flag int32) {
 	flag |= ocgcore.QUERY_CODE | ocgcore.QUERY_POSITION
