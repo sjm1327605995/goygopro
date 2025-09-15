@@ -2,24 +2,26 @@ package game
 
 import (
 	"fmt"
-	"unsafe"
 
 	"github.com/TotallyGamerJet/clay"
 	"github.com/TotallyGamerJet/clay/renderers/ebitengine"
 	"github.com/hajimehoshi/ebiten/v2"
+
+	"unsafe"
+
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 )
 
-type Home struct {
+type OnlineMode struct {
 	SceneManager *SceneManager
 	Bg           unsafe.Pointer
 	ButtonList   []*Button
 }
 
-func NewHome() Scene {
-	return &Home{}
+func NewOnlineMode() Scene {
+	return &OnlineMode{}
 }
-func (h *Home) Update() error {
+func (h *OnlineMode) Update() error {
 	dx, dy := ebiten.Wheel()
 	clay.UpdateScrollContainers(true, clay.Vector2{
 		X: float32(dx),
@@ -58,7 +60,7 @@ func (h *Home) Update() error {
 			Layout: clay.LayoutConfig{
 				LayoutDirection: clay.TOP_TO_BOTTOM,
 				Sizing: clay.Sizing{
-					Width: clay.SizingFixed(300),
+					Width: clay.SizingFixed(500),
 				},
 			},
 			BackgroundColor: clay.Color{
@@ -81,20 +83,20 @@ func (h *Home) Update() error {
 					A: 255,
 				},
 			}, func() {
-				clay.Text("YGOPro Version:", &clay.TextElementConfig{
+				clay.Text("联机模式", &clay.TextElementConfig{
 					FontId:    0,
 					TextColor: clay.Color{R: 255, G: 255, B: 255, A: 255},
 					FontSize:  16,
 				})
+
 			})
 			clay.UI()(clay.ElementDeclaration{
 				Layout: clay.LayoutConfig{
 					Padding:         clay.PaddingAll(10),
-					LayoutDirection: clay.TOP_TO_BOTTOM,
+					LayoutDirection: clay.LEFT_TO_RIGHT,
 					ChildGap:        5,
 					Sizing:          clay.Sizing{Width: clay.SizingPercent(1)},
 				},
-
 				BackgroundColor: clay.Color{
 					R: 100,
 					G: 100,
@@ -102,9 +104,12 @@ func (h *Home) Update() error {
 					A: 255,
 				},
 			}, func() {
-				for i := range h.ButtonList {
-					h.ButtonList[i].Clay()
-				}
+				clay.Text("昵称", &clay.TextElementConfig{
+					FontId:    0,
+					TextColor: clay.Color{R: 255, G: 255, B: 255, A: 255},
+					FontSize:  16,
+				})
+				// clay.UI()(clay.ElementDeclaration{}, func() {})
 			})
 		})
 
@@ -113,32 +118,23 @@ func (h *Home) Update() error {
 	return nil
 }
 
-func (h *Home) Draw(screen *ebiten.Image) {
+func (h *OnlineMode) Draw(screen *ebiten.Image) {
 	err := ebitengine.ClayRender(screen, ScaleFactor, Cmds, Fonts)
 	if err != nil {
 		fmt.Println(err)
 	}
 }
 
-func (h *Home) OnEnter(s *SceneManager) {
+func (h *OnlineMode) OnEnter(s *SceneManager) {
 	h.SceneManager = s
 	bg, _, err := ebitenutil.NewImageFromFile("textures/bg_menu.jpg")
 	if err == nil {
 		h.Bg = unsafe.Pointer(bg)
 	}
-	h.ButtonList = append(h.ButtonList, NewButton("联机模式").WithClickFunc(func() {
-		s.GoTo(NewOnlineMode())
-	}))
-	h.ButtonList = append(h.ButtonList, NewButton("单人模式"))
-	h.ButtonList = append(h.ButtonList, NewButton("观看录像"))
-	h.ButtonList = append(h.ButtonList, NewButton("编辑卡组"))
-	h.ButtonList = append(h.ButtonList, NewButton("退出").WithClickFunc(func() {
-		s.GoBack()
-	}))
 }
 
-func (h *Home) OnExit() {
+func (h *OnlineMode) OnExit() {
 }
-func (h *Home) Layout(_, _ int) (int, int) {
+func (h *OnlineMode) Layout(_, _ int) (int, int) {
 	panic("use Ebitengine >=v2.5.0")
 }

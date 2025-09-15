@@ -1,10 +1,11 @@
 package game
 
 import (
+	"os"
+
 	"github.com/TotallyGamerJet/clay"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
-	"os"
 )
 
 // Scene 定义场景接口，所有具体场景都需要实现这些方法
@@ -14,7 +15,7 @@ type Scene interface {
 	// Draw 负责场景的渲染
 	Draw(screen *ebiten.Image)
 	// OnEnter 当场景被激活时调用（进入场景时）
-	OnEnter()
+	OnEnter(s *SceneManager)
 	// OnExit 当场景被切换出去时调用（离开场景时）
 	OnExit()
 }
@@ -48,7 +49,7 @@ func NewSceneManager(initialScene Scene) *SceneManager {
 		history: make([]Scene, 0),
 	}
 	manager.current = initialScene
-	manager.current.OnEnter()
+	manager.current.OnEnter(manager)
 	return manager
 }
 
@@ -83,7 +84,7 @@ func (s *SceneManager) GoTo(scene Scene) {
 
 	// 切换到新场景
 	s.current = scene
-	s.current.OnEnter()
+	s.current.OnEnter(s)
 }
 
 // Replace 替换当前场景，不将当前场景压入历史栈
@@ -95,7 +96,7 @@ func (s *SceneManager) Replace(scene Scene) {
 
 	// 切换到新场景
 	s.current = scene
-	s.current.OnEnter()
+	s.current.OnEnter(s)
 }
 
 // GoBack 回退到上一个场景
@@ -118,7 +119,7 @@ func (s *SceneManager) GoBack() {
 
 	// 切换到上一个场景
 	s.current = prevScene
-	s.current.OnEnter()
+	s.current.OnEnter(s)
 
 }
 

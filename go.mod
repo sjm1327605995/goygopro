@@ -8,12 +8,14 @@ require (
 	github.com/duke-git/lancet/v2 v2.3.6
 	github.com/ebitengine/purego v0.9.0-alpha.9
 	github.com/ghostiam/binstruct v1.4.0
+	github.com/hajimehoshi/bitmapfont/v3 v3.2.0
+	github.com/hajimehoshi/bitmapfont/v4 v4.0.0
 	github.com/hajimehoshi/ebiten/v2 v2.8.8
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/orcaman/concurrent-map/v2 v2.0.1
 	github.com/panjf2000/gnet/v2 v2.8.0
-	golang.org/x/sys v0.33.0
+	golang.org/x/sys v0.36.0
 )
 
 require (
@@ -24,11 +26,12 @@ require (
 	github.com/gotranspile/cxgo v0.5.2 // indirect
 	github.com/jezek/xgb v1.1.1 // indirect
 	github.com/panjf2000/ants/v2 v2.11.3 // indirect
+	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/image v0.29.0 // indirect
-	golang.org/x/sync v0.16.0 // indirect
-	golang.org/x/text v0.27.0 // indirect
+	golang.org/x/image v0.31.0 // indirect
+	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/text v0.29.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )

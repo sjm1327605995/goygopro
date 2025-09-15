@@ -16,9 +16,10 @@ package main
 
 import (
 	"flag"
+	"log"
+
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/sjm1327605995/goygopro/game"
-	"log"
 )
 
 var cpuProfile = flag.String("cpuprofile", "", "write cpu profile to file")

@@ -51,7 +51,7 @@ func (g *Game) LayoutF(outsideWidth, outsideHeight float64) (float64, float64) {
 }
 
 const (
-	winWidth, winHeight = 800, 600
+	winWidth, winHeight = 1081, 851
 	fontSize            = 16
 )
 
