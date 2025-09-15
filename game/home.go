@@ -10,7 +10,9 @@ import (
 )
 
 type Home struct {
-	Bg unsafe.Pointer
+	Bg     unsafe.Pointer
+	ClickA bool
+	ClickB bool
 }
 
 func NewHome() Scene {
@@ -99,8 +101,12 @@ func (h *Home) Update() error {
 					A: 255,
 				},
 			}, func() {
-				RenderHeaderButton("111")
-				RenderHeaderButton("exit")
+				var a bool
+				RenderHeaderButton("111", &h.ClickA)
+				RenderHeaderButton("exit", &h.ClickB)
+				if a == true {
+					fmt.Println(a)
+				}
 			})
 		})
 
@@ -108,21 +114,8 @@ func (h *Home) Update() error {
 	Cmds = clay.EndLayout()
 	return nil
 }
-func alloc[T any](arena *arena) *T {
-	prev := uintptr(arena.offset)
-	arena.offset = int64(prev + unsafe.Sizeof(*new(T)))
-	return (*T)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(arena.memory)), prev))
-}
 
-type arena struct {
-	offset int64
-	memory []byte
-}
-type Click struct {
-	Click bool
-}
-var frameArena = arena{memory: make([]byte, 1024)},
-func RenderHeaderButton(text string) {
+func RenderHeaderButton(text string, t *bool) {
 	clay.UI()(clay.ElementDeclaration{
 		Layout: clay.LayoutConfig{
 			Sizing:  clay.Sizing{Width: clay.SizingPercent(1)},
@@ -133,19 +126,23 @@ func RenderHeaderButton(text string) {
 			},
 		},
 
-		BackgroundColor: clay.Color{R: 50, G: 140, B: 140, A: 255},
-		CornerRadius:    clay.CornerRadiusAll(2),
+		BackgroundColor: func() clay.Color {
+			if *t == true {
+				*t = false
+				return clay.Color{R: 100, G: 100, B: 50, A: 255}
+			}
+			return clay.Color{R: 200, G: 200, B: 200, A: 255}
+
+		}(),
+		CornerRadius: clay.CornerRadiusAll(2),
 	}, func() {
-		var click := alloc[sidebarClickData](&data.frameArena)
 
 		clay.OnHover(func(elementId clay.ElementId, pointerInfo clay.PointerData, userData int64) {
 			if pointerInfo.State == clay.POINTER_DATA_PRESSED {
-				click = true
+				data := (*bool)(unsafe.Pointer(uintptr(userData)))
+				*data = true
 			}
-		}, int64(uintptr(unsafe.Pointer(nil))))
-		if click == true {
-			fmt.Println(click)
-		}
+		}, int64(uintptr(unsafe.Pointer(t))))
 		clay.Text(text, clay.TextConfig(clay.TextElementConfig{
 			FontId:    0,
 			FontSize:  16,
