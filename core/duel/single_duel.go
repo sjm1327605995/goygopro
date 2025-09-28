@@ -503,7 +503,7 @@ func (s *SingleDuel) TPResult(dp *DuelPlayer, tp byte) {
 	dp.State = network.CTOS_RESPONSE
 	seed := rand.Uint32()
 
-	//var rnd = rand.New(rand.NewSource(int64(seed)))
+	var rnd = rand.New(rand.NewSource(int64(seed)))
 	//duelSeed := rnd
 	//	rh.id = 0x31707279;
 	//	rh.version = PRO_VERSION;
@@ -514,15 +514,14 @@ func (s *SingleDuel) TPResult(dp *DuelPlayer, tp byte) {
 	//	last_replay.WriteHeader(rh);
 	//	last_replay.WriteData(players[0]->name, 40, false);
 	//	last_replay.WriteData(players[1]->name, 40, false);
-	//TODO 暂时不洗牌
-	//if s.HostInfo.NoShuffleDeck == 0 {
-	//	rnd.Shuffle(len(s.pDeck[0].Main), func(i, j int) {
-	//		s.pDeck[0].Main[i], s.pDeck[0].Main[j] = s.pDeck[0].Main[j], s.pDeck[0].Main[i]
-	//	})
-	//	rnd.Shuffle(len(s.pDeck[1].Main), func(i, j int) {
-	//		s.pDeck[1].Main[i], s.pDeck[1].Main[j] = s.pDeck[1].Main[j], s.pDeck[1].Main[i]
-	//	})
-	//}
+	if s.HostInfo.NoShuffleDeck == 0 {
+		rnd.Shuffle(len(s.pDeck[0].Main), func(i, j int) {
+			s.pDeck[0].Main[i], s.pDeck[0].Main[j] = s.pDeck[0].Main[j], s.pDeck[0].Main[i]
+		})
+		rnd.Shuffle(len(s.pDeck[1].Main), func(i, j int) {
+			s.pDeck[1].Main[i], s.pDeck[1].Main[j] = s.pDeck[1].Main[j], s.pDeck[1].Main[i]
+		})
+	}
 	s.timeLimit[0], s.timeLimit[1] = int16(s.HostInfo.TimeLimit), int16(s.HostInfo.TimeLimit)
 
 	s.Duel = ocgcore.NewDuel(seed)
@@ -664,38 +663,57 @@ func (s *SingleDuel) DuelEndProc() {
 }
 
 func (s *SingleDuel) Analyze(msgBuffer []byte) int {
+	// 创建主缓冲区，用于解析游戏消息数据
+	// msgBuffer: 原始的游戏消息字节数据
+	// binary.LittleEndian: 使用小端字节序进行数据编解码
 	pbuf := utils.NewYGOBuffer(msgBuffer, binary.LittleEndian)
+
+	// 创建辅助缓冲区和偏移量跟踪器
+	// pbufw: 用于写入修改后的数据（如隐藏对手手牌信息）
+	// offset: 用于跟踪消息起始位置，便于提取完整消息数据
 	pbufw, offset := pbuf.Clone(), pbuf.Clone()
+
+	// 循环处理缓冲区中的所有消息，直到缓冲区为空
 	for pbuf.Len() > 0 {
+		// 记录当前消息的起始位置，用于后续提取完整消息数据
 		offset = pbuf.Clone()
 
+		// 读取消息类型（1字节无符号整数）
 		var engType uint8
 		err := pbuf.Read(&engType)
 		if err != nil {
 			panic(err)
 		}
 		fmt.Println("engType", engType)
+
+		// 根据消息类型进行不同的处理逻辑
 		switch engType {
 		case ocgcore.MSG_RETRY:
+			// 重试消息：让上次响应的玩家重新选择
 			s.WaitforResponse(s.lastResponse)
 			s.SendPacketDataToPlayer(s.players[s.lastResponse], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_HINT:
+			// 提示消息：根据提示类型发送给不同的玩家
 			var (
 				typ    uint8
 				player uint8
 				data   int32
 			)
+			// 读取提示类型、玩家编号和提示数据
 			pbuf.Read(&typ, &player, &data)
 			switch typ {
 			case 1, 2, 3, 5:
+				// 类型1,2,3,5：只发送给指定玩家
 				s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			case 4, 6, 7, 8, 9, 11:
+				// 类型4,6,7,8,9,11：发送给对手玩家和所有观察者
 				s.SendPacketDataToPlayer(s.players[1-player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 				for _, v := range s.Observers {
 					s.ReSendToPlayer(v)
 				}
 			case 10:
+				// 类型10：发送给所有玩家和观察者
 				s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 				s.SendPacketDataToPlayer(s.players[1], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 				for _, v := range s.Observers {
@@ -703,16 +721,22 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				}
 			}
 		case ocgcore.MSG_WIN:
+			// 胜利消息：处理游戏结束逻辑
 			var (
 				player uint8
 				typ    uint8
 			)
+			// 读取胜利玩家和胜利类型
 			_ = pbuf.Read(&player, &typ)
+
+			// 发送胜利消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+
+			// 处理比赛结果和回合玩家切换
 			if player > 1 {
 				s.matchResult[s.duelCount] = 2
 				s.duelCount++
@@ -729,87 +753,134 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			s.EndDuel()
 			return 2
 		case ocgcore.MSG_SELECT_BATTLECMD:
+			// 战斗命令选择消息：处理战斗阶段的选择
 			var (
 				player uint8
 				count  uint8
 			)
+			// 读取玩家编号和可攻击怪物数量
 			_ = pbuf.Read(&player, &count)
+
+			// 跳过攻击怪物数据（每个怪物11字节）
 			pbuf.Next(int(count) * 11)
+
+			// 读取可发动效果数量
 			_ = pbuf.Read(&count)
+
+			// 跳过效果数据（每个效果8字节 + 2字节额外数据）
 			pbuf.Next(int(count)*8 + 2)
+
+			// 刷新所有区域防御状态
 			s.RefreshMzoneDef(0)
 			s.RefreshMzoneDef(1)
 			s.RefreshSzoneDef(0)
 			s.RefreshSzoneDef(1)
 			s.RefreshHandDef(0)
 			s.RefreshHandDef(1)
+
+			// 等待玩家响应并发送选择消息
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_SELECT_IDLECMD:
+			// 空闲阶段命令选择消息：处理主要阶段的选择
 			var (
 				player uint8
 				count  uint8
 			)
+			// 读取玩家编号和第一个选项数量
 			_ = pbuf.Read(&player, &count)
-			pbuf.Next(int(count * 7))
-			_ = pbuf.Read(&count)
-			pbuf.Next(int(count * 7))
-			_ = pbuf.Read(&count)
-			pbuf.Next(int(count * 7))
-			_ = pbuf.Read(&count)
-			pbuf.Next(int(count * 7))
-			_ = pbuf.Read(&count)
-			pbuf.Next(int(count * 7))
-			_ = pbuf.Read(&count)
-			pbuf.Next(int(count*11 + 3))
+
+			// 跳过6组选项数据，每组包含不同数量的数据
+			pbuf.Next(int(count * 7))    // 跳过第一组选项（每个选项7字节）
+			_ = pbuf.Read(&count)        // 读取第二组选项数量
+			pbuf.Next(int(count * 7))    // 跳过第二组选项
+			_ = pbuf.Read(&count)        // 读取第三组选项数量
+			pbuf.Next(int(count * 7))    // 跳过第三组选项
+			_ = pbuf.Read(&count)        // 读取第四组选项数量
+			pbuf.Next(int(count * 7))    // 跳过第四组选项
+			_ = pbuf.Read(&count)        // 读取第五组选项数量
+			pbuf.Next(int(count * 7))    // 跳过第五组选项
+			_ = pbuf.Read(&count)        // 读取第六组选项数量
+			pbuf.Next(int(count*11 + 3)) // 跳过第六组选项（每个选项11字节 + 3字节额外数据）
+
+			// 刷新所有区域防御状态
 			s.RefreshMzoneDef(0)
 			s.RefreshMzoneDef(1)
 			s.RefreshSzoneDef(0)
 			s.RefreshSzoneDef(1)
 			s.RefreshHandDef(0)
 			s.RefreshHandDef(1)
+
+			// 等待玩家响应并发送选择消息
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_SELECT_EFFECTYN:
+			// 效果发动确认消息：询问玩家是否发动效果
 			var (
 				player uint8
 			)
+			// 读取玩家编号
 			_ = pbuf.Read(&player)
+
+			// 跳过效果相关数据（12字节）
 			pbuf.Next(12)
+
+			// 等待玩家响应并发送选择消息
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_SELECT_YESNO:
+			// 是/否选择消息：询问玩家简单的是或否问题
 			var (
 				player uint8
 			)
+			// 读取玩家编号
 			_ = pbuf.Read(&player)
+
+			// 跳过问题相关数据（4字节）
 			pbuf.Next(4)
+
+			// 等待玩家响应并发送选择消息
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_SELECT_OPTION:
+			// 选项选择消息：让玩家从多个选项中选择
 			var (
 				player uint8
 				count  uint8
 			)
+			// 读取玩家编号和选项数量
 			_ = pbuf.Read(&player, &count)
+
+			// 跳过选项数据（每个选项4字节）
 			pbuf.Next(int(count * 4))
+
+			// 等待玩家响应并发送选择消息
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_SELECT_CARD, ocgcore.MSG_SELECT_TRIBUTE:
+			// 卡片选择/祭品选择消息：处理卡片选择逻辑
 			var (
 				player uint8
 				count  uint8
 			)
+			// 读取玩家编号
 			_ = pbuf.Read(&player)
+
+			// 跳过3字节的额外数据
 			pbuf.Next(3)
+
+			// 读取可选卡片数量
 			_ = pbuf.Read(&count)
+
 			var c uint8
+			// 遍历所有可选卡片
 			for i := uint8(0); i < count; i++ {
+				// 创建写入缓冲区副本，用于修改卡片数据
 				pbufw = pbuf.Clone()
 				var (
 					code int32
@@ -817,22 +888,34 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 					s    uint8
 					ss   uint8
 				)
+				// 读取卡片信息：卡片代码、位置、状态等
 				_ = pbuf.Read(&code, &l, &s, &ss)
+
+				// 如果不是当前玩家，隐藏卡片代码（设置为0）
 				if c != player {
 					pbufw.Write(int32(0))
 				}
 			}
+
+			// 等待玩家响应并发送选择消息
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_SELECT_UNSELECT_CARD:
+			// 可选择/不可选择卡片消息：处理复杂的卡片选择逻辑
 			var (
 				player uint8
 				count  uint8
 			)
+			// 读取玩家编号
 			_ = pbuf.Read(&player)
+
+			// 跳过4字节的额外数据
 			pbuf.Next(4)
+
+			// 读取可选择卡片数量
 			_ = pbuf.Read(&count)
+
 			var (
 				code int32
 				c    uint8
@@ -840,236 +923,378 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 				s1   uint8
 				ss   uint8
 			)
+
+			// 处理可选择卡片列表
 			for i := uint8(0); i < count; i++ {
+				// 创建写入缓冲区副本
 				pbufw = pbuf.Clone()
+				// 读取卡片信息
 				_ = pbuf.Read(&code, &c, &l, &s1, &ss)
+				// 如果不是当前玩家，隐藏卡片代码
 				if c != player {
 					pbufw.Write(int32(0))
 				}
 			}
+
+			// 读取不可选择卡片数量
 			_ = pbuf.Read(&count)
+
+			// 处理不可选择卡片列表
 			for i := uint8(0); i < count; i++ {
+				// 创建写入缓冲区副本
 				pbufw = pbuf.Clone()
+				// 读取卡片信息
 				_ = pbuf.Read(&code, &c, &l, &s1, &ss)
+				// 如果不是当前玩家，隐藏卡片代码
 				if c != player {
 					pbufw.Write(int32(0))
 				}
 			}
+
+			// 等待玩家响应并发送选择消息
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_SELECT_CHAIN:
+			// 连锁选择消息：处理连锁发动选择
 			var (
 				player uint8
 				count  uint8
 			)
+			// 读取玩家编号和连锁数量
 			_ = pbuf.Read(&player, &count)
+
+			// 跳过连锁数据（9字节固定数据 + 每个连锁14字节）
 			pbuf.Next(int(9 + count*14))
+
+			// 等待玩家响应并发送选择消息
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_SELECT_PLACE, ocgcore.MSG_SELECT_DISFIELD:
+			// 放置位置选择/场地选择消息
 			var player uint8
+			// 读取玩家编号
 			_ = pbuf.Read(&player)
+
+			// 跳过位置相关数据（5字节）
 			pbuf.Next(5)
+
+			// 等待玩家响应并发送选择消息
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_SELECT_POSITION:
+			// 表示形式选择消息：选择怪物的表示形式
 			var player uint8
+			// 读取玩家编号
 			pbuf.Read(&player)
+
+			// 跳过位置数据（5字节）
 			pbuf.Next(5)
+
+			// 等待玩家响应并发送选择消息
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_SELECT_COUNTER:
+			// 计数器选择消息：处理计数器移除选择
 			var player uint8
+			// 读取玩家编号
 			_ = pbuf.Read(&player)
+
+			// 跳过4字节的额外数据
 			pbuf.Next(4)
+
 			var count uint8
+			// 读取可移除计数器数量
 			_ = pbuf.Read(&count)
+
+			// 跳过计数器数据（每个计数器9字节）
 			pbuf.Next(int(count * 9))
+
+			// 等待玩家响应并发送选择消息
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_SELECT_SUM:
+			// 数值合计选择消息：处理等级/阶级合计选择
+			// 跳过1字节的额外数据
 			pbuf.Next(1)
+
 			var player uint8
+			// 读取玩家编号
 			_ = pbuf.Read(&player)
+
+			// 跳过6字节的额外数据
 			pbuf.Next(6)
+
 			var count uint8
+			// 读取第一组卡片数量
 			_ = pbuf.Read(&count)
+
+			// 跳过第一组卡片数据（每个卡片11字节）
 			pbuf.Next(int(count * 11))
+
+			// 读取第二组卡片数量
 			_ = pbuf.Read(&count)
+
+			// 跳过第二组卡片数据（每个卡片11字节）
 			pbuf.Next(int(count * 11))
+
+			// 等待玩家响应并发送选择消息
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_SORT_CARD:
+			// 卡片排序消息：处理手牌排序
 			var (
 				player uint8
 				count  uint8
 			)
+			// 读取玩家编号和卡片数量
 			pbuf.Read(&player, &count)
+
+			// 跳过卡片数据（每个卡片7字节）
 			pbuf.Next(int(count) * 7)
+
+			// 等待玩家响应并发送选择消息
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_CONFIRM_DECKTOP:
+			// 卡组顶部确认消息：显示卡组顶部的卡片
 			var (
 				player uint8
 				count  uint8
 			)
+			// 读取玩家编号和卡片数量
 			_ = pbuf.Read(&player, &count)
+
+			// 跳过卡片数据（每个卡片7字节）
 			pbuf.Next(int(count * 7))
+
+			// 发送确认消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_CONFIRM_EXTRATOP:
+			// 额外卡组顶部确认消息：显示额外卡组顶部的卡片
 			var (
 				player uint8
 				count  uint8
 			)
+			// 读取玩家编号和卡片数量
 			_ = pbuf.Read(&player, &count)
+
+			// 跳过卡片数据（每个卡片7字节）
 			pbuf.Next(int(count * 7))
+
+			// 发送确认消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_CONFIRM_CARDS:
+			// 卡片确认消息：确认特定位置的卡片
 			var (
 				player uint8
 				n      uint8
 				count  uint8
 			)
+			// 读取玩家编号、未知参数和卡片数量
 			_ = pbuf.Read(&player, &n, &count)
+
+			// 检查卡片位置，如果不是卡组则发送给所有玩家
 			if pbuf.At(5) != ocgcore.LOCATION_DECK {
+				// 跳过卡片数据（每个卡片7字节）
 				pbuf.Next(int(count) * 7)
+
+				// 发送给指定玩家、对手和所有观察者
 				s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 				s.ReSendToPlayer(s.players[1-player])
 				for _, v := range s.Observers {
 					s.ReSendToPlayer(v)
 				}
 			} else {
+				// 如果是卡组位置，只发送给指定玩家
 				pbuf.Next(int(count * 7))
 				s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			}
 		case ocgcore.MSG_SHUFFLE_DECK:
+			// 卡组洗牌消息：洗牌并发送给所有玩家
 			var (
 				player uint8
 			)
+			// 读取玩家编号
 			_ = pbuf.Read(&player)
+
+			// 发送洗牌消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_SHUFFLE_HAND:
+			// 手牌洗牌消息：洗牌并分别发送给玩家和对手
 			var (
 				player uint8
 				count  uint8
 			)
+			// 读取玩家编号和卡片数量
 			_ = pbuf.Read(&player, &count)
 
+			// 发送给指定玩家（跳过count*4字节的卡片数据）
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlicesOffset(pbuf, int(count)*4))
+
+			// 为对手写入0值隐藏卡片信息
 			for i := uint8(0); i < count; i++ {
 				pbuf.Write(int32(0))
 			}
+
+			// 发送给对手玩家（包含隐藏的卡片信息）
 			s.SendPacketDataToPlayer(s.players[1-player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 			s.RefreshHand(int(player), 0x781fff, 0)
 		case ocgcore.MSG_SHUFFLE_EXTRA:
+			// 额外卡组洗牌消息：洗牌并分别发送给玩家和对手
 			var (
 				player uint8
 				count  uint8
 			)
+			// 读取玩家编号和卡片数量
 			_ = pbuf.Read(&player, &count)
+
+			// 发送给指定玩家（跳过count*4字节的卡片数据）
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlicesOffset(pbuf, int(count)*4))
 
+			// 为对手写入0值隐藏卡片信息
 			for i := uint8(0); i < count; i++ {
 				pbuf.Write(int32(0))
 			}
+
+			// 发送给对手玩家（包含隐藏的卡片信息）
 			s.SendPacketDataToPlayer(s.players[1-player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_REFRESH_DECK:
+			// 卡组刷新消息：刷新卡组显示
+			// 跳过1字节的额外数据
 			pbuf.Next(1)
+
+			// 发送刷新消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_SWAP_GRAVE_DECK:
+			// 墓地卡组交换消息：交换墓地和卡组
 			var (
 				player uint8
 			)
+			// 读取玩家编号
 			_ = pbuf.Read(&player)
+
+			// 发送交换消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+
+			// 刷新墓地区域显示
 			s.RefreshGraveDef(int(player))
 		case ocgcore.MSG_REVERSE_DECK:
+			// 卡组反转消息：反转卡组顺序
+			// 发送反转消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_DECK_TOP:
+			// 卡组顶部消息：显示卡组顶部的卡片
+			// 跳过6字节的卡片位置数据
 			pbuf.Next(6)
+
+			// 发送卡组顶部消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_SHUFFLE_SET_CARD:
+			// 场上卡片洗牌消息：洗牌场上设置的卡片
 			var (
 				loc   uint8
 				count uint8
 			)
+			// 读取位置类型和卡片数量
 			_ = pbuf.Read(&loc, &count)
+
+			// 跳过卡片数据（每个卡片8字节）
 			pbuf.Next(int(count) * 8)
+
+			// 发送洗牌消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+
+			// 根据位置类型刷新相应的区域
 			if ocgcore.LOCATION_MZONE == loc {
+				// 刷新怪兽区域
 				s.RefreshMzone(0, 0x181fff, 0)
 				s.RefreshMzone(1, 0x181fff, 0)
 			} else {
+				// 刷新魔法陷阱区域
 				s.RefreshSzone(0, 0x181fff, 0)
 				s.RefreshSzone(1, 0x181fff, 0)
 			}
 		case ocgcore.MSG_NEW_TURN:
+			// 新回合开始消息：处理回合开始逻辑
+			// 刷新所有区域显示
 			s.RefreshMzoneDef(0)
 			s.RefreshMzoneDef(1)
 			s.RefreshSzoneDef(0)
 			s.RefreshSzoneDef(1)
 			s.RefreshHandDef(0)
 			s.RefreshHandDef(1)
+
+			// 跳过1字节的回合编号数据
 			pbuf.Next(1)
+
+			// 重置时间限制
 			s.timeLimit[0] = int16(s.HostInfo.TimeLimit)
 			s.timeLimit[1] = int16(s.HostInfo.TimeLimit)
+
+			// 发送新回合消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_NEW_PHASE:
+			// 新阶段开始消息：处理阶段开始逻辑
+			// 跳过2字节的阶段编号数据
 			pbuf.Next(2)
+
+			// 发送新阶段消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+
+			// 刷新所有区域显示
 			s.RefreshMzoneDef(0)
 			s.RefreshMzoneDef(1)
 			s.RefreshSzoneDef(0)
@@ -1077,143 +1302,219 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			s.RefreshHandDef(0)
 			s.RefreshHandDef(1)
 		case ocgcore.MSG_MOVE:
+			// 卡片移动消息：处理卡片位置移动
+			// 克隆缓冲区用于修改数据
 			pbufw = pbuf.Clone()
+
+			// 读取卡片移动相关参数
 			var (
-				pc = pbuf.At(4)
-				pl = pbuf.At(5)
-				cc = pbuf.At(8)
-				cl = pbuf.At(9)
-				cs = pbuf.At(10)
-				cp = pbuf.At(11)
+				pc = pbuf.At(4)  // 前一个控制者
+				pl = pbuf.At(5)  // 前一个位置
+				cc = pbuf.At(8)  // 当前控制者
+				cl = pbuf.At(9)  // 当前位置
+				cs = pbuf.At(10) // 当前序列号
+				cp = pbuf.At(11) // 当前位置表示
 			)
+
+			// 跳过16字节的移动数据
 			pbuf.Next(16)
+
+			// 发送给当前控制者玩家
 			s.SendPacketDataToPlayer(s.players[cc], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
+
+			// 如果卡片移动到隐藏位置（卡组、手牌或里侧表示），为对手隐藏卡片信息
 			if (cl&(ocgcore.LOCATION_GRAVE+ocgcore.LOCATION_OVERLAY)) == 0 &&
 				((cl&(ocgcore.LOCATION_DECK+ocgcore.LOCATION_HAND)) != 0 || cp&ocgcore.POS_FACEDOWN != 0) {
 				pbufw.Write(int32(0))
 			}
+
+			// 发送给对手玩家
 			s.SendPacketDataToPlayer(s.players[1-cc], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+
+			// 如果卡片位置发生变化且不是叠放，刷新单个卡片显示
 			if cl != 0 && (cl&ocgcore.LOCATION_OVERLAY) == 0 && (cl != pl || pc != cc) {
 				s.RefreshSingleDef(cc, cl, cs)
 			}
 		case ocgcore.MSG_POS_CHANGE:
+			// 位置表示变更消息：处理卡片表示形式变更
+			// 读取位置变更相关参数
 			var (
-				cc = pbuf.At(4)
-				cl = pbuf.At(5)
-				cs = pbuf.At(6)
-				pp = pbuf.At(7)
-				cp = pbuf.At(8)
+				cc = pbuf.At(4) // 控制者
+				cl = pbuf.At(5) // 位置
+				cs = pbuf.At(6) // 序列号
+				pp = pbuf.At(7) // 前一个位置表示
+				cp = pbuf.At(8) // 当前位置表示
 			)
+
+			// 跳过9字节的位置变更数据
 			pbuf.Next(9)
+
+			// 发送位置变更消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+
+			// 如果从里侧表示变为表侧表示，刷新单个卡片显示
 			if (pp&ocgcore.POS_FACEDOWN != 0) && (cp&ocgcore.POS_FACEUP != 0) {
 				s.RefreshSingleDef(cc, cl, cs)
 			}
 		case ocgcore.MSG_SET:
+			// 卡片设置消息：处理卡片设置到场上
+			// 写入0值隐藏卡片信息
 			pbuf.Write(int32(0))
+
+			// 跳过4字节的额外数据
 			pbuf.Next(4)
+
+			// 发送设置消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_SWAP:
+			// 卡片交换消息：处理两个卡片位置交换
+			// 读取交换卡片的相关参数
 			var (
-				c1 = pbuf.At(4)
-				l1 = pbuf.At(5)
-				s1 = pbuf.At(6)
-				c2 = pbuf.At(12)
-				l2 = pbuf.At(13)
-				s2 = pbuf.At(14)
+				c1 = pbuf.At(4)  // 第一个卡片的控制者
+				l1 = pbuf.At(5)  // 第一个卡片的位置
+				s1 = pbuf.At(6)  // 第一个卡片的序列号
+				c2 = pbuf.At(12) // 第二个卡片的控制者
+				l2 = pbuf.At(13) // 第二个卡片的位置
+				s2 = pbuf.At(14) // 第二个卡片的序列号
 			)
+
+			// 跳过16字节的交换数据
 			pbuf.Next(16)
+
+			// 发送交换消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+
+			// 刷新两个交换卡片的显示
 			s.RefreshSingleDef(c1, l1, s1)
 			s.RefreshSingleDef(c2, l2, s2)
 		case ocgcore.MSG_FIELD_DISABLED:
+			// 场地禁用消息：处理场地效果禁用
+			// 跳过4字节的禁用数据
 			pbuf.Next(4)
+
+			// 发送场地禁用消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_SUMMONING:
+			// 通常召唤中消息：处理通常召唤过程
+			// 跳过8字节的召唤数据
 			pbuf.Next(8)
+
+			// 发送召唤中消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_SUMMONED:
+			// 通常召唤完成消息：处理召唤完成逻辑
+			// 发送召唤完成消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+
+			// 刷新所有区域显示
 			s.RefreshMzoneDef(0)
 			s.RefreshMzoneDef(1)
 			s.RefreshSzoneDef(0)
 			s.RefreshSzoneDef(1)
 		case ocgcore.MSG_SPSUMMONING:
+			// 特殊召唤中消息：处理特殊召唤过程
+			// 跳过8字节的特殊召唤数据
 			pbuf.Next(8)
+
+			// 发送特殊召唤中消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_SPSUMMONED:
+			// 特殊召唤完成消息：处理特殊召唤完成逻辑
+			// 发送特殊召唤完成消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+
+			// 刷新所有区域显示
 			s.RefreshMzoneDef(0)
 			s.RefreshMzoneDef(1)
 			s.RefreshSzoneDef(0)
 			s.RefreshSzoneDef(1)
 		case ocgcore.MSG_FLIPSUMMONING:
+			// 反转召唤中消息：处理反转召唤过程
+			// 刷新单个卡片显示（控制者、位置、序列号）
 			s.RefreshSingleDef(pbuf.At(4), pbufw.At(5), pbuf.At(6))
+
+			// 跳过8字节的反转召唤数据
 			pbuf.Next(8)
+
+			// 发送反转召唤中消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_FLIPSUMMONED:
+			// 反转召唤完成消息：处理反转召唤完成逻辑
+			// 发送反转召唤完成消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+
+			// 刷新所有区域显示
 			s.RefreshMzoneDef(0)
 			s.RefreshMzoneDef(1)
 			s.RefreshSzoneDef(0)
 			s.RefreshSzoneDef(1)
 		case ocgcore.MSG_CHAINING:
+			// 连锁发动中消息：处理连锁发动过程
+			// 跳过16字节的连锁数据
 			pbuf.Next(16)
+
+			// 发送连锁发动中消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_CHAINED:
+			// 连锁发动完成消息：处理连锁发动完成逻辑
+			// 跳过1字节的连锁编号数据
 			pbuf.Next(1)
+
+			// 发送连锁发动完成消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+
+			// 刷新所有区域显示
 			s.RefreshMzoneDef(0)
 			s.RefreshMzoneDef(1)
 			s.RefreshSzoneDef(0)
@@ -1221,19 +1522,29 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			s.RefreshHandDef(0)
 			s.RefreshHandDef(1)
 		case ocgcore.MSG_CHAIN_SOLVING:
+			// 连锁处理中消息：处理连锁效果解决过程
+			// 跳过1字节的连锁编号数据
 			pbuf.Next(1)
+
+			// 发送连锁处理中消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
 		case ocgcore.MSG_CHAIN_SOLVED:
+			// 连锁处理完成消息：处理连锁效果解决完成逻辑
+			// 跳过1字节的连锁编号数据
 			pbuf.Next(1)
+
+			// 发送连锁处理完成消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+
+			// 刷新所有区域显示
 			s.RefreshMzoneDef(0)
 			s.RefreshMzoneDef(1)
 			s.RefreshSzoneDef(0)
