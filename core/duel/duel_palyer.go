@@ -1,8 +1,9 @@
 package duel
 
 import (
+	"encoding/binary"
 	"fmt"
-	"github.com/ghostiam/binstruct"
+	"github.com/go-restruct/restruct"
 	"github.com/panjf2000/gnet/v2"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/protocol"
@@ -43,19 +44,20 @@ func (d *DuelPlayer) Close() error {
 
 var (
 	CURRENT_RULE uint8 = 5
-	MODE_TAG     uint8 = 1
-	MODE_SINGLE  uint8 = 1
-	MODE_MATCH   uint8 = 0
+	MODE_SINGLE  uint8 = 0
+	MODE_MATCH   uint8 = 1
+	MODE_TAG     uint8 = 2
 )
 
 func (d *DuelPlayer) HandleCTOSPacket(data []byte) {
 
 	pktType := data[0]
 	pData := data[1:]
-	//if pktType != network.CTOS_SURRENDER && pktType != network.CTOS_CHAT &&
-	//	(dp.State == 0xff || dp.State != pktType) {
-	//	return
-	//}
+	if pktType != network.CTOS_SURRENDER && pktType != network.CTOS_CHAT {
+		if d.State == 0xff || (d.State != 0 && d.State != pktType) {
+			return
+		}
+	}
 	switch pktType {
 	case network.CTOS_RESPONSE:
 		if d.Game == nil {
@@ -71,9 +73,24 @@ func (d *DuelPlayer) HandleCTOSPacket(data []byte) {
 		if d.Game == nil {
 			return
 		}
+		if len(pData) < 2 {
+			return
+		}
+		if len(pData) > protocol.LEN_CHAT_MSG*2 {
+			return
+		}
+		if len(pData)%2 != 0 {
+			return
+		}
 		d.Game.Chat(d, pData)
 	case network.CTOS_UPDATE_DECK:
 		if d.Game == nil {
+			return
+		}
+		if len(pData) < 8 {
+			return
+		}
+		if len(pData) > int(binary.Size(protocol.CTOSDeckData{})) {
 			return
 		}
 		d.Game.UpdateDeck(d, pData)
@@ -81,19 +98,25 @@ func (d *DuelPlayer) HandleCTOSPacket(data []byte) {
 		if d.Game == nil {
 			return
 		}
+		if len(pData) < int(binary.Size(protocol.CTOSHandResult{})) {
+			return
+		}
 		var pkt protocol.CTOSHandResult
-		binstruct.UnmarshalLE(pData, &pkt)
+		restruct.Unpack(pData, binary.LittleEndian, &pkt)
 		d.Game.HandResult(d, pkt.Res)
 	case network.CTOS_TP_RESULT:
 		if d.Game == nil {
 			return
 		}
+		if len(pData) < int(binary.Size(protocol.CTOSTPResult{})) {
+			return
+		}
 		var pkt protocol.CTOSTPResult
-		binstruct.UnmarshalLE(pData, &pkt)
+		restruct.Unpack(pData, binary.LittleEndian, &pkt)
 		d.Game.TPResult(d, pkt.Res)
 	case network.CTOS_PLAYER_INFO:
 		var pkt protocol.CTOSPlayerInfo
-		err := binstruct.UnmarshalLE(pData, &pkt)
+		err := restruct.Unpack(pData, binary.LittleEndian, &pkt)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -105,8 +128,11 @@ func (d *DuelPlayer) HandleCTOSPacket(data []byte) {
 		if d.Game != nil {
 			return
 		}
+		if len(data) < 1+int(binary.Size(protocol.CTOSCreateGame{})) {
+			return
+		}
 		var pkt protocol.CTOSCreateGame
-		binstruct.UnmarshalLE(pData, &pkt)
+		restruct.Unpack(pData, binary.LittleEndian, &pkt)
 		if pkt.Info.Rule > CURRENT_RULE {
 			pkt.Info.Rule = CURRENT_RULE
 		}
@@ -127,34 +153,35 @@ func (d *DuelPlayer) HandleCTOSPacket(data []byte) {
 				pkt.Info.LFList = 0
 			}
 		}
+		var mode IDuelMode
 		if pkt.Info.Mode == MODE_SINGLE {
-			d.Game = &SingleDuel{Observers: make(map[string]*DuelPlayer)}
+			mode = &SingleDuel{Observers: make(map[string]*DuelPlayer)}
 		} else if pkt.Info.Mode == MODE_MATCH {
-			d.Game = &SingleDuel{Observers: make(map[string]*DuelPlayer), MatchMode: true}
+			mode = &SingleDuel{Observers: make(map[string]*DuelPlayer), MatchMode: true}
 		} else if pkt.Info.Mode == MODE_TAG {
-			//duel_mode = new TagDuel();
-			//duel_mode->etimer = event_new(net_evbase, 0, EV_TIMEOUT | EV_PERSIST, TagDuel::TagTimer, duel_mode);
+			mode = &TagDuel{Observers: make(map[string]*DuelPlayer)}
 		} else {
 			return
 		}
-		d.Game.BaseMode().HostInfo = pkt.Info
+		mode.BaseMode().HostInfo = pkt.Info
 		utils.NullTerminate(pkt.Name[:], 0)
 		utils.NullTerminate(pkt.Pass[:], 0)
-		copy(d.Game.BaseMode().Name[:], pkt.Name[:])
-		copy(d.Game.BaseMode().Pass[:], pkt.Pass[:])
+		copy(mode.BaseMode().Name[:], pkt.Name[:])
+		copy(mode.BaseMode().Pass[:], pkt.Pass[:])
+		roomId := string(utf16.Decode(pkt.Pass[:]))
+		room, _ := DefaultManager.JoinRoom(roomId, d, mode)
+		d.Game = room.DuelMode
 		d.Game.JoinGame(d, nil, true)
-
-		//StartBroadcast()
 
 	case network.CTOS_JOIN_GAME:
 		var pkt protocol.CTOSJoinGame
-		err := binstruct.UnmarshalLE(pData, &pkt)
+		err := restruct.Unpack(pData, binary.LittleEndian, &pkt)
 		if err != nil {
 			panic(err)
 			return
 		}
 		roomId := string(utf16.Decode(pkt.Pass[:]))
-		room, isCreator := DefaultManager.JoinRoom(roomId, d)
+		room, isCreator := DefaultManager.JoinRoom(roomId, d, nil)
 		d.Game = room.DuelMode
 		d.Game.JoinGame(d, &pkt, isCreator)
 	case network.CTOS_LEAVE_GAME:
@@ -187,7 +214,7 @@ func (d *DuelPlayer) HandleCTOSPacket(data []byte) {
 			return
 		}
 		var packet protocol.CTOSKick
-		binstruct.UnmarshalLE(pData, &packet)
+		restruct.Unpack(pData, binary.LittleEndian, &packet)
 		d.Game.PlayerKick(d, packet.Pos)
 	case network.CTOS_HS_START:
 		if d.Game == nil || d.Game.BaseMode().Duel != nil {

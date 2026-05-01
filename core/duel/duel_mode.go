@@ -44,6 +44,7 @@ type DuelMode struct {
 	buffOffset  int
 	Duel        *ocgcore.Duel
 	startOffset int64
+	lastReplay  *Replay
 }
 
 const (
@@ -277,10 +278,10 @@ func (d DuelMode) EndDuel() {
 	panic("implement me")
 }
 func (d DuelMode) StopServer() {
-
+	// TODO: stop gnet server
 }
 func (d DuelMode) StopListen() {
-
+	// TODO: stop listener and broadcast
 }
 func (d DuelMode) OCGDuel() *ocgcore.Duel {
 	return d.Duel

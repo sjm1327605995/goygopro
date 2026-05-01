@@ -5,14 +5,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/antlabs/timer"
-	"github.com/duke-git/lancet/v2/condition"
-	"github.com/ghostiam/binstruct"
+	"github.com/go-restruct/restruct"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 	"math/rand"
-	"slices"
 	"time"
 )
 
@@ -53,38 +51,31 @@ func (s *SingleDuel) Chat(dp *DuelPlayer, pData []byte) {
 	}
 }
 
-var timerWheel timer.Timer
-
-func init() {
-	timerWheel = timer.NewTimer(timer.WithTimeWheel())
-	go timerWheel.Run()
-}
-
 func (s *SingleDuel) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCreator bool) {
 
 	if !isCreator {
-		//TODO
-		//if dp.Type != 0xff {
-		//	var scem = protocol.STOCErrorMsg{Msg: network.ERRMSG_JOINERROR}
-		//	s.SendPacketDataToPlayer(dp, network.STOC_ERROR_MSG, scem)
-		//	_ = s.DisconnetPlayer(dp)
-		//	return
-		//}
-		//
-		//if pkt.Version != PRO_VERSION {
-		//	var scem = protocol.STOCErrorMsg{
-		//		Msg:  network.ERRMSG_VERERROR,
-		//		Code: PRO_VERSION,
-		//	}
-		//	s.SendPacketDataToPlayer(dp, network.STOC_ERROR_MSG, scem)
-		//	_ = s.DisconnetPlayer(dp)
-		//	return
-		//}
+		if dp.Game != nil && dp.Type != 0xff {
+			var scem = protocol.STOCErrorMsg{Msg: network.ERRMSG_JOINERROR}
+			s.SendPacketDataToPlayer(dp, network.STOC_ERROR_MSG, scem)
+			_ = s.DisconnetPlayer(dp)
+			return
+		}
+
+		if pkt.Version != PRO_VERSION {
+			var scem = protocol.STOCErrorMsg{
+				Msg:  network.ERRMSG_VERERROR,
+				Code: PRO_VERSION,
+			}
+			s.SendPacketDataToPlayer(dp, network.STOC_ERROR_MSG, scem)
+			_ = s.DisconnetPlayer(dp)
+			return
+		}
+
 		var jpass [20]uint16
 		utils.NullTerminate(pkt.Pass[:], 0)
 		copy(jpass[:], pkt.Pass[:])
 
-		if utils.Wcscmp(jpass[:], pkt.Pass[:]) != 0 {
+		if utils.Wcscmp(jpass[:], s.Pass[:]) != 0 {
 			var scem = protocol.STOCErrorMsg{
 				Msg:  network.ERRMSG_JOINERROR,
 				Code: 1,
@@ -93,12 +84,7 @@ func (s *SingleDuel) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCrea
 			_ = s.DisconnetPlayer(dp)
 			return
 		}
-
 	}
-	s.HostInfo.TimeLimit = 180
-
-	utils.NullTerminate(pkt.Pass[:], 0)
-	copy(dp.Game.BaseMode().Pass[:], pkt.Pass[:])
 	dp.Game = s
 	if s.players[0] == nil && s.players[1] == nil && len(s.Observers) == 0 {
 		s.HostPlayer = dp
@@ -357,10 +343,13 @@ func (s *SingleDuel) UpdateDeck(dp *DuelPlayer, pData []byte) {
 	if dp.Type > 1 || s.ready[dp.Type] {
 		return
 	}
-	var valid = true
 	length := len(pData)
+	if length < 8 || length > 2008 {
+		return
+	}
+	var valid = true
 	var deckBuf protocol.CTOSDeckData
-	err := binstruct.UnmarshalLE(pData, &deckBuf)
+	err := restruct.Unpack(pData, binary.LittleEndian, &deckBuf)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -394,6 +383,7 @@ func (s *SingleDuel) UpdateDeck(dp *DuelPlayer, pData []byte) {
 			if s.ready[0] && s.ready[1] {
 				s.SendPacketToPlayer(s.players[s.tpPlayer], network.STOC_SELECT_TP)
 				s.players[1-s.tpPlayer].State = 0xff
+				s.players[s.tpPlayer].State = network.CTOS_TP_RESULT
 				s.DuelStage = network.DUEL_STAGE_FIRSTGO
 			}
 		} else {
@@ -504,16 +494,25 @@ func (s *SingleDuel) TPResult(dp *DuelPlayer, tp byte) {
 	seed := rand.Uint32()
 
 	var rnd = rand.New(rand.NewSource(int64(seed)))
-	//duelSeed := rnd
-	//	rh.id = 0x31707279;
-	//	rh.version = PRO_VERSION;
-	//	rh.flag = REPLAY_UNIFORM;
-	//	rh.seed = seed;
-	//	rh.start_time = (unsigned int)std::time(nullptr);
-	//	last_replay.BeginRecord();
-	//	last_replay.WriteHeader(rh);
-	//	last_replay.WriteData(players[0]->name, 40, false);
-	//	last_replay.WriteData(players[1]->name, 40, false);
+	rh := ExtendedReplayHeader{}
+	rh.Base.ID = REPLAY_ID_YRP1
+	rh.Base.Version = PRO_VERSION
+	rh.Base.Flag = REPLAY_UNIFORM
+	rh.Base.Seed = seed
+	rh.Base.StartTime = uint32(time.Now().Unix())
+	s.lastReplay = NewReplay()
+	s.lastReplay.BeginRecord()
+	s.lastReplay.WriteHeader(rh)
+	name0 := make([]byte, 40)
+	for i := 0; i < 20; i++ {
+		binary.LittleEndian.PutUint16(name0[i*2:], s.players[0].Name[i])
+	}
+	s.lastReplay.WriteData(name0, false)
+	name1 := make([]byte, 40)
+	for i := 0; i < 20; i++ {
+		binary.LittleEndian.PutUint16(name1[i*2:], s.players[1].Name[i])
+	}
+	s.lastReplay.WriteData(name1, false)
 	if s.HostInfo.NoShuffleDeck == 0 {
 		rnd.Shuffle(len(s.pDeck[0].Main), func(i, j int) {
 			s.pDeck[0].Main[i], s.pDeck[0].Main[j] = s.pDeck[0].Main[j], s.pDeck[0].Main[i]
@@ -525,26 +524,22 @@ func (s *SingleDuel) TPResult(dp *DuelPlayer, tp byte) {
 	s.timeLimit[0], s.timeLimit[1] = int16(s.HostInfo.TimeLimit), int16(s.HostInfo.TimeLimit)
 
 	s.Duel = ocgcore.NewDuel(seed)
-	//s.Duel.InitPlayers(s.HostInfo.StartLp, int32(s.HostInfo.StartHand), int32(s.HostInfo.DrawCount))
-	s.Duel.InitPlayers(8000, 5, 1)
+	s.Duel.InitPlayers(s.HostInfo.StartLp, int32(s.HostInfo.StartHand), int32(s.HostInfo.DrawCount))
 
 	opt := uint32(s.HostInfo.DuelRule) << 16
-	//TODO 暂时不洗牌
-	//if s.HostInfo.NoShuffleDeck != 0 {
-	//	opt |= ocgcore.DUEL_PSEUDO_SHUFFLE
-	//}
-	opt |= ocgcore.DUEL_PSEUDO_SHUFFLE
-	opt |= ocgcore.DUEL_TAG_MODE
-	//last_replay.WriteInt32(host_info.start_lp, false);
-	//last_replay.WriteInt32(host_info.start_hand, false);
-	//last_replay.WriteInt32(host_info.draw_count, false);
-	//last_replay.WriteInt32(opt, false);
-	//last_replay.Flush();
+	if s.HostInfo.NoShuffleDeck != 0 {
+		opt |= ocgcore.DUEL_PSEUDO_SHUFFLE
+	}
+	s.lastReplay.WriteInt32(s.HostInfo.StartLp, false)
+	s.lastReplay.WriteInt32(int32(s.HostInfo.StartHand), false)
+	s.lastReplay.WriteInt32(int32(s.HostInfo.DrawCount), false)
+	s.lastReplay.WriteInt32(int32(opt), false)
+	s.lastReplay.Flush()
 	load := func(deckContainer []*CardDataC, p uint8, location uint8) {
-		//	last_replay.WriteInt32(deck_container.size(), false);
+		s.lastReplay.WriteInt32(int32(len(deckContainer)), false)
 		for _, v := range deckContainer {
 			s.Duel.AddCard(v.Code, int(p), location)
-
+			s.lastReplay.WriteInt32(int32(v.Code), false)
 		}
 	}
 	slices.Reverse(s.pDeck[0].Main)
@@ -740,7 +735,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			if player > 1 {
 				s.matchResult[s.duelCount] = 2
 				s.duelCount++
-				s.tpPlayer = 1 - player
+				s.tpPlayer = 1 - s.tpPlayer
 			} else if s.players[player] == s.pPlayers[player] {
 				s.matchResult[s.duelCount] = player
 				s.duelCount++
@@ -877,19 +872,19 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			// 读取可选卡片数量
 			_ = pbuf.Read(&count)
 
-			var c uint8
 			// 遍历所有可选卡片
 			for i := uint8(0); i < count; i++ {
 				// 创建写入缓冲区副本，用于修改卡片数据
 				pbufw = pbuf.Clone()
 				var (
 					code int32
+					c    uint8
 					l    uint8
-					s    uint8
+					seq  uint8
 					ss   uint8
 				)
-				// 读取卡片信息：卡片代码、位置、状态等
-				_ = pbuf.Read(&code, &l, &s, &ss)
+				// 读取卡片信息：卡片代码、控制者、位置、序列号、状态等
+				_ = pbuf.Read(&code, &c, &l, &seq, &ss)
 
 				// 如果不是当前玩家，隐藏卡片代码（设置为0）
 				if c != player {
@@ -1183,6 +1178,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
+			s.RefreshExtra(int(player), 0x81fff4, 0)
 		case ocgcore.MSG_REFRESH_DECK:
 			// 卡组刷新消息：刷新卡组显示
 			// 跳过1字节的额外数据
@@ -1439,13 +1435,15 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			s.RefreshSzoneDef(0)
 			s.RefreshSzoneDef(1)
 		case ocgcore.MSG_SPSUMMONING:
-			// 特殊召唤中消息：处理特殊召唤过程
-			// 跳过8字节的特殊召唤数据
+			pbufw = pbuf.Clone()
+			cc := pbuf.At(4)
+			cp := pbuf.At(7)
 			pbuf.Next(8)
-
-			// 发送特殊召唤中消息给所有玩家和观察者
-			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
-			s.ReSendToPlayer(s.players[1])
+			s.SendPacketDataToPlayer(s.players[cc], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
+			if cp&ocgcore.POS_FACEDOWN != 0 {
+				binary.LittleEndian.PutUint32(pbufw.ReadNext(4), 0)
+			}
+			s.SendPacketDataToPlayer(s.players[1-cc], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
@@ -1465,9 +1463,6 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			s.RefreshSzoneDef(1)
 		case ocgcore.MSG_FLIPSUMMONING:
 			// 反转召唤中消息：处理反转召唤过程
-			// 刷新单个卡片显示（控制者、位置、序列号）
-			s.RefreshSingleDef(pbuf.At(4), pbufw.At(5), pbuf.At(6))
-
 			// 跳过8字节的反转召唤数据
 			pbuf.Next(8)
 
@@ -1493,12 +1488,16 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			s.RefreshSzoneDef(1)
 		case ocgcore.MSG_CHAINING:
 			// 连锁发动中消息：处理连锁发动过程
-			// 跳过16字节的连锁数据
+			pbufw = pbuf.Clone()
+			cc := pbuf.At(4)
+			cp := pbuf.At(7)
 			pbuf.Next(16)
-
-			// 发送连锁发动中消息给所有玩家和观察者
-			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
-			s.ReSendToPlayer(s.players[1])
+			// 发送连锁发动中消息
+			s.SendPacketDataToPlayer(s.players[cc], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
+			if cp&ocgcore.POS_FACEDOWN != 0 {
+				binary.LittleEndian.PutUint32(pbufw.ReadNext(4), 0)
+			}
+			s.SendPacketDataToPlayer(s.players[1-cc], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
@@ -1617,7 +1616,7 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			pbuf.Next(int(count) * 4)
 			s.SendPacketDataToPlayer(s.players[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			for i := uint8(0); i < count; i++ {
-				if pbufw.At(3)&0x80 == 0 {
+				if pbufw.At(3)&0x80 != 0 {
 					pbufw.Write(int32(0))
 				} else {
 					pbufw.Next(4)
@@ -1840,17 +1839,17 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 }
 func (s *SingleDuel) WaitforResponse(player byte) {
 	s.lastResponse = player
-	msg := ocgcore.MSG_WAITING
-	s.SendPacketDataToPlayer(s.players[1-player], network.STOC_GAME_MSG, msg)
+	s.players[player].State = network.CTOS_RESPONSE
 	if s.HostInfo.TimeLimit != 0 {
+		s.timeElapsed = 0
 		var sctl protocol.STOCTimeLimit
 		sctl.Player = player
 		sctl.LeftTime = uint16(s.timeLimit[player])
 		s.SendPacketDataToPlayer(s.players[0], network.STOC_TIME_LIMIT, sctl)
-		s.SendPacketDataToPlayer(s.players[1], network.STOC_TIME_LIMIT, sctl)
-		s.players[player].State = network.CTOS_TIME_CONFIRM
-	} else {
-		s.players[player].State = network.CTOS_RESPONSE
+		s.ReSendToPlayer(s.players[1])
+		for _, v := range s.Observers {
+			s.ReSendToPlayer(v)
+		}
 	}
 }
 func (s *SingleDuel) TimeConfirm(dp *DuelPlayer) {
@@ -1866,16 +1865,25 @@ func (s *SingleDuel) TimeConfirm(dp *DuelPlayer) {
 	}
 }
 func (s *SingleDuel) GetResponse(dp *DuelPlayer, msgBuffer []byte) {
+	if s.Duel == nil {
+		return
+	}
+	if dp.State != network.CTOS_RESPONSE {
+		return
+	}
+	if s.DuelStage == network.DUEL_STAGE_DUELING {
+		s.lastResponse = dp.Type
+		s.timeElapsed = 0
+	}
 	length := len(msgBuffer)
 	if length > ocgcore.SIZE_RETURN_VALUE {
 		length = ocgcore.SIZE_RETURN_VALUE
 	}
 	var resb = make([]byte, ocgcore.SIZE_RETURN_VALUE)
 	copy(resb, msgBuffer[:length])
-	//	last_replay.Write<uint8_t>(len);
-	//	last_replay.WriteData(resb, len);
+	s.lastReplay.WriteData([]byte{uint8(length)}, false)
+	s.lastReplay.WriteData(resb[:length], false)
 	s.Duel.SetResponseBytes(resb)
-	s.players[dp.Type].State = 0xff
 	if s.HostInfo.TimeLimit != 0 {
 		if s.timeLimit[dp.Type] > s.timeElapsed {
 			s.timeLimit[dp.Type] -= s.timeElapsed
@@ -1890,12 +1898,12 @@ func (s *SingleDuel) EndDuel() {
 	if s.Duel == nil {
 		return
 	}
-	//	last_replay.EndRecord();
-	//	char replaybuf[0x2000], *pbuf = replaybuf;
-	//	std::memcpy(pbuf, &last_replay.pheader, sizeof(ReplayHeader));
-	//	pbuf += sizeof(ReplayHeader);
-	//	std::memcpy(pbuf, last_replay.comp_data, last_replay.comp_size);
-	//	NetServer::SendBufferToPlayer(players[0], STOC_REPLAY, replaybuf, sizeof(ReplayHeader) + last_replay.comp_size);
+	s.lastReplay.EndRecord()
+	replayBuf := make([]byte, 0x2000)
+	pBuf := utils.NewYGOBuffer(replayBuf, binary.LittleEndian)
+	pBuf.Write(s.lastReplay.pheader)
+	pBuf.Write(s.lastReplay.compData[:s.lastReplay.compSize])
+	s.SendPacketDataToPlayer(s.players[0], network.STOC_REPLAY, replayBuf[:pBuf.Offset()])
 	//s.ReSendToPlayer(s.players[1]);
 	//for _, v := range s.Observers {
 	//	s.ReSendToPlayer(v)
@@ -1903,9 +1911,8 @@ func (s *SingleDuel) EndDuel() {
 	s.Duel.End()
 	if s.ETimer != nil {
 		s.ETimer.Stop()
+		s.ETimer = nil
 	}
-	s.ETimer.Stop()
-	s.ETimer = nil
 	s.Duel = nil
 }
 
@@ -2095,7 +2102,7 @@ func (s *SingleDuel) RefreshGraveDef(player int) {
 func (s *SingleDuel) RefreshGrave(player int, flag uint32, useCache int) {
 	queryBuffer := make([]byte, ocgcore.SIZE_QUERY_BUFFER)
 	qbuf := utils.NewYGOBuffer(queryBuffer, binary.LittleEndian)
-	length := int32(s.writeUpdateData(player, int(ocgcore.LOCATION_MZONE), flag, qbuf.Bytes(), useCache))
+	length := int32(s.writeUpdateData(player, int(ocgcore.LOCATION_GRAVE), flag, qbuf.Bytes(), useCache))
 	s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, queryBuffer[:length+3])
 	s.ReSendToPlayer(s.players[1])
 	for _, v := range s.Observers {

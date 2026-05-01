@@ -26,19 +26,23 @@ type IPlayer interface {
 }
 
 // JoinRoom 玩家加入房间
-func (m *Manager) JoinRoom(roomID string, player IPlayer) (room *Room, isHost bool) {
+func (m *Manager) JoinRoom(roomID string, player IPlayer, mode IDuelMode) (room *Room, isHost bool) {
 	room, has := m.rooms.Get(roomID)
 	if has {
 		room.AddPlayer(player)
 		return room, false
 	}
 	room = NewRoom(roomID)
-	room.DuelMode = &SingleDuel{Observers: make(map[string]*DuelPlayer)}
+	if mode != nil {
+		room.DuelMode = mode
+	} else {
+		room.DuelMode = &SingleDuel{Observers: make(map[string]*DuelPlayer)}
+	}
 	addSuccess := m.rooms.SetIfAbsent(roomID, room)
 	if addSuccess {
 		return room, true
 	}
-	return m.JoinRoom(roomID, player)
+	return m.JoinRoom(roomID, player, mode)
 }
 
 // LeaveRoom 玩家离开房间

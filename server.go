@@ -78,21 +78,24 @@ func (s *Server) OnTraffic(c gnet.Conn) (action gnet.Action) {
 
 func main() {
 	var (
-		port      int
-		multicore bool
-		batchRead int
+		port       int
+		multicore  bool
+		batchRead  int
+		dbPath     string
+		scriptPath string
 	)
 
-	// Example command: go run server.go --port 9000 --multicore=true --batchread 10
-	flag.IntVar(&port, "port", 9000, "--port 9000")
-	flag.BoolVar(&multicore, "multicore", false, "--multicore=true")
-	flag.IntVar(&batchRead, "batchread", 100, "--batch-read 100")
+	flag.IntVar(&port, "port", 9000, "server port")
+	flag.BoolVar(&multicore, "multicore", false, "enable multi-core")
+	flag.IntVar(&batchRead, "batchread", 100, "batch read count")
+	flag.StringVar(&dbPath, "db", "cards.cdb", "card database path")
+	flag.StringVar(&scriptPath, "script", "script", "script directory path")
 	flag.Parse()
 	if batchRead <= 0 {
-		batchRead = math.MaxInt32 // unlimited batch read
+		batchRead = math.MaxInt32
 	}
 
-	err := duel.DefaultDataManager.LoadDB("E:\\ygopro\\cards.cdb")
+	err := duel.DefaultDataManager.LoadDB(dbPath)
 	if err != nil {
 		panic(err)
 	}
@@ -103,8 +106,8 @@ func main() {
 		multicore: multicore,
 		batchRead: batchRead,
 	}
-	err = ocgcore.Init(ocgcore.WithRootPath("E:\\Go\\gopath\\goygopro"),
-		ocgcore.WithScriptDirectory("E:\\ygo"),
+	err = ocgcore.Init(ocgcore.WithRootPath("."),
+		ocgcore.WithScriptDirectory(scriptPath),
 		ocgcore.WithCardReader(func(cardId uint32) *ocgcore.CardData {
 			return duel.DefaultDataManager.GetData(cardId)
 		}),

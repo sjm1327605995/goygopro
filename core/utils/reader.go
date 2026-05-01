@@ -76,3 +76,11 @@ func (y *YGOBuffer) SubSlicesOffset(clone *YGOBuffer, offset int) []byte {
 	}
 	return y.buff[y.offset : clone.offset+offset]
 }
+func (y *YGOBuffer) ReadNext(n int) []byte {
+	if y.offset+n > len(y.buff) {
+		return nil
+	}
+	res := y.buff[y.offset : y.offset+n]
+	y.offset += n
+	return res
+}

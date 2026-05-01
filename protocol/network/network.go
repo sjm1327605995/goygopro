@@ -1,6 +1,11 @@
 package network
 
 const (
+	NETWORK_SERVER_ID = 0x7428
+	NETWORK_CLIENT_ID = 0xdef6
+)
+
+const (
 	STOC_GAME_MSG           = 0x1  // byte array
 	STOC_ERROR_MSG          = 0x2  // STOC_ErrorMsg
 	STOC_SELECT_HAND        = 0x3  // no data
@@ -78,6 +83,7 @@ const (
 	CTOS_SURRENDER     = 0x14 // no data
 	CTOS_TIME_CONFIRM  = 0x15 // no data
 	CTOS_CHAT          = 0x16 // uint16_t array
+	CTOS_EXTERNAL_ADDRESS = 0x17 // CTOS_ExternalAddress
 	CTOS_HS_TODUELIST  = 0x20 // no data
 	CTOS_HS_TOOBSERVER = 0x21 // no data
 	CTOS_HS_READY      = 0x22 // no data
