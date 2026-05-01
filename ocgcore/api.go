@@ -1,13 +1,11 @@
-//go:build !cgo
-
 package ocgcore
 
-import "C"
 import (
 	"fmt"
 	"github.com/ebitengine/purego"
 	"os"
 	"path/filepath"
+	"runtime"
 	"unsafe"
 )
 
@@ -37,12 +35,12 @@ type OCGApi struct {
 	SetCardReader     func(f uintptr)
 	SetMessageHandler func(f uintptr)
 
-	_scriptReader   ScriptReader
-	_cardReader     CardReader
-	_messageHandler MessageHandler
+	scriptReader   ScriptReader
+	cardReader     CardReader
+	messageHandler MessageHandler
 }
 
-// YGOCardData 是卡片数据的紧凑表示
+// YGOCardData kept for backward compatibility
 type YGOCardData struct {
 	Id         uint32
 	Alias      uint32
@@ -58,47 +56,51 @@ type YGOCardData struct {
 	LinkMarker uint32
 }
 
-// 声明类型
+// Public callback types – user-friendly, no CGO
 type (
-	ScriptReader   func(scriptNamePtr *C.char, slen *C.int) *C.uchar
-	CardReader     func(cardId uint32, card *CardData) uint
-	MessageHandler func(pduel uintptr, msgType uint32) uint
+	ScriptReader   func(scriptName string) []byte
+	CardReader     func(cardId uint32) *CardData
+	MessageHandler func(pduel uintptr, msgSize uint32)
 )
+
 type Option func(api *OCGApi)
 
 func WithRootPath(path string) Option {
-	return func(api *OCGApi) {
-		api.rootPath = path
-	}
+	return func(api *OCGApi) { api.rootPath = path }
 }
 func WithScriptDirectory(path string) Option {
-	return func(api *OCGApi) {
-		api.scriptDirectory = path
-	}
+	return func(api *OCGApi) { api.scriptDirectory = path }
 }
-
 func WithDatabaseFile(path string) Option {
-	return func(api *OCGApi) {
-		api.databaseFile = path
-	}
+	return func(api *OCGApi) { api.databaseFile = path }
 }
-func WithScriptReader(scriptReader ScriptReader) Option {
-	return func(api *OCGApi) {
-		api._scriptReader = scriptReader
-	}
+func WithScriptReader(fn ScriptReader) Option {
+	return func(api *OCGApi) { api.scriptReader = fn }
 }
-func WithCardReader(cardReader CardReader) Option {
-	return func(api *OCGApi) {
-		api._cardReader = cardReader
-	}
+func WithCardReader(fn CardReader) Option {
+	return func(api *OCGApi) { api.cardReader = fn }
 }
-func WithMessageHandler(messageHandler MessageHandler) Option {
-	return func(api *OCGApi) {
-		api._messageHandler = messageHandler
-	}
+func WithMessageHandler(fn MessageHandler) Option {
+	return func(api *OCGApi) { api.messageHandler = fn }
 }
 
 var API *OCGApi
+
+var libCandidates = []string{
+	"ocgcore.dll",
+	"libocgcore.so",
+	"libocgcore.dylib",
+}
+
+func init() {
+	if runtime.GOOS == "windows" {
+		libCandidates = []string{"ocgcore.dll"}
+	} else if runtime.GOOS == "darwin" {
+		libCandidates = []string{"libocgcore.dylib", "libocgcore.so"}
+	} else {
+		libCandidates = []string{"libocgcore.so", "ocgcore.dll"}
+	}
+}
 
 func registerFunctions(api *OCGApi, libc uintptr) {
 	purego.RegisterLibFunc(&api.CreateDuel, libc, "create_duel")
@@ -122,76 +124,113 @@ func registerFunctions(api *OCGApi, libc uintptr) {
 	purego.RegisterLibFunc(&api.SetMessageHandler, libc, "set_message_handler")
 }
 
-// Init 初始化OCGWrapper
+// Init initializes the OCG wrapper using purego (no CGO).
 func Init(opts ...Option) error {
-	var err error
-	// 设置默认路径
 	ocgApi := &OCGApi{
 		rootPath:        ".",
 		scriptDirectory: "script",
 		databaseFile:    "cards.cdb",
-		buffer:          make([]byte, 128*1024), // 128 KiB
-
+		buffer:          make([]byte, 128*1024),
 	}
-	ocgApi._scriptReader = ocgApi.defaultScriptReader
-	ocgApi._cardReader = ocgApi.defaultCardReader
-	ocgApi._messageHandler = ocgApi.defaultOnMessageHandler
+	ocgApi.scriptReader = ocgApi.defaultScriptReader
+	ocgApi.cardReader = ocgApi.defaultCardReader
+	ocgApi.messageHandler = ocgApi.defaultOnMessageHandler
 	API = ocgApi
 	for _, opt := range opts {
 		opt(API)
 	}
 
-	// 加载ocgcore动态库
-	libPath := filepath.Join(ocgApi.rootPath, "ocgcore.dll")
-	ocgApi.handle, err = openLibrary(libPath)
-	if err != nil {
-		return err
+	var err error
+	for _, name := range libCandidates {
+		libPath := filepath.Join(ocgApi.rootPath, name)
+		ocgApi.handle, err = openLibrary(libPath)
+		if err == nil {
+			break
+		}
 	}
+	if err != nil {
+		return fmt.Errorf("failed to load ocgcore library: %w", err)
+	}
+
 	registerFunctions(ocgApi, ocgApi.handle)
 	ocgApi.SetCallback()
 	return nil
 }
-func (o *OCGApi) SetCallback() {
-	scriptReaderPtr := purego.NewCallback(o._scriptReader)
-	cardReaderPtr := purego.NewCallback(o._cardReader)
-	messageHandlerPtr := purego.NewCallback(o._messageHandler)
-	o.SetScriptReader(scriptReaderPtr)
-	o.SetCardReader(cardReaderPtr)
-	o.SetMessageHandler(messageHandlerPtr)
-}
-func (o *OCGApi) Dispose() {
 
+func (o *OCGApi) SetCallback() {
+	o.SetScriptReader(purego.NewCallback(scriptReaderCallback))
+	o.SetCardReader(purego.NewCallback(cardReaderCallback))
+	o.SetMessageHandler(purego.NewCallback(messageHandlerCallback))
 }
-func (o *OCGApi) defaultScriptReader(scriptNameC *C.char, slen *C.int) *C.uchar {
-	*slen = 0
-	scriptName := C.GoString(scriptNameC)
+
+func (o *OCGApi) Dispose() {
+	if o.handle != 0 {
+		_ = closeLibrary(o.handle)
+		o.handle = 0
+	}
+}
+
+// ------------------------------------------------------------------
+// Internal C-compatible callbacks (invoked by the ocgcore .so/.dll)
+// ------------------------------------------------------------------
+
+// C signature: unsigned char* script_reader(const char* name, int* len)
+func scriptReaderCallback(scriptName *byte, length *int32) uintptr {
+	name := cStringToGoString(scriptName)
+	data := API.scriptReader(name)
+	if len(data) == 0 {
+		*length = 0
+		return 0
+	}
+	*length = int32(len(data))
+	return uintptr(unsafe.Pointer(&data[0]))
+}
+
+// C signature: uint32_t card_reader(uint32_t code, card_data* data)
+func cardReaderCallback(code uint32, data *CardData) uintptr {
+	card := API.cardReader(code)
+	if card == nil {
+		return 0
+	}
+	*data = *card
+	return uintptr(card.Code)
+}
+
+// C signature: uint32_t message_handler(intptr_t pduel, uint32_t size)
+func messageHandlerCallback(pduel uintptr, size uint32) uintptr {
+	API.messageHandler(pduel, size)
+	return 0
+}
+
+// ------------------------------------------------------------------
+// Default implementations
+// ------------------------------------------------------------------
+
+func (o *OCGApi) defaultScriptReader(scriptName string) []byte {
 	fmt.Println("Loading script:", scriptName)
 	scriptPath := filepath.Join(API.scriptDirectory, scriptName)
 	data, err := os.ReadFile(scriptPath)
 	if err != nil {
 		fmt.Println("Error reading script file:", err)
-		return (*C.uchar)(nil)
+		return nil
 	}
-
-	*slen = C.int(len(data))
-
-	return (*C.uchar)(C.CBytes(data))
+	return data
 }
-func (o *OCGApi) defaultCardReader(code uint32, pData *CardData) uint {
 
-	return uint(code)
+func (o *OCGApi) defaultCardReader(code uint32) *CardData {
+	return nil
 }
-func (o *OCGApi) defaultOnMessageHandler(duelPtr uintptr, msgType uint32) uint {
+
+func (o *OCGApi) defaultOnMessageHandler(duelPtr uintptr, msgSize uint32) {
 	duelLock.Lock()
 	defer duelLock.Unlock()
 	duel, has := duels[duelPtr]
 	if has {
-		duel.OnMessage(msgType)
+		duel.OnMessage(msgSize)
 	}
-	return 0
 }
 
-// GoString converts C string to Go string
+// GoString converts a C string pointer to a Go string.
 func GoString(c uintptr) string {
 	ptr := *(*unsafe.Pointer)(unsafe.Pointer(&c))
 	if ptr == nil {
@@ -205,4 +244,19 @@ func GoString(c uintptr) string {
 		length++
 	}
 	return string(unsafe.Slice((*byte)(ptr), length))
+}
+
+func cStringToGoString(p *byte) string {
+	if p == nil {
+		return ""
+	}
+	var s []byte
+	for {
+		if *p == 0 {
+			break
+		}
+		s = append(s, *p)
+		p = (*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(p)) + 1))
+	}
+	return string(s)
 }

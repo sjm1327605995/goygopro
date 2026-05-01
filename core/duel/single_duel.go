@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/antlabs/timer"
+	"math/rand"
+	"slices"
+	"time"
+
+	"github.com/duke-git/lancet/v2/condition"
 	"github.com/go-restruct/restruct"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
-	"math/rand"
-	"time"
 )
 
 const PRO_VERSION = 0x1361

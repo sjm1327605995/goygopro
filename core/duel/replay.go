@@ -2,11 +2,10 @@ package duel
 
 import (
 	"encoding/binary"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
+
 	"github.com/sjm1327605995/goygopro/protocol"
 )
 

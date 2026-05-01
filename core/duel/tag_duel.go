@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/antlabs/timer"
+	"math/rand"
+	"slices"
+	"time"
+
 	"github.com/go-restruct/restruct"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
-	"math/rand"
-	"time"
 )
 
 type TagDuel struct {
@@ -1613,7 +1614,7 @@ func (s *TagDuel) GetResponse(dp *DuelPlayer, msgBuffer []byte) {
 	}
 	resb := make([]byte, ocgcore.SIZE_RETURN_VALUE)
 	copy(resb, msgBuffer)
-	s.Duel.SetResponseb(resb)
+	s.Duel.SetResponseBytes(resb)
 	s.players[dp.Type].State = 0xff
 	if s.HostInfo.TimeLimit != 0 {
 		respType := 0
@@ -1687,7 +1688,7 @@ func (s *TagDuel) writeUpdateData(player int, location int, flag uint32, qbuf []
 	flag |= ocgcore.QUERY_CODE | ocgcore.QUERY_POSITION
 	wbuf := utils.NewYGOBuffer(qbuf, binary.LittleEndian)
 	wbuf.Write(uint8(ocgcore.MSG_UPDATE_DATA), uint8(player), uint8(location))
-	return s.Duel.QueryFieldCard(player, location, flag, wbuf.Bytes(), useCache)
+	return s.Duel.QueryFieldCard(uint8(player), uint8(location), flag, wbuf.Bytes(), useCache != 0)
 }
 
 func (s *TagDuel) RefreshMzoneDef(player int) {
@@ -1841,7 +1842,7 @@ func (s *TagDuel) RefreshSingle(player uint8, location uint8, sequence uint8, fl
 	var queryBuffer = make([]byte, 0x1000)
 	var qbuf = utils.NewYGOBuffer(queryBuffer, binary.LittleEndian)
 	qbuf.Write([]byte{ocgcore.MSG_UPDATE_CARD, player, location, sequence})
-	length := s.Duel.QueryCard(player, location, sequence, uint32(flag), qbuf.Bytes(), false)
+	length := s.Duel.QueryCard(player, location, sequence, int32(flag), qbuf.Bytes(), false)
 	position := network.GetPosition(qbuf.Bytes(), 12)
 	if location&uint8(ocgcore.LOCATION_ONFIELD) != 0 {
 		pid := 0

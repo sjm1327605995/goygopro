@@ -2,7 +2,6 @@ package duel
 
 import (
 	"github.com/antlabs/timer"
-	"time"
 )
 
 var timerWheel timer.Timer

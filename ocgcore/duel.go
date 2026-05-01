@@ -1,6 +1,5 @@
 package ocgcore
 
-import "C"
 import (
 	"bytes"
 	"fmt"
