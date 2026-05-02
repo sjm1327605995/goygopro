@@ -3,6 +3,8 @@ package utils
 import (
 	"encoding/binary"
 	"fmt"
+
+	"github.com/go-restruct/restruct"
 )
 
 type YGOBuffer struct {
@@ -67,6 +69,27 @@ func (y *YGOBuffer) Clone() *YGOBuffer {
 		offset: y.offset,
 	}
 }
+// Unpack 用 restruct 从当前 offset 解析二进制到 struct，并自动推进 offset
+func (y *YGOBuffer) Unpack(v interface{}) error {
+	err := restruct.Unpack(y.buff[y.offset:], binary.LittleEndian, v)
+	if err != nil {
+		return err
+	}
+	size, err := restruct.SizeOf(v)
+	if err != nil {
+		return err
+	}
+	y.offset += size
+	return nil
+}
+
+// Pack 用 restruct 将 struct 打包为字节数组
+func PackGameMsg(v interface{}) []byte {
+	data, _ := restruct.Pack(binary.LittleEndian, v)
+	return data
+}
+
+// SubSlices 返回从当前 buffer 位置到 clone buffer 位置的切片
 func (y *YGOBuffer) SubSlices(clone *YGOBuffer) []byte {
 	return y.SubSlicesOffset(clone, 0)
 }
