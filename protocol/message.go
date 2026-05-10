@@ -69,21 +69,23 @@ type SelectIdleCmdMsg struct {
 }
 
 // ------------------------------------------------------------------
-// MSG_SELECT_EFFECTYN — 选择是否发动效果 (10 bytes)
-// 格式: uint8 player, uint8 unk[9]
+// MSG_SELECT_EFFECTYN — 选择是否发动效果 (13 bytes)
+// 格式: uint8 player, uint32 code, uint32 info_location, uint32 description
 // ------------------------------------------------------------------
 type SelectEffectYNMsg struct {
-	Player uint8   `struct:"uint8"`
-	_      [9]byte `struct:"[9]byte"`
+	Player       uint8  `struct:"uint8"`
+	Code         uint32 `struct:"uint32"`
+	InfoLocation uint32 `struct:"uint32"`
+	Description  uint32 `struct:"uint32"`
 }
 
 // ------------------------------------------------------------------
-// MSG_SELECT_YESNO — 选择是/否 (6 bytes)
-// 格式: uint8 player, uint8 unk[5]
+// MSG_SELECT_YESNO — 选择是/否 (5 bytes)
+// 格式: uint8 player, uint32 description
 // ------------------------------------------------------------------
 type SelectYesNoMsg struct {
-	Player uint8   `struct:"uint8"`
-	_      [5]byte `struct:"[5]byte"`
+	Player      uint8  `struct:"uint8"`
+	Description uint32 `struct:"uint32"`
 }
 
 // ------------------------------------------------------------------
@@ -220,10 +222,10 @@ type SelectPositionMsg struct {
 
 // ------------------------------------------------------------------
 // MSG_SELECT_COUNTER — 选择计数器
-// 格式: uint8 player, uint8 unk[3], uint8 count, [7 bytes] * count
+// 格式: uint8 player, uint8 unk[3], uint8 count, [9 bytes] * count
 // ------------------------------------------------------------------
 type CounterEntry struct {
-	_ [7]byte `struct:"[7]byte"`
+	_ [9]byte `struct:"[9]byte"`
 }
 
 type SelectCounterMsg struct {
@@ -235,27 +237,23 @@ type SelectCounterMsg struct {
 
 // ------------------------------------------------------------------
 // MSG_SELECT_SUM — 选择合计数值
-// 格式: uint8 player, uint8 count_a, [11 bytes] * count_a,
+// 格式: uint8 unk, uint8 player, uint8 unk[6], uint8 count_a, [11 bytes] * count_a,
 //
-//	uint8 count_b, [7 bytes] * count_b, uint8 count_c, [7 bytes] * count_c
+//	uint8 count_b, [11 bytes] * count_b
 //
 // ------------------------------------------------------------------
-type SumEntryA struct {
+type SumEntry struct {
 	_ [11]byte `struct:"[11]byte"`
 }
 
-type SumEntryB struct {
-	_ [7]byte `struct:"[7]byte"`
-}
-
 type SelectSumMsg struct {
+	_        byte  `struct:"uint8"`
 	Player   uint8 `struct:"uint8"`
+	_        [6]byte `struct:"[6]byte"`
 	CountA   uint8 `struct:"uint8,sizeof=EntriesA"`
-	EntriesA []SumEntryA
+	EntriesA []SumEntry
 	CountB   uint8 `struct:"uint8,sizeof=EntriesB"`
-	EntriesB []SumEntryB
-	CountC   uint8 `struct:"uint8,sizeof=EntriesC"`
-	EntriesC []SumEntryB
+	EntriesB []SumEntry
 }
 
 // ------------------------------------------------------------------
@@ -307,9 +305,15 @@ func (m *ConfirmDeckTopMsg) Pack() []byte {
 
 // ------------------------------------------------------------------
 // MSG_CONFIRM_CARDS — 确认卡片
-// 格式与 MSG_CONFIRM_DECKTOP 相同
+// 格式: uint8 player, uint8 skip_panel, uint8 count, (int32 code + uint8 c + uint8 l + uint8 s) * count
+// 注意：比 MSG_CONFIRM_DECKTOP 多一个 skip_panel 字节
 // ------------------------------------------------------------------
-type ConfirmCardsMsg = ConfirmDeckTopMsg
+type ConfirmCardsMsg struct {
+	Player    uint8 `struct:"uint8"`
+	SkipPanel uint8 `struct:"uint8"`
+	Count     uint8 `struct:"uint8,sizeof=Cards"`
+	Cards     []ConfirmCardEntry
+}
 
 // ------------------------------------------------------------------
 // MSG_DRAW — 抽卡
@@ -391,13 +395,13 @@ type MoveMsg struct {
 	CL     uint8  `struct:"uint8"` // curr location
 	CS     uint8  `struct:"uint8"` // curr sequence
 	CP     uint8  `struct:"uint8"` // curr position
-	Reason uint8  `struct:"uint8"`
+	Reason uint32 `struct:"uint32"`
 }
 
 // ------------------------------------------------------------------
 // MSG_POS_CHANGE — 位置变更
 // 格式: uint32 code, uint8 cc, uint8 cl, uint8 cs, uint8 pp, uint8 cp
-// = 4 + 6 = 10 bytes
+// = 4 + 5 = 9 bytes
 // ------------------------------------------------------------------
 type PosChangeMsg struct {
 	Code uint32 `struct:"uint32"`
@@ -445,12 +449,10 @@ type SwapMsg struct {
 
 // ------------------------------------------------------------------
 // MSG_FIELD_DISABLED — 场地禁用
-// 格式: uint32 zones, uint32 loc1, uint32 loc2
-// 看代码中 pbuf.Next(8) 所以是 8 bytes，可能只有 zones
+// 格式: uint32 zones (4 bytes)
 // ------------------------------------------------------------------
 type FieldDisabledMsg struct {
-	Zones uint32  `struct:"uint32"`
-	_     [4]byte `struct:"[4]byte"`
+	Zones uint32 `struct:"uint32"`
 }
 
 // ------------------------------------------------------------------
@@ -495,11 +497,10 @@ type ChainingMsg struct {
 
 // ------------------------------------------------------------------
 // MSG_CHAIN_SOLVING — 连锁处理中
-// 格式: uint8[13] 或 int32 + uint8[9]？
-// tag_duel.go 中 pbuf.Next(13)
+// 格式: uint8 chain_number (1 byte)
 // ------------------------------------------------------------------
 type ChainSolvingMsg struct {
-	_ [13]byte `struct:"[13]byte"`
+	ChainNumber uint8 `struct:"uint8"`
 }
 
 // ------------------------------------------------------------------
@@ -606,11 +607,12 @@ type AttackMsg struct {
 
 // ------------------------------------------------------------------
 // MSG_MISSED_EFFECT — 错过效果
-// 格式: uint32 code + uint8[7]?
+// 格式: uint32 info_location + uint32 code (8 bytes)
+// player 在 info_location 的第一个字节（controller）
 // ------------------------------------------------------------------
 type MissedEffectMsg struct {
-	Code uint32  `struct:"uint32"`
-	_    [7]byte `struct:"[7]byte"`
+	InfoLocation uint32 `struct:"uint32"`
+	Code         uint32 `struct:"uint32"`
 }
 
 // ------------------------------------------------------------------
@@ -635,12 +637,12 @@ type TossDiceMsg struct {
 
 // ------------------------------------------------------------------
 // MSG_ANNOUNCE_RACE — 宣言种族
-// 格式: uint8 player, uint8 count, uint8[count] races
+// 格式: uint8 player, uint8 count, uint32 available (位掩码)
 // ------------------------------------------------------------------
 type AnnounceRaceMsg struct {
-	Player uint8   `struct:"uint8"`
-	Count  uint8   `struct:"uint8,sizeof=Races"`
-	Races  []uint8 `struct:"[]uint8"`
+	Player    uint8  `struct:"uint8"`
+	Count     uint8  `struct:"uint8"`
+	Available uint32 `struct:"uint32"`
 }
 
 // ------------------------------------------------------------------

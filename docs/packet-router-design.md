@@ -118,14 +118,14 @@ core/duel/packet/
 ├── router.go        # 路由器核心
 ├── context.go       # PacketContext
 ├── middleware.go    # 通用中间件（Recover、Auth、Bind等）
-├── handlers.go      # 从 duel_palyer.go 迁移来的处理器
+├── handlers.go      # 从 duel_player.go 迁移来的处理器
 └── errors.go        # 统一错误类型
 ```
 
 ## 7. 迁移策略
 
 1. **新建 packet 包**，实现 Router + Context + Middleware
-2. **重写 duel_palyer.go** 的 `HandleCTOSPacket` 为 `router.Dispatch(d, data)`
+2. **重写 duel_player.go** 的 `HandleCTOSPacket` 为 `router.Dispatch(d, data)`
 3. **逐个迁移 case** 为 Handler 函数，放到 `handlers.go`
 4. **验证编译通过后**，删除旧的 switch-case
 

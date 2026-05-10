@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>YGOPro 界面布局原型集</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    color: #ccc;
+    font-family: "Microsoft YaHei", sans-serif;
+    padding: 20px;
+  }
+  h1 { color: #fff; margin-bottom: 20px; font-size: 20px; }
+  .section { margin-bottom: 40px; border: 1px solid #333; padding: 20px; border-radius: 6px; }
+  .section h2 { color: #6af; margin-bottom: 12px; font-size: 16px; }
+
+  /* 通用窗口样式 */
+  .yg-window {
+    background: linear-gradient(180deg, #d0d0d0 0%, #c0c0c0 100%);
+    border: 2px solid #808080;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    font-size: 13px;
+    color: #222;
+  }
+  .yg-title {
+    height: 24px;
+    background: linear-gradient(180deg, #4a6fa5 0%, #2a4a7a 100%);
+    color: #fff;
+    font-size: 12px;
+    display: flex; align-items: center;
+    padding-left: 8px;
+    border-bottom: 1px solid #1a3a6a;
+  }
+  .yg-btn {
+    height: 26px;
+    background: linear-gradient(180deg, #e8e8e8 0%, #c8c8c8 50%, #b0b0b0 100%);
+    border: 1px solid #888;
+    border-radius: 2px;
+    color: #222;
+    font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    padding: 0 8px;
+    white-space: nowrap;
+  }
+  .yg-input {
+    height: 22px;
+    border: 1px solid #888;
+    background: #fff;
+    padding: 0 4px;
+    font-size: 12px;
+  }
+  .yg-label { font-size: 12px; color: #222; white-space: nowrap; }
+
+  /* ========== 1. 主菜单 ========== */
+  .menu-wrap {
+    width: 320px;
+  }
+  .menu-body {
+    padding: 8px 12px 10px;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .menu-btn { height: 30px; font-size: 13px; }
+
+  /* ========== 2. 联机模式 ========== */
+  .lan-wrap {
+    width: 580px;
+  }
+  .lan-body {
+    padding: 8px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .lan-nickname-row {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .lan-nickname-row .yg-label { width: 40px; }
+  .lan-nickname-row .yg-input { flex: 1; }
+  .lan-nickname-row .yg-btn { width: 80px; }
+
+  .lan-list {
+    height: 220px;
+    background: #f5f5f5;
+    border: 1px solid #aaa;
+  }
+
+  .lan-refresh { display: flex; justify-content: center; }
+  .lan-refresh .yg-btn { width: 100px; }
+
+  .lan-bottom {
+    display: flex; gap: 8px;
+  }
+  .lan-bottom-left {
+    flex: 1;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .lan-info-row {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .lan-info-row .yg-label { width: 60px; }
+  .lan-info-row .yg-input { flex: 1; }
+  .lan-info-row .yg-input.port { width: 60px; flex: none; }
+  .lan-info-row .yg-input.pwd { flex: 1; }
+
+  .lan-bottom-right {
+    display: flex; flex-direction: column; gap: 4px;
+    width: 90px;
+  }
+  .lan-bottom-right .yg-btn { width: 100%; }
+
+  /* 规格说明表格 */
+  .spec-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+  .spec-table th, .spec-table td { border: 1px solid #444; padding: 6px 10px; text-align: left; }
+  .spec-table th { background: #2a2a4a; color: #8af; }
+  .spec-table td { background: #1a1a2e; }
+  .spec-table .label { color: #aaa; width: 100px; }
+</style>
+</head>
+<body>
+
+<h1>YGOPro 界面布局原型集（按截图 + C++ 代码整理）</h1>
+
+<!-- ==================== 1. 主菜单 ==================== -->
+<div class="section">
+  <h2>1. 主菜单（wMainMenu）</h2>
+  <div class="yg-window menu-wrap">
+    <div class="yg-title">YGOPro Version:1.036.2</div>
+    <div class="menu-body">
+      <div class="yg-btn menu-btn">联机模式</div>
+      <div class="yg-btn menu-btn">单人模式</div>
+      <div class="yg-btn menu-btn">观看录像</div>
+      <div class="yg-btn menu-btn">编辑卡组</div>
+      <div class="yg-btn menu-btn">退出</div>
+    </div>
+  </div>
+  <table class="spec-table">
+    <tr><th class="label">项</th><th>规格</th></tr>
+    <tr><td class="label">窗口尺寸</td><td>320 × 210（标题栏24 + 内容区186）</td></tr>
+    <tr><td class="label">窗口位置</td><td>屏幕水平居中，垂直约 20% 顶部留白</td></tr>
+    <tr><td class="label">标题栏</td><td>高 24px，深蓝渐变，白字，版本号</td></tr>
+    <tr><td class="label">内容区</td><td>银灰渐变 #d0d0d0 → #c0c0c0，边框 #808080</td></tr>
+    <tr><td class="label">按钮</td><td>5 个，宽 296 × 高 30，间距 5px，银灰金属渐变</td></tr>
+  </table>
+</div>
+
+<!-- ==================== 2. 联机模式 ==================== -->
+<div class="section">
+  <h2>2. 联机模式（wLanWindow）</h2>
+  <div class="yg-window lan-wrap">
+    <div class="yg-title">联机模式</div>
+    <div class="lan-body">
+      <!-- 昵称行 -->
+      <div class="lan-nickname-row">
+        <span class="yg-label">昵称:</span>
+        <input class="yg-input" value="111">
+        <div class="yg-btn">建立主机</div>
+      </div>
+      <!-- 主机列表 -->
+      <div class="lan-list"></div>
+      <!-- 刷新 -->
+      <div class="lan-refresh">
+        <div class="yg-btn">刷新主机</div>
+      </div>
+      <!-- 底部 -->
+      <div class="lan-bottom">
+        <div class="lan-bottom-left">
+          <div class="lan-info-row">
+            <span class="yg-label">主机信息:</span>
+            <input class="yg-input" value="localhost">
+            <input class="yg-input port" value="7911">
+          </div>
+          <div class="lan-info-row">
+            <span class="yg-label">主机密码:</span>
+            <input class="yg-input pwd">
+          </div>
+        </div>
+        <div class="lan-bottom-right">
+          <div class="yg-btn">加入游戏</div>
+          <div class="yg-btn">取消</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <table class="spec-table">
+    <tr><th class="label">项</th><th>规格</th></tr>
+    <tr><td class="label">窗口尺寸</td><td>580 × 约 380</td></tr>
+    <tr><td class="label">窗口位置</td><td>屏幕水平居中，垂直约 25% 顶部留白</td></tr>
+    <tr><td class="label">标题栏</td><td>高 24px，深蓝渐变，白字 "联机模式"</td></tr>
+    <tr><td class="label">昵称行</td><td>标签"昵称:" + 输入框 + "建立主机"按钮</td></tr>
+    <tr><td class="label">主机列表</td><td>高 220px，白底，边框 #aaa</td></tr>
+    <tr><td class="label">刷新</td><td>居中按钮 "刷新主机"</td></tr>
+    <tr><td class="label">底部</td><td>左侧：主机信息(IP+端口)、主机密码；右侧：加入游戏、取消</td></tr>
+  </table>
+</div>
+
+<!-- ==================== 3. 建立主机 ==================== -->
+<div class="section">
+  <h2>3. 建立主机（wCreateHost）</h2>
+  <style>
+    .host-wrap { width: 400px; }
+    .host-body {
+      padding: 8px 12px;
+      display: flex; flex-direction: column; gap: 5px;
+    }
+    .host-row {
+      display: flex; align-items: center; gap: 6px;
+      min-height: 22px;
+    }
+    .host-row .yg-label { width: 90px; text-align: right; }
+    .host-row .yg-input, .host-row .yg-select {
+      flex: 1; height: 22px;
+      border: 1px solid #888; background: #fff;
+      padding: 0 4px; font-size: 12px;
+    }
+    .host-hint {
+      font-size: 11px; color: #666;
+      padding: 2px 0 2px 96px;
+    }
+    .host-check-row {
+      display: flex; gap: 20px;
+      padding-left: 96px;
+    }
+    .host-check-row label {
+      font-size: 12px; display: flex; align-items: center; gap: 4px;
+    }
+    .host-check-row input[type="checkbox"] {
+      width: 14px; height: 14px;
+    }
+    .host-bottom {
+      display: flex; gap: 8px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #aaa;
+    }
+    .host-bottom-left {
+      flex: 1;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .host-bottom-right {
+      display: flex; flex-direction: column; gap: 4px;
+      width: 80px;
+    }
+  </style>
+  <div class="yg-window host-wrap">
+    <div class="yg-title">建立主机</div>
+    <div class="host-body">
+      <div class="host-row">
+        <span class="yg-label">禁限卡表:</span>
+        <select class="yg-select"><option>2025.10</option></select>
+      </div>
+      <div class="host-row">
+        <span class="yg-label">卡片允许:</span>
+        <select class="yg-select"><option>O C G</option></select>
+      </div>
+      <div class="host-row">
+        <span class="yg-label">决斗模式:</span>
+        <select class="yg-select"><option>单局模式</option></select>
+      </div>
+      <div class="host-row">
+        <span class="yg-label">每回合时间:</span>
+        <input class="yg-input" value="180" style="width:60px; flex:none;">
+      </div>
+      <div class="host-hint">↓额外选项（无特殊要求请勿修改）</div>
+      <div class="host-row">
+        <span class="yg-label">规则:</span>
+        <select class="yg-select"><option>大师规则（2020）</option></select>
+      </div>
+      <div class="host-check-row">
+        <label><input type="checkbox">不检查卡组</label>
+        <label><input type="checkbox">不洗切卡组</label>
+      </div>
+      <div class="host-row">
+        <span class="yg-label">初始基本分:</span>
+        <input class="yg-input" value="8000" style="width:60px; flex:none;">
+      </div>
+      <div class="host-row">
+        <span class="yg-label">初始手卡数:</span>
+        <input class="yg-input" value="5" style="width:60px; flex:none;">
+      </div>
+      <div class="host-row">
+        <span class="yg-label">每回合抽卡:</span>
+        <input class="yg-input" value="1" style="width:60px; flex:none;">
+      </div>
+      <div style="flex:1;"></div>
+      <div class="host-bottom">
+        <div class="host-bottom-left">
+          <div class="host-row">
+            <span class="yg-label">主机名称:</span>
+            <input class="yg-input" value="Game">
+          </div>
+          <div class="host-row">
+            <span class="yg-label">主机密码:</span>
+            <input class="yg-input">
+          </div>
+        </div>
+        <div class="host-bottom-right">
+          <div class="yg-btn">确定</div>
+          <div class="yg-btn">取消</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <table class="spec-table">
+    <tr><th class="label">项</th><th>规格</th></tr>
+    <tr><td class="label">窗口尺寸</td><td>400 × 约 400</td></tr>
+    <tr><td class="label">窗口位置</td><td>屏幕水平居中，垂直约 22% 顶部留白</td></tr>
+    <tr><td class="label">标题栏</td><td>高 24px，深蓝渐变，白字 "建立主机"</td></tr>
+    <tr><td class="label">基础选项</td><td>禁限卡表 / 卡片允许 / 决斗模式 / 每回合时间</td></tr>
+    <tr><td class="label">额外选项提示</td><td>灰色小字 "↓额外选项（无特殊要求请勿修改）"</td></tr>
+    <tr><td class="label">额外选项</td><td>规则下拉框 + 两个复选框（不检查卡组/不洗切卡组）+ 初始LP/手卡/抽卡</td></tr>
+    <tr><td class="label">底部</td><td>左侧：主机名称+密码输入框；右侧：确定/取消按钮</td></tr>
+  </table>
+</div>
+
+<!-- ==================== 4. 决斗准备（大厅） ==================== -->
+<div class="section">
+  <h2>4. 决斗准备（wHostPrepare）</h2>
+  <style>
+    .lobby-wrap { width: 480px; }
+    .lobby-body {
+      padding: 8px 12px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .lobby-top {
+      display: flex; gap: 12px;
+    }
+    .lobby-left {
+      width: 180px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .lobby-left-title {
+      font-size: 12px; font-weight: bold; color: #222;
+      padding: 2px 0;
+    }
+    .lobby-player-row {
+      display: flex; align-items: center; gap: 4px;
+    }
+    .lobby-player-row .kick-btn {
+      width: 18px; height: 18px;
+      background: #ccc; border: 1px solid #888;
+      font-size: 10px; display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+    .lobby-player-row .yg-input {
+      flex: 1; height: 20px;
+    }
+    .lobby-observer-btn {
+      margin-top: 4px;
+    }
+    .lobby-right {
+      flex: 1;
+      display: flex; flex-direction: column; gap: 2px;
+      font-size: 12px; color: #222;
+      padding-top: 20px;
+    }
+    .lobby-right .divider {
+      border-top: 1px solid #888;
+      margin: 4px 0;
+    }
+    .lobby-ready-btn {
+      margin-top: 8px;
+      display: flex; justify-content: center;
+    }
+    .lobby-ready-btn .yg-btn { width: 100px; }
+
+    .lobby-deck-row {
+      display: flex; align-items: center; gap: 6px;
+      margin-top: 4px;
+    }
+    .lobby-deck-row .yg-label { width: 60px; font-size: 12px; }
+    .lobby-deck-row .yg-select {
+      height: 22px; border: 1px solid #888; background: #fff;
+      padding: 0 4px; font-size: 12px;
+    }
+
+    .lobby-bottom-btns {
+      display: flex; justify-content: center; gap: 12px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #aaa;
+    }
+    .lobby-bottom-btns .yg-btn { width: 100px; }
+  </style>
+  <div class="yg-window lobby-wrap">
+    <div class="yg-title">决斗准备</div>
+    <div class="lobby-body">
+      <div class="lobby-top">
+        <!-- 左侧：决斗者列表 -->
+        <div class="lobby-left">
+          <div class="lobby-left-title">决斗者</div>
+          <div class="lobby-player-row">
+            <div class="kick-btn">X</div>
+            <input class="yg-input" value="111">
+            <input type="checkbox" style="width:14px;height:14px;">
+          </div>
+          <div class="lobby-player-row">
+            <div class="kick-btn">X</div>
+            <input class="yg-input">
+            <input type="checkbox" style="width:14px;height:14px;">
+          </div>
+          <div class="lobby-observer-btn">
+            <div class="yg-btn">→观战</div>
+          </div>
+        </div>
+        <!-- 右侧：房间信息 -->
+        <div class="lobby-right">
+          <div>禁限卡表: 2025.10</div>
+          <div>卡片允许: O C G</div>
+          <div>决斗模式: 单局模式</div>
+          <div>每回合时间: 180</div>
+          <div class="divider"></div>
+          <div>初始基本分: 8000</div>
+          <div>初始手卡数: 5</div>
+          <div>每回合抽卡: 1</div>
+          <div class="lobby-ready-btn">
+            <div class="yg-btn">准备</div>
+          </div>
+        </div>
+      </div>
+      <!-- 底部：卡组选择 -->
+      <div class="lobby-deck-row">
+        <span class="yg-label">卡组选择:</span>
+        <select class="yg-select"><option>未分类卡组</option></select>
+        <select class="yg-select"><option>A Starter Deck</option></select>
+      </div>
+      <!-- 底部按钮 -->
+      <div class="lobby-bottom-btns">
+        <div class="yg-btn">开始</div>
+        <div class="yg-btn">退出</div>
+      </div>
+    </div>
+  </div>
+  <table class="spec-table">
+    <tr><th class="label">项</th><th>规格</th></tr>
+    <tr><td class="label">窗口尺寸</td><td>480 × 约 320</td></tr>
+    <tr><td class="label">窗口位置</td><td>屏幕水平居中，垂直约 28% 顶部留白</td></tr>
+    <tr><td class="label">标题栏</td><td>高 24px，深蓝渐变，白字 "决斗准备"</td></tr>
+    <tr><td class="label">左侧</td><td>"决斗者"标题 + 2行玩家（X踢人按钮+昵称输入框+勾选框）+ "→观战"按钮</td></tr>
+    <tr><td class="label">右侧</td><td>房间信息（卡表/允许/模式/时间/分隔线/LP/手卡/抽卡）+ "准备"按钮</td></tr>
+    <tr><td class="label">卡组选择</td><td>标签"卡组选择:" + 两个下拉框（卡组分类 + 具体卡组）</td></tr>
+    <tr><td class="label">底部按钮</td><td>"开始" + "退出" 两个按钮居中排列</td></tr>
+  </table>
+</div>
+
+</body>
+</html>
