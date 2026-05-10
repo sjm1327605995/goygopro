@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>YGOPro 主菜单布局原型</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #2a3b5c url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 874"><rect fill="%2367a8e8" width="1400" height="400"/><rect fill="%23808080" y="400" width="1400" height="474"/></svg>') no-repeat center/cover;
+    width: 100vw; height: 100vh;
+    display: flex; justify-content: center; align-items: flex-start;
+    padding-top: 18vh;
+    font-family: "Microsoft YaHei", sans-serif;
+  }
+
+  /* 主窗口 - 模拟 C++ wMainMenu */
+  .menu-window {
+    width: 320px;
+    background: linear-gradient(180deg, #d0d0d0 0%, #c0c0c0 100%);
+    border: 2px solid #808080;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+
+  /* 标题栏 */
+  .title-bar {
+    height: 26px;
+    background: linear-gradient(180deg, #4a6fa5 0%, #2a4a7a 100%);
+    color: #fff;
+    font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    border-bottom: 1px solid #1a3a6a;
+    text-shadow: 1px 1px 0 #000;
+  }
+
+  /* 按钮区域 */
+  .btn-area {
+    padding: 8px 12px 10px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+
+  /* 金属质感按钮 */
+  .menu-btn {
+    height: 32px;
+    background: linear-gradient(180deg, #e8e8e8 0%, #c8c8c8 50%, #b0b0b0 100%);
+    border: 1px solid #888;
+    border-radius: 2px;
+    color: #222;
+    font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(0,0,0,0.15);
+  }
+  .menu-btn:hover {
+    background: linear-gradient(180deg, #f0f0f0 0%, #d8d8d8 50%, #c0c0c0 100%);
+  }
+  .menu-btn:active {
+    background: linear-gradient(180deg, #b0b0b0 0%, #c8c8c8 50%, #e0e0e0 100%);
+  }
+
+  /* 规格说明 */
+  .specs {
+    position: fixed; bottom: 20px; left: 20px;
+    background: rgba(0,0,0,0.75); color: #0f0;
+    padding: 16px; border-radius: 6px;
+    font-family: Consolas, monospace; font-size: 12px;
+    max-width: 400px; line-height: 1.6;
+  }
+  .specs h3 { color: #fff; margin-bottom: 8px; }
+  .specs td { padding: 2px 8px; }
+  .specs .label { color: #aaa; }
+</style>
+</head>
+<body>
+
+<!-- 主菜单窗口 -->
+<div class="menu-window">
+  <div class="title-bar">YGOPro Version:1.036.2</div>
+  <div class="btn-area">
+    <div class="menu-btn">联机模式</div>
+    <div class="menu-btn">单人模式</div>
+    <div class="menu-btn">观看录像</div>
+    <div class="menu-btn">编辑卡组</div>
+    <div class="menu-btn">退出</div>
+  </div>
+</div>
+
+<!-- 规格说明 -->
+<div class="specs">
+  <h3>主菜单布局规格（参考 C++ wMainMenu + 截图）</h3>
+  <table>
+    <tr><td class="label">窗口尺寸</td><td>宽 320 × 高 约 220（tenon 实现用 320×220）</td></tr>
+    <tr><td class="label">窗口位置</td><td>屏幕水平居中，垂直约 18% 顶部留白</td></tr>
+    <tr><td class="label">标题栏</td><td>高 26px，深蓝渐变，白字居中，版本号</td></tr>
+    <tr><td class="label">内容区背景</td><td>银灰渐变 #d0d0d0 → #c0c0c0，边框 #808080</td></tr>
+    <tr><td class="label">按钮数量</td><td>5 个（联机/单人/录像/编辑/退出）</td></tr>
+    <tr><td class="label">按钮尺寸</td><td>宽 296 × 高 32（窗口内边距 12px）</td></tr>
+    <tr><td class="label">按钮间距</td><td>垂直间距 6px</td></tr>
+    <tr><td class="label">按钮样式</td><td>银灰金属渐变，深灰边框，2px 圆角，文字居中</td></tr>
+  </table>
+</div>
+
+</body>
+</html>

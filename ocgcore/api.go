@@ -16,6 +16,7 @@ type OCGApi struct {
 	databaseFile      string
 	buffer            []byte
 	CreateDuel        func(seed int32) uintptr
+	CreateDuelV2      func(seedSequence *[8]uint32) uintptr
 	StartDuel         func(pduel uintptr, options int32)
 	EndDuel           func(pduel uintptr)
 	SetPlayerInfo     func(pduel uintptr, playerId, LP, startCount, drawCount int32)
@@ -104,6 +105,7 @@ func init() {
 
 func registerFunctions(api *OCGApi, libc uintptr) {
 	purego.RegisterLibFunc(&api.CreateDuel, libc, "create_duel")
+	purego.RegisterLibFunc(&api.CreateDuelV2, libc, "create_duel_v2")
 	purego.RegisterLibFunc(&api.StartDuel, libc, "start_duel")
 	purego.RegisterLibFunc(&api.EndDuel, libc, "end_duel")
 	purego.RegisterLibFunc(&api.SetPlayerInfo, libc, "set_player_info")

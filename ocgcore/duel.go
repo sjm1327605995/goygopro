@@ -29,6 +29,12 @@ func NewDuel(seed uint32) *Duel {
 	return newDuel(duelPtr)
 }
 
+// NewDuelV2 使用种子序列创建新的决斗实例（v2 API）
+func NewDuelV2(seedSequence [8]uint32) *Duel {
+	duelPtr := API.CreateDuelV2(&seedSequence)
+	return newDuel(duelPtr)
+}
+
 func newDuel(duelPtr uintptr) *Duel {
 	if duelPtr == 0 {
 		return nil
