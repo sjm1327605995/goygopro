@@ -1,1 +1,22 @@
+# IDE
 .idea
+
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+server
+client
+
+# Test outputs
+*.txt
+!docs/**/*.md
+
+# Local data
+cards.cdb
+
+# OS
+.DS_Store
+Thumbs.db
