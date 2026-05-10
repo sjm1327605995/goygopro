@@ -43,7 +43,7 @@ func (s *SingleDuel) Chat(dp *DuelPlayer, pData []byte) {
 	var buff bytes.Buffer
 
 	sccSize := s.CreateChatPacket(pData, &buff, uint16(dp.Type))
-	if sccSize > 0 {
+	if sccSize == 0 {
 		return
 	}
 	s.SendPacketDataToPlayer(s.players[0], network.STOC_CHAT, buff.Bytes())
@@ -172,6 +172,7 @@ func (s *SingleDuel) LeaveGame(dp *DuelPlayer) {
 	if dp == s.HostPlayer {
 		s.EndDuel()
 		s.StopServer()
+		DefaultManager.RemoveRoom(s.RoomID)
 	} else if dp.Type == network.NETPLAYER_TYPE_OBSERVER {
 		delete(s.Observers, dp.ID)
 		if s.DuelStage == network.DUEL_STAGE_BEGIN {
@@ -217,7 +218,7 @@ func (s *SingleDuel) LeaveGame(dp *DuelPlayer) {
 				wbuf := make([]byte, 3)
 				wbuf[0] = network.MSG_WIN
 				wbuf[1] = 1 - dp.Type
-				wbuf[2] = 0x24
+				wbuf[2] = 0x4
 				s.SendPacketDataToPlayer(s.players[0], network.MSG_WIN, wbuf)
 				s.ReSendToPlayer(s.players[1])
 				for _, v := range s.Observers {
@@ -257,14 +258,14 @@ func (s *SingleDuel) ToDuelList(dp *DuelPlayer) {
 	var scwc protocol.STOCHsWatchChange
 	scwc.WatchCount = uint16(len(s.Observers))
 	s.SendPacketDataToPlayer(s.players[0], network.STOC_HS_PLAYER_ENTER, scpe)
-	s.SendPacketDataToPlayer(s.players[0], network.STOC_HS_PLAYER_ENTER, scwc)
+	s.SendPacketDataToPlayer(s.players[0], network.STOC_HS_WATCH_CHANGE, scwc)
 	if s.players[1] != nil {
 		s.SendPacketDataToPlayer(s.players[1], network.STOC_HS_PLAYER_ENTER, scpe)
-		s.SendPacketDataToPlayer(s.players[1], network.STOC_HS_PLAYER_ENTER, scwc)
+		s.SendPacketDataToPlayer(s.players[1], network.STOC_HS_WATCH_CHANGE, scwc)
 	}
 	for _, v := range s.Observers {
 		s.SendPacketDataToPlayer(v, network.STOC_HS_PLAYER_ENTER, scpe)
-		s.SendPacketDataToPlayer(v, network.STOC_HS_PLAYER_ENTER, scwc)
+		s.SendPacketDataToPlayer(v, network.STOC_HS_WATCH_CHANGE, scwc)
 	}
 	var sctc protocol.STOCTypeChange
 	sctc.Type = condition.Ternary[bool, uint8](dp == s.HostPlayer, 0x10, 0) | dp.Type
@@ -497,10 +498,13 @@ func (s *SingleDuel) TPResult(dp *DuelPlayer, tp byte) {
 
 	var rnd = rand.New(rand.NewSource(int64(seed)))
 	rh := ExtendedReplayHeader{}
-	rh.Base.ID = REPLAY_ID_YRP1
+	rh.Base.ID = REPLAY_ID_YRP2
 	rh.Base.Version = PRO_VERSION
 	rh.Base.Flag = REPLAY_UNIFORM
 	rh.Base.Seed = seed
+	for i := 0; i < SEED_COUNT; i++ {
+		rh.SeedSequence[i] = rand.Uint32()
+	}
 	rh.Base.StartTime = uint32(time.Now().Unix())
 	s.lastReplay = NewReplay()
 	s.lastReplay.BeginRecord()
@@ -525,7 +529,7 @@ func (s *SingleDuel) TPResult(dp *DuelPlayer, tp byte) {
 	}
 	s.timeLimit[0], s.timeLimit[1] = int16(s.HostInfo.TimeLimit), int16(s.HostInfo.TimeLimit)
 
-	s.Duel = ocgcore.NewDuel(seed)
+	s.Duel = ocgcore.NewDuelV2(rh.SeedSequence)
 	s.Duel.InitPlayers(s.HostInfo.StartLp, int32(s.HostInfo.StartHand), int32(s.HostInfo.DrawCount))
 
 	opt := uint32(s.HostInfo.DuelRule) << 16
@@ -575,9 +579,7 @@ func (s *SingleDuel) TPResult(dp *DuelPlayer, tp byte) {
 	}
 	s.RefreshExtraDef(0)
 	s.RefreshExtraDef(1)
-	fmt.Println("opt", opt)
-	opt = 5
-	s.Duel.Start(5)
+	s.Duel.Start(int32(opt))
 	if s.HostInfo.TimeLimit != 0 {
 		s.timeElapsed = 0
 		s.ETimer = timerWheel.AfterFunc(time.Second, s.SingleTimer)
@@ -1364,11 +1366,11 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			s.RefreshSzoneDef(0)
 			s.RefreshSzoneDef(1)
 		case ocgcore.MSG_FLIPSUMMONING:
-			// 反转召唤中消息：处理反转召唤过程
-			// 跳过8字节的反转召唤数据
+			cc := pbuf.At(4)
+			cl := pbuf.At(5)
+			cs := pbuf.At(6)
+			s.RefreshSingle(cc, cl, cs, 0xf81fff)
 			pbuf.Next(8)
-
-			// 发送反转召唤中消息给所有玩家和观察者
 			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
@@ -1389,18 +1391,10 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			s.RefreshSzoneDef(0)
 			s.RefreshSzoneDef(1)
 		case ocgcore.MSG_CHAINING:
-			var msg protocol.ChainingMsg
-			if err := pbuf.Unpack(&msg); err != nil {
-				panic(err)
-			}
-			data := append([]byte{engType}, utils.PackGameMsg(&msg)...)
-			// 发送连锁发动中消息
-			s.SendPacketDataToPlayer(s.players[msg.CC], network.STOC_GAME_MSG, data)
-			if msg.CP&ocgcore.POS_FACEDOWN != 0 {
-				msg.Code = 0
-			}
-			data = append([]byte{engType}, utils.PackGameMsg(&msg)...)
-			s.SendPacketDataToPlayer(s.players[1-msg.CC], network.STOC_GAME_MSG, data)
+			// 连锁发动中消息：直接广播给所有玩家和观察者
+			pbuf.Next(16)
+			s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
+			s.ReSendToPlayer(s.players[1])
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
@@ -1741,17 +1735,21 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 }
 func (s *SingleDuel) WaitforResponse(player byte) {
 	s.lastResponse = player
-	s.players[player].State = network.CTOS_RESPONSE
+	msgWaiting := []byte{ocgcore.MSG_WAITING}
+	s.SendPacketDataToPlayer(s.players[1-player], network.STOC_GAME_MSG, msgWaiting)
 	if s.HostInfo.TimeLimit != 0 {
 		s.timeElapsed = 0
 		var sctl protocol.STOCTimeLimit
 		sctl.Player = player
 		sctl.LeftTime = uint16(s.timeLimit[player])
 		s.SendPacketDataToPlayer(s.players[0], network.STOC_TIME_LIMIT, sctl)
-		s.ReSendToPlayer(s.players[1])
+		s.SendPacketDataToPlayer(s.players[1], network.STOC_TIME_LIMIT, sctl)
 		for _, v := range s.Observers {
 			s.ReSendToPlayer(v)
 		}
+		s.players[player].State = network.CTOS_TIME_CONFIRM
+	} else {
+		s.players[player].State = network.CTOS_RESPONSE
 	}
 }
 func (s *SingleDuel) TimeConfirm(dp *DuelPlayer) {
@@ -1806,10 +1804,10 @@ func (s *SingleDuel) EndDuel() {
 	pBuf.Write(s.lastReplay.pheader)
 	pBuf.Write(s.lastReplay.compData[:s.lastReplay.compSize])
 	s.SendPacketDataToPlayer(s.players[0], network.STOC_REPLAY, replayBuf[:pBuf.Offset()])
-	//s.ReSendToPlayer(s.players[1]);
-	//for _, v := range s.Observers {
-	//	s.ReSendToPlayer(v)
-	//}
+	s.ReSendToPlayer(s.players[1])
+	for _, v := range s.Observers {
+		s.ReSendToPlayer(v)
+	}
 	s.Duel.End()
 	if s.ETimer != nil {
 		s.ETimer.Stop()

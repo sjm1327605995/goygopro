@@ -28,11 +28,14 @@ func (s *Server) OnBoot(eng gnet.Engine) (action gnet.Action) {
 	logging.Infof("running server on %s with multi-core=%t",
 		fmt.Sprintf("%s://%s", s.network, s.addr), s.multicore)
 	s.eng = eng
+	duel.NetServerEngine = &eng
 	return
 }
 
 func (s *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
-
+	if !duel.AcceptingConnections {
+		return nil, gnet.Close
+	}
 	atomic.AddInt32(&s.connected, 1)
 	codec := new(duel.SimpleCodec)
 	codec.Player = &duel.DuelPlayer{
@@ -115,6 +118,14 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	bs, err := duel.StartBroadcast(uint16(port))
+	if err != nil {
+		logging.Infof("failed to start broadcast: %v", err)
+	} else {
+		duel.BroadcastInstance = bs
+		defer bs.Stop()
+	}
+
 	err = gnet.Run(ss, ss.network+"://"+ss.addr, gnet.WithMulticore(multicore))
 	logging.Infof("server exits with error: %v", err)
 }

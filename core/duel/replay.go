@@ -1,12 +1,16 @@
 package duel
 
 import (
+	"bytes"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/sjm1327605995/goygopro/protocol"
+	"github.com/ulikunitz/xz/lzma"
 )
 
 // Replay flags
@@ -144,11 +148,59 @@ func (r *Replay) EndRecord() {
 	}
 	r.fp.Close()
 	r.pheader.Base.DataSize = uint32(r.replaySize)
-	r.pheader.Base.Flag |= REPLAY_COMPRESSED
-	// TODO: LZMA compression
+
+	// LZMA compression using ulikunitz/xz/lzma
 	// C++: LzmaCompress(compData, &comp_size, replayData, replay_size, pheader.Base.Props, &propsize, 5, 0x1U << 24, 3, 0, 2, 32, 1)
-	// Go: Need github.com/ulikunitz/xz/lzma or similar
-	// For now, leave uncompressed
+	var buf bytes.Buffer
+	cfg := lzma.WriterConfig{
+		Properties:   &lzma.Properties{LC: 3, LP: 0, PB: 2},
+		DictCap:      1 << 24,
+		SizeInHeader: false,
+	}
+	w, err := cfg.NewWriter(&buf)
+	if err != nil {
+		// fallback to uncompressed
+		r.pheader.Base.Flag &^= REPLAY_COMPRESSED
+		copy(r.compData, r.replayData[:r.replaySize])
+		r.compSize = r.replaySize
+		r.isRecording = false
+		return
+	}
+	if _, err = w.Write(r.replayData[:r.replaySize]); err != nil {
+		w.Close()
+		r.pheader.Base.Flag &^= REPLAY_COMPRESSED
+		copy(r.compData, r.replayData[:r.replaySize])
+		r.compSize = r.replaySize
+		r.isRecording = false
+		return
+	}
+	if err = w.Close(); err != nil {
+		r.pheader.Base.Flag &^= REPLAY_COMPRESSED
+		copy(r.compData, r.replayData[:r.replaySize])
+		r.compSize = r.replaySize
+		r.isRecording = false
+		return
+	}
+
+	output := buf.Bytes()
+	if len(output) < 13 || len(output)-8 > MAX_COMP_SIZE {
+		// compressed data too large or error, fallback to uncompressed
+		r.pheader.Base.Flag &^= REPLAY_COMPRESSED
+		copy(r.compData, r.replayData[:r.replaySize])
+		r.compSize = r.replaySize
+		r.isRecording = false
+		return
+	}
+
+	// output format: 13-byte LZMA file header + compressed data
+	// header: 1 byte props + 4 bytes dict size + 8 bytes uncompressed size
+	// YGOPro expects: 5 bytes props (props[0] + dict size) + raw compressed data
+	r.pheader.Base.Flag |= REPLAY_COMPRESSED
+	copy(r.pheader.Base.Props[:], output[0:5])
+	compLen := len(output) - 13
+	copy(r.compData, output[0:5])
+	copy(r.compData[5:], output[13:])
+	r.compSize = 5 + compLen
 	r.isRecording = false
 }
 
@@ -168,7 +220,12 @@ func (r *Replay) SaveReplay(baseName string) bool {
 	}
 	defer rfp.Close()
 	
-	binary.Write(rfp, binary.LittleEndian, r.pheader)
+	// Write header: YRP1 writes only Base, YRP2 writes full ExtendedReplayHeader
+	if r.pheader.Base.ID == REPLAY_ID_YRP2 {
+		binary.Write(rfp, binary.LittleEndian, r.pheader)
+	} else {
+		binary.Write(rfp, binary.LittleEndian, r.pheader.Base)
+	}
 	rfp.Write(r.compData[:r.compSize])
 	return true
 }
@@ -204,11 +261,17 @@ func (r *Replay) OpenReplay(name string) bool {
 	}
 	
 	if r.pheader.Base.ID == REPLAY_ID_YRP2 {
-		var extra ExtendedReplayHeader
+		// Read only the extended fields (after Base)
+		var extra struct {
+			SeedSequence  [SEED_COUNT]uint32
+			HeaderVersion uint32
+			Value1        uint32
+			Value2        uint32
+			Value3        uint32
+		}
 		if err := binary.Read(rfp, binary.LittleEndian, &extra); err != nil {
 			return false
 		}
-		// Copy extended fields
 		r.pheader.SeedSequence = extra.SeedSequence
 		r.pheader.HeaderVersion = extra.HeaderVersion
 		r.pheader.Value1 = extra.Value1
@@ -217,11 +280,33 @@ func (r *Replay) OpenReplay(name string) bool {
 	}
 	
 	if r.pheader.Base.Flag&REPLAY_COMPRESSED != 0 {
-		// TODO: LZMA decompression
-		// For now, just read raw data
 		r.compSize, _ = rfp.Read(r.compData)
 		r.replaySize = int(r.pheader.Base.DataSize)
-		// copy(r.replayData, decompressedData)
+
+		// LZMA decompression
+		// compData format: 5 bytes props + compressed data
+		// Construct fake LZMA file header for ulikunitz/xz/lzma.Reader
+		var fakeHeader [13]byte
+		copy(fakeHeader[0:5], r.pheader.Base.Props[:5])
+		for i := 5; i < 13; i++ {
+			fakeHeader[i] = 0xFF
+		}
+		fullData := append(fakeHeader[:], r.compData[5:r.compSize]...)
+		reader, err := lzma.NewReader(bytes.NewReader(fullData))
+		if err != nil {
+			r.Reset()
+			return false
+		}
+		var decompressed bytes.Buffer
+		if _, err := decompressed.ReadFrom(reader); err != nil {
+			r.Reset()
+			return false
+		}
+		if decompressed.Len() != r.replaySize {
+			r.Reset()
+			return false
+		}
+		copy(r.replayData, decompressed.Bytes())
 	} else {
 		r.replaySize, _ = rfp.Read(r.replayData)
 		r.compSize = 0
@@ -275,9 +360,14 @@ func (r *Replay) ReadName() string {
 	if !r.ReadData(buffer[:], 40) {
 		return ""
 	}
-	// Convert UTF-16 to string
-	// TODO: proper UTF-16 conversion
-	return ""
+	// Convert UTF-16 LE to string
+	runes := utf16.Decode(buffer[:])
+	// Trim null terminators
+	end := len(runes)
+	for end > 0 && runes[end-1] == 0 {
+		end--
+	}
+	return string(runes[:end])
 }
 
 func (r *Replay) ReadHeader() ExtendedReplayHeader {
@@ -345,8 +435,52 @@ func (r *Replay) SaveDeck(index int, filename string) bool {
 	if index >= len(r.decks) {
 		return false
 	}
-	// TODO: implement deck saving
-	return false
+	deck := r.decks[index]
+	// C++ reverses main/extra before saving — follow the same behavior
+	// so the exported .ydk matches the original deck order.
+	main := make([]uint32, len(deck.Main))
+	copy(main, deck.Main)
+	for i, j := 0, len(main)-1; i < j; i, j = i+1, j-1 {
+		main[i], main[j] = main[j], main[i]
+	}
+	extra := make([]uint32, len(deck.Extra))
+	copy(extra, deck.Extra)
+	for i, j := 0, len(extra)-1; i < j; i, j = i+1, j-1 {
+		extra[i], extra[j] = extra[j], extra[i]
+	}
+
+	dir := filepath.Dir(filename)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return false
+		}
+	}
+	fp, err := os.Create(filename)
+	if err != nil {
+		return false
+	}
+	defer fp.Close()
+
+	if _, err := fp.WriteString("#created by ...\n#main\n"); err != nil {
+		return false
+	}
+	for _, code := range main {
+		if _, err := fp.WriteString(fmt.Sprintf("%d\n", code)); err != nil {
+			return false
+		}
+	}
+	if _, err := fp.WriteString("#extra\n"); err != nil {
+		return false
+	}
+	for _, code := range extra {
+		if _, err := fp.WriteString(fmt.Sprintf("%d\n", code)); err != nil {
+			return false
+		}
+	}
+	if _, err := fp.WriteString("!side\n"); err != nil {
+		return false
+	}
+	return true
 }
 
 func (r *Replay) ReadInfo() bool {
