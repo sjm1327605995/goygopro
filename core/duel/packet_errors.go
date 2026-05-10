@@ -74,3 +74,7 @@ func ErrInvalidPlayerState(pktType uint8, state uint8) *PacketError {
 func ErrAlreadyInGameAction() *PacketError {
 	return NewPacketError(ErrAlreadyInGame, "player already in a game")
 }
+
+func ErrJoinError() *PacketError {
+	return NewPacketError(ErrNotInGame, "room not found or join error")
+}

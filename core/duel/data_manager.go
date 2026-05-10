@@ -1,7 +1,6 @@
 package duel
 
 import (
-	"fmt"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sjm1327605995/goygopro/ocgcore"
@@ -114,7 +113,6 @@ const (
 func (d *DataManager) GetData(code uint32) *ocgcore.CardData {
 	data, has := datas[code]
 	if has {
-		fmt.Println("type=======>", data.Type, !(data.Type&TYPE_NORMAL != 0) || (data.Type&TYPE_PENDULUM != 0))
 		return &data.CardData
 	}
 	return nil

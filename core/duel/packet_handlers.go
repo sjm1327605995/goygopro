@@ -72,7 +72,21 @@ func HandleCreateGame(c *PacketContext) {
 	copy(mode.BaseMode().Pass[:], pkt.Pass[:])
 
 	roomId := string(utf16.Decode(pkt.Pass[:]))
-	room, _ := DefaultManager.JoinRoom(roomId, c.Player, mode)
+
+	// C++: if(dp->game || duel_mode) return;
+	// 玩家已在游戏中 或 服务器已有房间，拒绝创建
+	if DefaultManager.RoomCount() > 0 {
+		c.AbortWithError(ErrAlreadyInGameAction())
+		return
+	}
+
+	room, created := DefaultManager.CreateRoom(roomId, mode)
+	if !created {
+		c.AbortWithError(ErrAlreadyInGameAction())
+		return
+	}
+	mode.BaseMode().RoomID = roomId
+
 	c.Player.Game = room.DuelMode
 	c.Player.Game.JoinGame(c.Player, nil, true)
 }
@@ -83,9 +97,15 @@ func HandleCreateGame(c *PacketContext) {
 func HandleJoinGame(c *PacketContext) {
 	pkt := c.MustPayload().(*protocol.CTOSJoinGame)
 	roomId := string(utf16.Decode(pkt.Pass[:]))
-	room, isCreator := DefaultManager.JoinRoom(roomId, c.Player, nil)
+
+	room, exist := DefaultManager.GetRoom(roomId)
+	if !exist {
+		c.AbortWithError(ErrJoinError())
+		return
+	}
+
 	c.Player.Game = room.DuelMode
-	c.Player.Game.JoinGame(c.Player, pkt, isCreator)
+	c.Player.Game.JoinGame(c.Player, pkt, false)
 }
 
 // --------------------------------------------------

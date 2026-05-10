@@ -21,6 +21,7 @@ type TagDuel struct {
 	pplayer      [4]*DuelPlayer
 	curPlayer    [2]*DuelPlayer
 	ready        [4]bool
+	surrender    [4]bool
 	pDeck        [4]*Deck
 	DeckError    [4]uint32
 	handResult   [2]uint8
@@ -111,6 +112,7 @@ func (s *TagDuel) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCreator
 		} else {
 			pos = 3
 		}
+		scpe.Pos = pos
 		for i := 0; i < 4; i++ {
 			if s.players[i] != nil {
 				s.SendPacketDataToPlayer(s.players[i], network.STOC_HS_PLAYER_ENTER, scpe)
@@ -162,7 +164,8 @@ func (s *TagDuel) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCreator
 func (s *TagDuel) LeaveGame(dp *DuelPlayer) {
 	if dp == s.HostPlayer {
 		s.EndDuel()
-		// NetServer::StopServer()
+		s.StopServer()
+		DefaultManager.RemoveRoom(s.RoomID)
 	} else if dp.Type == network.NETPLAYER_TYPE_OBSERVER {
 		delete(s.Observers, dp.ID)
 		if s.DuelStage == network.DUEL_STAGE_BEGIN {
@@ -384,7 +387,7 @@ func (s *TagDuel) StartDuel(dp *DuelPlayer) {
 	if !s.ready[0] || !s.ready[1] || !s.ready[2] || !s.ready[3] {
 		return
 	}
-	// NetServer::StopListen()
+	s.StopListen()
 	for i := 0; i < 4; i++ {
 		s.SendPacketToPlayer(s.players[i], network.STOC_DUEL_START)
 	}
@@ -396,13 +399,13 @@ func (s *TagDuel) StartDuel(dp *DuelPlayer) {
 	pbuf := utils.NewYGOBuffer(deckbuff[:], binary.LittleEndian)
 	pbuf.Write(uint16(len(s.pDeck[0].Main)), uint16(len(s.pDeck[0].Extra)), uint16(len(s.pDeck[0].Side)))
 	pbuf.Write(uint16(len(s.pDeck[2].Main)), uint16(len(s.pDeck[2].Extra)), uint16(len(s.pDeck[2].Side)))
-	s.SendPacketDataToPlayer(s.players[0], network.STOC_DECK_COUNT, deckbuff[:6])
+	s.SendPacketDataToPlayer(s.players[0], network.STOC_DECK_COUNT, deckbuff[:12])
 	s.ReSendToPlayer(s.players[1])
 	var tempbuff [6]byte
 	copy(tempbuff[:], deckbuff[:6])
 	copy(deckbuff[:6], deckbuff[6:12])
 	copy(deckbuff[6:12], tempbuff[:])
-	s.SendPacketDataToPlayer(s.players[2], network.STOC_DECK_COUNT, deckbuff[:6])
+	s.SendPacketDataToPlayer(s.players[2], network.STOC_DECK_COUNT, deckbuff[:12])
 	s.ReSendToPlayer(s.players[3])
 	s.SendPacketToPlayer(s.players[0], network.STOC_SELECT_HAND)
 	s.ReSendToPlayer(s.players[2])
@@ -483,7 +486,27 @@ func (s *TagDuel) TPResult(dp *DuelPlayer, tp byte) {
 	s.curPlayer[1] = s.players[3]
 	dp.State = network.CTOS_RESPONSE
 	seed := rand.Uint32()
+
 	var rnd = rand.New(rand.NewSource(int64(seed)))
+	rh := ExtendedReplayHeader{}
+	rh.Base.ID = REPLAY_ID_YRP2
+	rh.Base.Version = PRO_VERSION
+	rh.Base.Flag = REPLAY_UNIFORM | REPLAY_TAG
+	rh.Base.Seed = seed
+	for i := 0; i < SEED_COUNT; i++ {
+		rh.SeedSequence[i] = rand.Uint32()
+	}
+	rh.Base.StartTime = uint32(time.Now().Unix())
+	s.lastReplay = NewReplay()
+	s.lastReplay.BeginRecord()
+	s.lastReplay.WriteHeader(rh)
+	for i := 0; i < 4; i++ {
+		name := make([]byte, 40)
+		for j := 0; j < 20; j++ {
+			binary.LittleEndian.PutUint16(name[j*2:], s.players[i].Name[j])
+		}
+		s.lastReplay.WriteData(name, false)
+	}
 	if s.HostInfo.NoShuffleDeck == 0 {
 		rnd.Shuffle(len(s.pDeck[0].Main), func(i, j int) {
 			s.pDeck[0].Main[i], s.pDeck[0].Main[j] = s.pDeck[0].Main[j], s.pDeck[0].Main[i]
@@ -499,25 +522,34 @@ func (s *TagDuel) TPResult(dp *DuelPlayer, tp byte) {
 		})
 	}
 	s.timeLimit[0], s.timeLimit[1] = int16(s.HostInfo.TimeLimit), int16(s.HostInfo.TimeLimit)
-	s.Duel = ocgcore.NewDuel(seed)
+	s.Duel = ocgcore.NewDuelV2(rh.SeedSequence)
 	s.Duel.InitPlayers(s.HostInfo.StartLp, int32(s.HostInfo.StartHand), int32(s.HostInfo.DrawCount))
 	opt := uint32(s.HostInfo.DuelRule) << 16
 	if s.HostInfo.NoShuffleDeck != 0 {
 		opt |= ocgcore.DUEL_PSEUDO_SHUFFLE
 	}
 	opt |= ocgcore.DUEL_TAG_MODE
+	s.lastReplay.WriteInt32(s.HostInfo.StartLp, false)
+	s.lastReplay.WriteInt32(int32(s.HostInfo.StartHand), false)
+	s.lastReplay.WriteInt32(int32(s.HostInfo.DrawCount), false)
+	s.lastReplay.WriteInt32(int32(opt), false)
+	s.lastReplay.Flush()
 	slices.Reverse(s.pDeck[0].Main)
 	slices.Reverse(s.pDeck[1].Main)
 	slices.Reverse(s.pDeck[2].Main)
 	slices.Reverse(s.pDeck[3].Main)
 	loadSingle := func(deckContainer []*CardDataC, p uint8, location uint8) {
+		s.lastReplay.WriteInt32(int32(len(deckContainer)), false)
 		for _, v := range deckContainer {
 			s.Duel.AddCard(v.Code, int(p), location)
+			s.lastReplay.WriteInt32(int32(v.Code), false)
 		}
 	}
 	loadTag := func(deckContainer []*CardDataC, p uint8, location uint8) {
+		s.lastReplay.WriteInt32(int32(len(deckContainer)), false)
 		for _, v := range deckContainer {
-			s.Duel.AddCard(v.Code, int(p), location)
+			s.Duel.AddTagCard(v.Code, p, location)
+			s.lastReplay.WriteInt32(int32(v.Code), false)
 		}
 	}
 	loadSingle(s.pDeck[0].Main, 0, ocgcore.LOCATION_DECK)
@@ -603,26 +635,21 @@ func (s *TagDuel) Surrender(dp *DuelPlayer) {
 		return
 	}
 	player := dp.Type
-	teammate := uint8(1)
-	if player == 0 {
-		teammate = 1
-	} else if player == 1 {
-		teammate = 0
-	} else if player == 2 {
-		teammate = 3
-	} else {
-		teammate = 2
+	if s.surrender[player] {
+		return
 	}
-	_ = teammate
-	var winplayer uint8
-	if player < 2 {
-		winplayer = 1
-	} else {
-		winplayer = 0
+	teammateMap := [4]uint8{1, 0, 3, 2}
+	teammate := teammateMap[player]
+	if !s.surrender[teammate] {
+		s.surrender[player] = true
+		s.SendPacketToPlayer(s.players[player], network.STOC_TEAMMATE_SURRENDER)
+		s.SendPacketToPlayer(s.players[teammate], network.STOC_TEAMMATE_SURRENDER)
+		return
 	}
+	winPlayerMap := [4]uint8{1, 1, 0, 0}
 	var wbuf [3]byte
 	wbuf[0] = ocgcore.MSG_WIN
-	wbuf[1] = winplayer
+	wbuf[1] = winPlayerMap[player]
 	wbuf[2] = 0
 	s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, wbuf[:])
 	s.ReSendToPlayer(s.players[1])
@@ -703,7 +730,13 @@ func (s *TagDuel) Analyze(msgBuffer []byte) int {
 			_ = pbuf.Read(&player, &count)
 			pbuf.Next(int(count) * 11)
 			_ = pbuf.Read(&count)
-			pbuf.Next(int(count) * 8)
+			pbuf.Next(int(count)*8 + 2)
+			s.RefreshMzoneDef(0)
+			s.RefreshMzoneDef(1)
+			s.RefreshSzoneDef(0)
+			s.RefreshSzoneDef(1)
+			s.RefreshHandDef(0)
+			s.RefreshHandDef(1)
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.curPlayer[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
@@ -713,29 +746,43 @@ func (s *TagDuel) Analyze(msgBuffer []byte) int {
 				count  uint8
 			)
 			_ = pbuf.Read(&player, &count)
-			pbuf.Next(int(count) * 11)
+			pbuf.Next(int(count) * 7)
 			_ = pbuf.Read(&count)
-			pbuf.Next(int(count) * 8)
+			pbuf.Next(int(count) * 7)
 			_ = pbuf.Read(&count)
-			pbuf.Next(int(count) * 8)
+			pbuf.Next(int(count) * 7)
 			_ = pbuf.Read(&count)
-			pbuf.Next(int(count) * 8)
+			pbuf.Next(int(count) * 7)
 			_ = pbuf.Read(&count)
-			pbuf.Next(int(count) * 8)
+			pbuf.Next(int(count) * 7)
+			_ = pbuf.Read(&count)
+			pbuf.Next(int(count)*11 + 3)
+			s.RefreshMzoneDef(0)
+			s.RefreshMzoneDef(1)
+			s.RefreshSzoneDef(0)
+			s.RefreshSzoneDef(1)
+			s.RefreshHandDef(0)
+			s.RefreshHandDef(1)
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.curPlayer[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_SELECT_EFFECTYN:
 			var player uint8
 			_ = pbuf.Read(&player)
-			pbuf.Next(9)
+			pbuf.Next(12)
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.curPlayer[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
 		case ocgcore.MSG_SELECT_YESNO:
 			var player uint8
 			_ = pbuf.Read(&player)
-			pbuf.Next(5)
+			pbuf.Next(4)
+			s.WaitforResponse(player)
+			s.SendPacketDataToPlayer(s.curPlayer[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
+			return 1
+		case ocgcore.MSG_ROCK_PAPER_SCISSORS:
+			var player uint8
+			_ = pbuf.Read(&player)
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.curPlayer[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
@@ -811,9 +858,9 @@ func (s *TagDuel) Analyze(msgBuffer []byte) int {
 			pbuf.Next(7)
 			var count uint8
 			_ = pbuf.Read(&count)
-			pbuf.Next(int(count) * 13)
+			pbuf.Next(int(count) * 11)
 			_ = pbuf.Read(&count)
-			pbuf.Next(int(count) * 13)
+			pbuf.Next(int(count) * 11)
 			s.WaitforResponse(player)
 			s.SendPacketDataToPlayer(s.curPlayer[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			return 1
@@ -843,21 +890,41 @@ func (s *TagDuel) Analyze(msgBuffer []byte) int {
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
 			}
-		case ocgcore.MSG_CONFIRM_CARDS:
-			var msg protocol.ConfirmCardsMsg
-			if err := pbuf.Unpack(&msg); err != nil {
-				panic(err)
-			}
-			msg.HideForPlayer(msg.Player)
-			data := append([]byte{engType}, utils.PackGameMsg(&msg)...)
-			s.SendPacketDataToPlayer(s.curPlayer[msg.Player], network.STOC_GAME_MSG, data)
+		case ocgcore.MSG_CONFIRM_EXTRATOP:
+			var (
+				player uint8
+				count  uint8
+			)
+			_ = pbuf.Read(&player, &count)
+			pbuf.Next(int(count) * 7)
+			s.SendPacketDataToPlayer(s.curPlayer[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			for i := 0; i < 4; i++ {
-				if s.players[i] != s.curPlayer[msg.Player] {
-					s.SendPacketDataToPlayer(s.players[i], network.STOC_GAME_MSG, data)
+				if s.players[i] != s.curPlayer[player] {
+					s.SendPacketDataToPlayer(s.players[i], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 				}
 			}
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
+			}
+		case ocgcore.MSG_CONFIRM_CARDS:
+			var (
+				player uint8
+				n      uint8
+				count  uint8
+			)
+			_ = pbuf.Read(&player, &n, &count)
+			if pbuf.At(5) != ocgcore.LOCATION_DECK {
+				pbuf.Next(int(count) * 7)
+				s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
+				s.ReSendToPlayer(s.players[1])
+				s.ReSendToPlayer(s.players[2])
+				s.ReSendToPlayer(s.players[3])
+				for _, v := range s.Observers {
+					s.ReSendToPlayer(v)
+				}
+			} else {
+				pbuf.Next(int(count * 7))
+				s.SendPacketDataToPlayer(s.curPlayer[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 			}
 		case ocgcore.MSG_SHUFFLE_DECK:
 			var player uint8
@@ -1016,6 +1083,7 @@ func (s *TagDuel) Analyze(msgBuffer []byte) int {
 			if msg.CL&(uint8(ocgcore.LOCATION_GRAVE+ocgcore.LOCATION_OVERLAY)) == 0 && ((msg.CL&(uint8(ocgcore.LOCATION_DECK+ocgcore.LOCATION_HAND))) != 0 || (msg.CP&ocgcore.POS_FACEDOWN) != 0) {
 				msg.Code = 0
 			}
+			data = append([]byte{engType}, utils.PackGameMsg(&msg)...)
 			for i := 0; i < 4; i++ {
 				if s.players[i] != s.curPlayer[msg.CC] {
 					s.SendPacketDataToPlayer(s.players[i], network.STOC_GAME_MSG, data)
@@ -1505,11 +1573,12 @@ func (s *TagDuel) Analyze(msgBuffer []byte) int {
 		case ocgcore.MSG_TAG_SWAP:
 			var player uint8
 			_ = pbuf.Read(&player)
-			pbuf.Next(3)
+			pbuf.Next(1) // skip main_size
 			var ecount uint8
-			_ = pbuf.Read(&ecount)
+			_ = pbuf.Read(&ecount) // extra_size
+			pbuf.Next(1) // skip extra_p_count
 			var hcount uint8
-			_ = pbuf.Read(&hcount)
+			_ = pbuf.Read(&hcount) // hand_size
 			pbufw = pbuf.Clone()
 			pbufw.Next(4)
 			pbuf.Next(int(hcount)*4 + int(ecount)*4 + 4)
@@ -1563,6 +1632,8 @@ func (s *TagDuel) GetResponse(dp *DuelPlayer, msgBuffer []byte) {
 	}
 	resb := make([]byte, ocgcore.SIZE_RETURN_VALUE)
 	copy(resb, msgBuffer)
+	s.lastReplay.WriteData([]byte{uint8(len(msgBuffer))}, false)
+	s.lastReplay.WriteData(resb[:len(msgBuffer)], false)
 	s.Duel.SetResponseBytes(resb)
 	s.players[dp.Type].State = 0xff
 	if s.HostInfo.TimeLimit != 0 {
@@ -1596,6 +1667,17 @@ func (s *TagDuel) TimeConfirm(dp *DuelPlayer) {
 func (s *TagDuel) EndDuel() {
 	if s.Duel == nil {
 		return
+	}
+	s.lastReplay.EndRecord()
+	replayBuf := make([]byte, 0x2000)
+	pBuf := utils.NewYGOBuffer(replayBuf, binary.LittleEndian)
+	pBuf.Write(s.lastReplay.pheader)
+	pBuf.Write(s.lastReplay.compData[:s.lastReplay.compSize])
+	for i := 0; i < 4; i++ {
+		s.SendPacketDataToPlayer(s.players[i], network.STOC_REPLAY, replayBuf[:pBuf.Offset()])
+	}
+	for _, v := range s.Observers {
+		s.ReSendToPlayer(v)
 	}
 	s.Duel.End()
 	if s.ETimer != nil {
