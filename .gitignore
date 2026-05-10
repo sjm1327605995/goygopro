@@ -7,8 +7,9 @@
 *.dll
 *.so
 *.dylib
-server
-client
+/server
+/cmd/client/client.exe
+/cmd/server/server.exe
 
 # Test outputs
 *.txt
