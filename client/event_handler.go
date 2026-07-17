@@ -373,7 +373,6 @@ func (dc *DuelClient) handleMove(pbuf []byte) bool {
 						pcard.EquipTarget = nil
 					}
 				}
-				pcard.IsHovered = false
 				pcard.IsShowEquip = false
 				pcard.IsShowTarget = false
 				pcard.IsShowChainTarget = false

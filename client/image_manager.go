@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -17,11 +18,12 @@ type ImageManager struct {
 	mu sync.RWMutex
 
 	// Caches for card images
-	TMap          [2]map[int]image.Image // [normal, big]
-	TThumb        map[int]image.Image
-	TFields       map[int]image.Image
-	TButton       map[int]image.Image
+	TMap           [2]map[int]image.Image // [normal, big]
+	TThumb         map[int]image.Image
+	TFields        map[int]image.Image
+	TButton        map[int]image.Image
 	TButtonDefense map[int]image.Image
+	TRotated       map[string]image.Image // 预旋转的卡图，见 Rotated
 
 	// System textures
 	TCover             [2]image.Image
@@ -57,6 +59,7 @@ var ImageMgr = &ImageManager{
 	TFields:        make(map[int]image.Image),
 	TButton:        make(map[int]image.Image),
 	TButtonDefense: make(map[int]image.Image),
+	TRotated:       make(map[string]image.Image),
 }
 
 // Initial loads all system textures.
@@ -74,6 +77,10 @@ func (im *ImageManager) Initial() bool {
 	im.TTarget = im.loadImage("textures/target.png")
 	im.TUnknown = im.makePlaceholder(CardImgWidth, CardImgHeight, color.RGBA{80, 80, 80, 255})
 	im.TUnknownThumb = im.makePlaceholder(CardThumbWidth, CardThumbHeight, color.RGBA{80, 80, 80, 255})
+	// 场地贴图按规则分两套：0=旧规则（5 魔陷区），1=新大师规则（额外怪兽区）。
+	// 对应 C++ 的 imageManager.tField[rule]。
+	im.TField[0] = im.loadImage("textures/field.png")
+	im.TField[1] = im.loadImage("textures/field2.png")
 	return true
 }
 
@@ -114,6 +121,61 @@ func (im *ImageManager) GetTexture(code int) image.Image {
 	im.TMap[0][code] = img
 	im.mu.Unlock()
 	return img
+}
+
+// Rotated 返回把 img 顺时针转 quarter 个 90° 后的图（quarter 取 0..3），并缓存。
+//
+// 为什么在这里转图、而不是让 GUI 去转节点：卡的朝向只有四种（0/±90/180，见
+// GetCardLocation），而它们是**桌面平面内**的旋转 —— 守备表示的怪兽是平躺着横过来，
+// 不是立起来。GUI 层若用 tenon 的 ui.Rotate，旋转会发生在投影之后、且绕场景中心，
+// 卡会被甩出自己的格子并丢掉前缩（见 docs/tenon-needs.md 第 4 节）。
+// 预转位图 + 宽高对调则天然是平面内旋转，且徽标/边框仍保持正立、命中区也正确。
+//
+// 必须缓存：cardFace 每帧都会被调用，177x254 的图每帧转一次、几十张卡一起，直接卡死。
+func (im *ImageManager) Rotated(key string, img image.Image, quarter int) image.Image {
+	quarter = ((quarter % 4) + 4) % 4
+	if quarter == 0 || img == nil {
+		return img
+	}
+	ck := fmt.Sprintf("%s:q%d", key, quarter)
+
+	im.mu.RLock()
+	if got, ok := im.TRotated[ck]; ok {
+		im.mu.RUnlock()
+		return got
+	}
+	im.mu.RUnlock()
+
+	out := rotateQuarter(img, quarter)
+	im.mu.Lock()
+	im.TRotated[ck] = out
+	im.mu.Unlock()
+	return out
+}
+
+// rotateQuarter 顺时针转 quarter 个 90°。奇数次旋转宽高互换。
+func rotateQuarter(src image.Image, quarter int) image.Image {
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	dw, dh := w, h
+	if quarter%2 == 1 {
+		dw, dh = h, w
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, dw, dh))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			c := src.At(b.Min.X+x, b.Min.Y+y)
+			switch quarter {
+			case 1: // 顺时针 90°：源的 (x,y) -> 目标的 (h-1-y, x)
+				dst.Set(h-1-y, x, c)
+			case 2:
+				dst.Set(w-1-x, h-1-y, c)
+			case 3:
+				dst.Set(y, w-1-x, c)
+			}
+		}
+	}
+	return dst
 }
 
 // GetTextureThumb returns a thumbnail image for a card.

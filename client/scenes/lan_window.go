@@ -2,322 +2,311 @@ package scenes
 
 import (
 	"fmt"
-	"image/color"
 	"net"
 	"strconv"
 
-	"github.com/sjm1327605995/tenon"
-	"github.com/sjm1327605995/tenon/pkg/engine"
-	"github.com/sjm1327605995/tenon/pkg/widgets"
-	"github.com/sjm1327605995/tenon/yoga"
-
 	"github.com/sjm1327605995/goygopro/client"
 	"github.com/sjm1327605995/goygopro/protocol"
+	ui "github.com/sjm1327605995/tenon/pkg/ui"
 )
 
-// LanWindowScene holds the LAN window state (host list, create/join forms).
-var lanWindowScene = &LanWindowScene{
-	joinHost:        client.MainGame.Config.LastHost,
-	joinPort:        client.MainGame.Config.LastPort,
-	nickname:        client.MainGame.Config.Nickname,
-	createStartLP:   "8000",
-	createStartHand: "5",
-	createDrawCount: "1",
-	createTimeLimit: "180",
-	createGameName:  client.MainGame.Config.GameName,
-	createRoomPass:  client.MainGame.Config.RoomPass,
-}
+// LanWindowScene 是联机模式界面：主机列表 / 建立主机 / 加入主机三态。
+//
+// 旧实现里这些「输入框」是白底 Box 里塞一行 Text —— 看着像输入框，其实敲不进字，
+// 昵称和 IP 只能改配置文件。这里用真的 Input。
+func LanWindowScene(_ struct{}) *ui.Node {
+	mode, setMode := ui.UseState("list")
 
-// LanWindowScene corresponds to C++ wLanWindow + wCreateHost + wJoinHost
-type LanWindowScene struct {
-	showCreate bool
-	showJoin   bool
-
-	joinHost string
-	joinPort string
-	nickname string
-
-	createStartLP       string
-	createStartHand     string
-	createDrawCount     string
-	createTimeLimit     string
-	createNoCheckDeck   bool
-	createNoShuffleDeck bool
-	createGameName      string
-	createRoomPass      string
-	createError         string
-
-	hosts []protocol.HostPacket
-}
-
-// LanWindowRoute is the tenon RouteBuilder for the LAN window.
-func LanWindowRoute(ctx engine.BuildContext, params engine.RouteParams) engine.Widget {
-	if lanWindowScene.showCreate {
-		return lanWindowScene.buildCreateHost(ctx)
+	switch mode {
+	case "create":
+		return ui.Use(createHostView, modeProps{SetMode: setMode})
+	case "join":
+		return ui.Use(joinHostView, modeProps{SetMode: setMode})
+	default:
+		return ui.Use(hostListView, modeProps{SetMode: setMode})
 	}
-	if lanWindowScene.showJoin {
-		return lanWindowScene.buildJoinHost(ctx)
-	}
-	return lanWindowScene.buildLanWindow(ctx)
 }
 
-// ---------- 联机模式窗口 ----------
+type modeProps struct{ SetMode func(string) }
 
-func (s *LanWindowScene) buildLanWindow(ctx engine.BuildContext) engine.Widget {
-	return tenon.Stack(
-		// Background
-		 tenon.Positioned(
-			 tenon.Image(mainMenuScene.bg).Fit(tenon.ObjectFitCover),
-		).L(0).T(0).R(0).B(0),
-		// Centered window
-		 tenon.Positioned(
-			 tenon.Container(
-				 tenon.VStack(
-					 // Title bar
-					 tenon.Container(
-						 tenon.Text("联机模式").FontSize(13).Color(white),
-					 ).Height(24).Background(titleBarBlue).Padding(0).Width(580),
-					 // Nickname row
-					 tenon.HStack(
-						 tenon.Container(tenon.Text("昵称:").FontSize(12).Color(black)).Width(40),
-						 tenon.Input(s.nickname).OnChange(func(v string) {
-							 s.nickname = v
-							 client.MainGame.Config.Nickname = v
-						 }).Width(420).Height(22),
-						 tenon.Button("建立主机").Style(tenon.ButtonDefault).H(24).OnClick(func() {
-							 s.showCreate = true
-						 }),
-					 ).Gap(6).AlignItems(tenon.AlignCenter).Padding(8),
-					 // Host list
-					 s.buildHostList(),
-					 // Refresh button
-					 tenon.HStack(
-						 tenon.Button("刷新主机").Style(tenon.ButtonDefault).H(24).OnClick(func() {
-							 s.hosts = client.Client.DiscoverHosts()
-						 }),
-					 ).Justify(yoga.JustifyCenter).Padding(4),
-					 // Bottom area
-					 tenon.Container(
-						 tenon.HStack(
-							 tenon.VStack(
-								 tenon.HStack(
-									 tenon.Container(tenon.Text("主机信息:").FontSize(12).Color(black)).Width(60),
-									 tenon.Input(s.joinHost).OnChange(func(v string) { s.joinHost = v }).Width(200).Height(22),
-									 tenon.Input(s.joinPort).OnChange(func(v string) { s.joinPort = v }).Width(60).Height(22),
-								 ).Gap(4).AlignItems(tenon.AlignCenter),
-								 tenon.HStack(
-									 tenon.Container(tenon.Text("主机密码:").FontSize(12).Color(black)).Width(60),
-									 tenon.Input("").OnChange(func(v string) { /* TODO */ }).Width(270).Height(22),
-								 ).Gap(4).AlignItems(tenon.AlignCenter),
-							 ).Gap(4).AlignItems(tenon.AlignStretch),
-							 tenon.VStack(
-								 tenon.Button("加入游戏").Style(tenon.ButtonDefault).H(24).OnClick(func() { s.onJoinHost() }),
-								 tenon.Button("取消").Style(tenon.ButtonDefault).H(24).OnClick(func() {
-									 if n := tenon.GetNavigator(ctx); n != nil {
-										 n.Pop()
-									 }
-								 }),
-							 ).Gap(4).AlignItems(tenon.AlignStretch),
-						 ).Gap(8).Padding(8).AlignItems(tenon.AlignCenter),
-					 ).Margin(8),
-				 ).Gap(4).AlignItems(tenon.AlignStretch),
-			 ).Background(windowBg).Width(580).Height(420),
-		).Center(),
-	).Width(client.GameWindowWidth).Height(client.GameWindowHeight)
+func hostListView(p modeProps) *ui.Node {
+	cfg := &client.MainGame.Config
+	nickname, setNickname := ui.UseState(cfg.Nickname)
+	host, setHost := ui.UseState(cfg.LastHost)
+	port, setPort := ui.UseState(cfg.LastPort)
+	hosts, setHosts := ui.UseState([]protocol.HostPacket(nil))
+	errMsg, setErr := ui.UseState("")
+
+	join := func() {
+		cfg.Nickname, cfg.LastHost, cfg.LastPort = nickname, host, port
+		if err := joinHost(host, port); err != nil {
+			setErr(err.Error())
+		}
+	}
+
+	return bg("textures/bg_menu.jpg", []ui.StyleOpt{ui.ItemsCenter, ui.JustifyCenter},
+		window("联机模式", 580,
+			ui.Box([]ui.StyleOpt{ui.Row, ui.Gap(6), ui.ItemsCenter, ui.Padding(8)},
+				fieldLabel("昵称:", 40),
+				textInput(nickname, setNickname, "", 400),
+				lobbyButton("建立主机", func() { p.SetMode("create") }),
+			),
+			hostList(hosts, func(h protocol.HostPacket) {
+				setHost(hostIP(h).String())
+				setPort(strconv.Itoa(int(h.Port)))
+			}),
+			ui.Box([]ui.StyleOpt{ui.Row, ui.Gap(8), ui.Padding(8), ui.ItemsCenter},
+				lobbyButton("刷新主机", func() { setHosts(client.Client.DiscoverHosts()) }),
+				fieldLabel("主机:", 40),
+				textInputSubmit(host, setHost, join, "127.0.0.1", 180),
+				textInputSubmit(port, setPort, join, "7911", 60),
+				lobbyButton("加入游戏", join),
+				lobbyButton("取消", func() { client.PopScene() }),
+			),
+			errorLabel(errMsg),
+		),
+	)
 }
 
-func (s *LanWindowScene) buildHostList() tenon.Widget {
-	if len(s.hosts) == 0 {
-		return tenon.Container(
-			 tenon.VStack(
-				 tenon.Text("(No hosts found)").FontSize(12).Color(gray),
-			 ).Gap(4).AlignItems(tenon.AlignCenter),
-		).Height(220).Background(color.RGBA{R: 245, G: 245, B: 245, A: 255}).
-			 Border(color.RGBA{R: 170, G: 170, B: 170, A: 255}, 1).
-			 Padding(8).Margin(8)
+func hostList(hosts []protocol.HostPacket, onPick func(protocol.HostPacket)) *ui.Node {
+	body := []*ui.Node{}
+	if len(hosts) == 0 {
+		body = append(body, ui.Text("（未发现主机，点「刷新主机」搜索局域网）",
+			ui.FontSize(12), ui.TextColor(gray)))
 	}
-	rows := make([]tenon.Widget, 0, len(s.hosts))
-	for _, h := range s.hosts {
+	for i, h := range hosts {
+		h := h
 		name := client.Utf16ToString(protocol.PackGameMsg(h.Name))
-		ip := net.IP{byte(h.IPAddr), byte(h.IPAddr >> 8), byte(h.IPAddr >> 16), byte(h.IPAddr >> 24)}
-		info := fmt.Sprintf("%s @ %s:%d | LP:%d Hand:%d Draw:%d",
-			name, ip.String(), h.Port, h.Host.StartLp, h.Host.StartHand, h.Host.DrawCount)
-		rows = append(rows, tenon.Container(tenon.Text(info).FontSize(11).Color(black)).Padding(4))
+		info := fmt.Sprintf("%s @ %s:%d | LP:%d 手牌:%d 抽卡:%d",
+			name, hostIP(h).String(), h.Port, h.Host.StartLp, h.Host.StartHand, h.Host.DrawCount)
+		body = append(body, ui.Keyed(strconv.Itoa(i), ui.Use(hostRow, hostRowProps{
+			Info:   info,
+			OnPick: func() { onPick(h) },
+		})))
 	}
-	return tenon.Container(
-		 tenon.VStack(rows...).Gap(4).AlignItems(tenon.AlignStretch),
-	).Height(220).Background(color.RGBA{R: 245, G: 245, B: 245, A: 255}).
-		 Border(color.RGBA{R: 170, G: 170, B: 170, A: 255}, 1).
-		 Padding(8).Margin(8)
+	return ui.ScrollView(
+		ui.Style(ui.Height(220), ui.MarginXY(8, 0), ui.Padding(8), ui.Column, ui.Gap(2),
+			ui.Bg(ui.Hex("#f5f5f5")), ui.Border(1, ui.Hex("#ababab"))),
+		ui.Fragment(body...),
+	)
 }
 
-// ---------- 建立主机窗口 ----------
-
-func (s *LanWindowScene) buildCreateHost(ctx engine.BuildContext) engine.Widget {
-	lfListOpts := []widgets.SelectOption{{Value: "0", Label: "2025.10"}}
-	cardAllowOpts := []widgets.SelectOption{{Value: "0", Label: "O C G"}}
-	duelModeOpts := []widgets.SelectOption{
-		{Value: "0", Label: "单局模式"},
-		{Value: "1", Label: "比赛模式"},
-		{Value: "2", Label: "Tag模式"},
-	}
-	ruleOpts := []widgets.SelectOption{
-		{Value: "5", Label: "大师规则（2020）"},
-	}
-
-	return tenon.Stack(
-		 tenon.Positioned(
-			 tenon.Image(mainMenuScene.bg).Fit(tenon.ObjectFitCover),
-		).L(0).T(0).R(0).B(0),
-		 tenon.Positioned(
-			 tenon.Container(
-				 tenon.VStack(
-					 // Title
-					 tenon.Container(
-						 tenon.Text("建立主机").FontSize(13).Color(white),
-					 ).Height(24).Background(titleBarBlue).Padding(0).Width(400),
-					 // Form rows (scrollable)
-					 tenon.Scroll(
-						 tenon.VStack(
-							 s.createRow("禁限卡表:", tenon.Select(lfListOpts).Width(200).WithValue("0")),
-							 s.createRow("卡片允许:", tenon.Select(cardAllowOpts).Width(200).WithValue("0")),
-							 s.createRow("决斗模式:", tenon.Select(duelModeOpts).Width(200).WithValue("0")),
-							 s.createRow("每回合时间:", tenon.Input(s.createTimeLimit).OnChange(func(v string) { s.createTimeLimit = v }).Width(60).Height(22)),
-							 tenon.Text("↓额外选项（无特殊要求请勿修改）").FontSize(11).Color(gray),
-							 s.createRow("规则:", tenon.Select(ruleOpts).Width(200).WithValue("5")),
-							 // Checkboxes
-							 tenon.HStack(
-								 tenon.Button("☐ 不检查卡组").Style(tenon.ButtonGhost).OnClick(func() {
-									 s.createNoCheckDeck = !s.createNoCheckDeck
-								 }),
-								 tenon.Button("☐ 不洗切卡组").Style(tenon.ButtonGhost).OnClick(func() {
-									 s.createNoShuffleDeck = !s.createNoShuffleDeck
-								 }),
-							 ).Gap(12).Padding(4),
-							 s.createRow("初始基本分:", tenon.Input(s.createStartLP).OnChange(func(v string) { s.createStartLP = v }).Width(60).Height(22)),
-							 s.createRow("初始手卡数:", tenon.Input(s.createStartHand).OnChange(func(v string) { s.createStartHand = v }).Width(60).Height(22)),
-							 s.createRow("每回合抽卡:", tenon.Input(s.createDrawCount).OnChange(func(v string) { s.createDrawCount = v }).Width(60).Height(22)),
-						 ).Gap(4).Padding(10).AlignItems(tenon.AlignStretch),
-					 ).MaxHeight(280),
-					 // Bottom: host name + password + buttons
-					 tenon.HStack(
-						 tenon.VStack(
-							 s.createRow("主机名称:", tenon.Input(s.createGameName).OnChange(func(v string) { s.createGameName = v }).Width(180).Height(22)),
-							 s.createRow("主机密码:", tenon.Input(s.createRoomPass).OnChange(func(v string) { s.createRoomPass = v }).Width(180).Height(22)),
-						 ).Gap(4).AlignItems(tenon.AlignStretch),
-						 tenon.VStack(
-							 tenon.Button("确定").Style(tenon.ButtonDefault).OnClick(func() { s.onCreateHost() }),
-							 tenon.Button("取消").Style(tenon.ButtonDefault).OnClick(func() { s.showCreate = false; s.createError = "" }),
-						 ).Gap(4).AlignItems(tenon.AlignStretch),
-					 ).Gap(12).AlignItems(tenon.AlignCenter).Padding(10),
-					 s.buildErrorLabel(),
-				 ).Gap(0).AlignItems(tenon.AlignStretch),
-			 ).Background(windowBg).Width(400).Height(420),
-		).Center(),
-	).Width(client.GameWindowWidth).Height(client.GameWindowHeight)
+type hostRowProps struct {
+	Info   string
+	OnPick func()
 }
 
-func (s *LanWindowScene) buildErrorLabel() tenon.Widget {
-	if s.createError != "" {
-		return tenon.Container(
-			tenon.Text(s.createError).FontSize(11).Color(color.RGBA{R: 200, G: 50, B: 50, A: 255}),
-		).Padding(4)
+// hostRow 点一下把该主机填进下方的地址栏 —— 旧实现里列表纯是摆设，看到了也只能手抄 IP。
+func hostRow(p hostRowProps) *ui.Node {
+	hovered, _, ia := ui.UseInteraction()
+	face := ui.Hex("#00000000")
+	if hovered {
+		face = ui.Hex("#c9dcf5")
 	}
-	return tenon.Container(tenon.Text("").FontSize(11)).Padding(4)
+	return ui.Button(
+		ui.Style(ui.Padding(4), ui.Bg(face), ui.Radius(2)),
+		ui.OnClick(p.OnPick), ia,
+		ui.Text(p.Info, ui.FontSize(11), ui.TextColor(black)),
+	)
 }
 
-func (s *LanWindowScene) createRow(label string, widget tenon.Widget) tenon.Widget {
-	return tenon.HStack(
-		 tenon.Container(tenon.Text(label).FontSize(12).Color(black)).Width(90),
-		 widget,
-	).Gap(6).AlignItems(tenon.AlignCenter)
-}
+func createHostView(p modeProps) *ui.Node {
+	cfg := &client.MainGame.Config
+	startLP, setStartLP := ui.UseState("8000")
+	startHand, setStartHand := ui.UseState("5")
+	drawCount, setDrawCount := ui.UseState("1")
+	timeLimit, setTimeLimit := ui.UseState("180")
+	gameName, setGameName := ui.UseState(cfg.GameName)
+	roomPass, setRoomPass := ui.UseState(cfg.RoomPass)
+	noCheck, setNoCheck := ui.UseState(false)
+	noShuffle, setNoShuffle := ui.UseState(false)
+	errMsg, setErr := ui.UseState("")
 
-// ---------- 加入主机窗口 ----------
-
-func (s *LanWindowScene) buildJoinHost(ctx engine.BuildContext) engine.Widget {
-	return tenon.Stack(
-		 tenon.Positioned(
-			 tenon.Image(mainMenuScene.bg).Fit(tenon.ObjectFitCover),
-		).L(0).T(0).R(0).B(0),
-		 tenon.Positioned(
-			 tenon.Container(
-				 tenon.VStack(
-					 tenon.Container(
-						 tenon.Text("加入主机").FontSize(13).Color(white),
-					 ).Height(24).Background(titleBarBlue).Padding(0).Width(300),
-					 tenon.VStack(
-						 s.createRow("主机IP:", tenon.Input(s.joinHost).OnChange(func(v string) { s.joinHost = v }).Width(180).Height(22)),
-						 s.createRow("端口:", tenon.Input(s.joinPort).OnChange(func(v string) { s.joinPort = v }).Width(100).Height(22)),
-						 tenon.HStack(
-							 tenon.Button("加入").Style(tenon.ButtonDefault).OnClick(func() { s.onJoinHost() }),
-							 tenon.Button("取消").Style(tenon.ButtonDefault).OnClick(func() { s.showJoin = false }),
-						 ).Gap(12).Justify(yoga.JustifyCenter),
-					 ).Gap(8).Padding(16).AlignItems(tenon.AlignStretch),
-				 ).Gap(0).AlignItems(tenon.AlignStretch),
-			 ).Background(windowBg).Width(300).Height(160),
-		).Center(),
-	).Width(client.GameWindowWidth).Height(client.GameWindowHeight)
-}
-
-// ---------- Actions ----------
-
-func (s *LanWindowScene) onCreateHost() {
-	lp, _ := strconv.Atoi(s.createStartLP)
-	hand, _ := strconv.Atoi(s.createStartHand)
-	draw, _ := strconv.Atoi(s.createDrawCount)
-	time, _ := strconv.Atoi(s.createTimeLimit)
-
-	info := protocol.HostInfo{
-		StartLp:       int32(lp),
-		StartHand:     uint8(hand),
-		DrawCount:     uint8(draw),
-		TimeLimit:     uint16(time),
-		NoCheckDeck:   boolToInt8(s.createNoCheckDeck),
-		NoShuffleDeck: boolToInt8(s.createNoShuffleDeck),
+	create := func() {
+		client.MainGame.HostInfo = protocol.HostInfo{
+			StartLp:       int32(atoiOr(startLP, 8000)),
+			StartHand:     uint8(atoiOr(startHand, 5)),
+			DrawCount:     uint8(atoiOr(drawCount, 1)),
+			TimeLimit:     uint16(atoiOr(timeLimit, 180)),
+			NoCheckDeck:   boolToUint8(noCheck),
+			NoShuffleDeck: boolToUint8(noShuffle),
+		}
+		cfg.GameName, cfg.RoomPass = gameName, roomPass
+		if err := createHost(cfg.ServerPort); err != nil {
+			setErr(err.Error())
+			return
+		}
 	}
-	client.MainGame.HostInfo = info
-	client.MainGame.Config.GameName = s.createGameName
-	client.MainGame.Config.RoomPass = s.createRoomPass
 
-	port := client.MainGame.Config.ServerPort
+	return bg("textures/bg_menu.jpg", []ui.StyleOpt{ui.ItemsCenter, ui.JustifyCenter},
+		window("建立主机", 400,
+			ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(4), ui.Padding(10)},
+				formRow("禁限卡表:", staticField("2025.10", 200)),
+				formRow("卡片允许:", staticField("OCG", 200)),
+				formRow("决斗模式:", staticField("单局模式", 200)),
+				formRow("每回合时间:", textInput(timeLimit, setTimeLimit, "180", 60)),
+				formRow("规则:", staticField("Master Rule 2020", 200)),
+				ui.Box([]ui.StyleOpt{ui.Row, ui.Gap(16), ui.Padding(4), ui.ItemsCenter},
+					checkRow("不检查卡组", noCheck, setNoCheck),
+					checkRow("不洗卡组", noShuffle, setNoShuffle),
+				),
+				formRow("初始 LP:", textInput(startLP, setStartLP, "8000", 60)),
+				formRow("初始手牌:", textInput(startHand, setStartHand, "5", 60)),
+				formRow("每回合抽卡:", textInput(drawCount, setDrawCount, "1", 60)),
+				formRow("房间名:", textInput(gameName, setGameName, "", 180)),
+				formRow("房间密码:", textInput(roomPass, setRoomPass, "", 180)),
+			),
+			ui.Box([]ui.StyleOpt{ui.Row, ui.Gap(12), ui.Padding(10), ui.JustifyCenter},
+				lobbyButton("确定", create),
+				lobbyButton("取消", func() { p.SetMode("list") }),
+			),
+			errorLabel(errMsg),
+		),
+	)
+}
+
+func joinHostView(p modeProps) *ui.Node {
+	cfg := &client.MainGame.Config
+	host, setHost := ui.UseState(cfg.LastHost)
+	port, setPort := ui.UseState(cfg.LastPort)
+	errMsg, setErr := ui.UseState("")
+
+	join := func() {
+		cfg.LastHost, cfg.LastPort = host, port
+		if err := joinHost(host, port); err != nil {
+			setErr(err.Error())
+		}
+	}
+
+	return bg("textures/bg_menu.jpg", []ui.StyleOpt{ui.ItemsCenter, ui.JustifyCenter},
+		window("加入主机", 300,
+			ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(8), ui.Padding(16)},
+				formRow("主机 IP:", textInputSubmit(host, setHost, join, "127.0.0.1", 180)),
+				formRow("端口:", textInputSubmit(port, setPort, join, "7911", 100)),
+				ui.Box([]ui.StyleOpt{ui.Row, ui.Gap(12), ui.JustifyCenter},
+					lobbyButton("加入", join),
+					lobbyButton("取消", func() { p.SetMode("list") }),
+				),
+				errorLabel(errMsg),
+			),
+		),
+	)
+}
+
+// ---- 动作 ----
+
+func createHost(port uint16) error {
 	if err := client.StartLocalServer(port); err != nil {
-		s.createError = err.Error()
-		fmt.Println("创建主机失败:", err)
-		return
+		return fmt.Errorf("创建主机失败: %w", err)
 	}
-	s.createError = ""
-	if client.Client.StartClient("127.0.0.1", port, true) {
-		client.PushScene("lobby")
-	} else {
-		s.createError = "无法连接到本地服务器"
-		fmt.Println("StartClient 返回 false")
+	if !client.Client.StartClient("127.0.0.1", port, true) {
+		return fmt.Errorf("无法连接到本地服务器")
 	}
+	client.PushScene("lobby")
+	return nil
 }
 
-func (s *LanWindowScene) onJoinHost() {
-	client.MainGame.Config.LastHost = s.joinHost
-	client.MainGame.Config.LastPort = s.joinPort
-
-	port, _ := strconv.Atoi(s.joinPort)
-	if port == 0 {
-		port = 7911
+func joinHost(host, port string) error {
+	p := atoiOr(port, 7911)
+	if !client.Client.StartClient(host, uint16(p), false) {
+		return fmt.Errorf("连接 %s:%d 失败", host, p)
 	}
-	if client.Client.StartClient(s.joinHost, uint16(port), false) {
-		client.PushScene("lobby")
-	} else {
-		fmt.Println("Failed to connect")
-	}
+	client.PushScene("lobby")
+	return nil
 }
 
-func boolToInt8(b bool) uint8 {
+// ---- 通用小部件 ----
+
+// window 是 ygopro 那种带蓝色标题栏的灰色窗口。
+func window(title string, width float32, kids ...*ui.Node) *ui.Node {
+	return ui.Box([]ui.StyleOpt{ui.Width(width), ui.Column, ui.Bg(windowBg)},
+		ui.Box([]ui.StyleOpt{ui.Height(24), ui.Bg(titleBarBlue), ui.JustifyCenter, ui.PaddingXY(8, 0)},
+			ui.Text(title, ui.FontSize(13), ui.TextColor(white)),
+		),
+		ui.Fragment(kids...),
+	)
+}
+
+func fieldLabel(text string, width float32) *ui.Node {
+	return ui.Box([]ui.StyleOpt{ui.Width(width), ui.JustifyCenter},
+		ui.Text(text, ui.FontSize(12), ui.TextColor(black)),
+	)
+}
+
+func formRow(label string, field *ui.Node) *ui.Node {
+	return ui.Box([]ui.StyleOpt{ui.Row, ui.Gap(6), ui.ItemsCenter},
+		fieldLabel(label, 90), field,
+	)
+}
+
+func textInput(value string, onChange func(string), placeholder string, width float32) *ui.Node {
+	return textInputSubmit(value, onChange, nil, placeholder, width)
+}
+
+// textInputSubmit 是带回车提交的输入框。onSubmit 为 nil 时回车无动作。
+func textInputSubmit(value string, onChange func(string), onSubmit func(), placeholder string, width float32) *ui.Node {
+	attrs := []*ui.Node{
+		ui.Value(value), ui.OnChange(onChange), ui.Placeholder(placeholder),
+		ui.Style(ui.Width(width), ui.Height(22), ui.PaddingXY(4, 0), ui.Bg(white),
+			ui.Border(1, ui.Hex("#8c8c8c")), ui.FontSize(12), ui.TextColor(black)),
+	}
+	if onSubmit != nil {
+		attrs = append(attrs, ui.OnSubmit(func(string) { onSubmit() }))
+	}
+	return ui.Input(attrs...)
+}
+
+// staticField 是尚未做成下拉框的只读格子（禁卡表、规则等需要选项列表，等做到再换）。
+func staticField(text string, width float32) *ui.Node {
+	return ui.Box([]ui.StyleOpt{ui.Width(width), ui.Height(22), ui.PaddingXY(4, 0),
+		ui.JustifyCenter, ui.Bg(ui.Hex("#ebebeb")), ui.Border(1, ui.Hex("#b0b0b0"))},
+		ui.Text(text, ui.FontSize(12), ui.TextColor(black)),
+	)
+}
+
+// checkRow 是一行复选框。没用 pkg/shadcn 的 Checkbox：那套是现代扁平风，
+// 跟 ygopro 的 Win32 味界面放一起很突兀。
+func checkRow(label string, checked bool, onChange func(bool)) *ui.Node {
+	mark := ""
+	if checked {
+		mark = "✓"
+	}
+	return ui.Button(
+		ui.Style(ui.Row, ui.Gap(6), ui.ItemsCenter),
+		ui.OnClick(func() { onChange(!checked) }),
+		ui.Box([]ui.StyleOpt{
+			ui.Width(14), ui.Height(14), ui.ItemsCenter, ui.JustifyCenter,
+			ui.Bg(white), ui.Border(1, ui.Hex("#6e6e6e")),
+		},
+			ui.Text(mark, ui.FontSize(11), ui.TextColor(black)),
+		),
+		ui.Text(label, ui.FontSize(12), ui.TextColor(black)),
+	)
+}
+
+func errorLabel(msg string) *ui.Node {
+	return ui.If(msg != "", ui.Box([]ui.StyleOpt{ui.Padding(4)},
+		ui.Text(msg, ui.FontSize(11), ui.TextColor(targetColor)),
+	))
+}
+
+// ---- 杂项 ----
+
+func hostIP(h protocol.HostPacket) net.IP {
+	return net.IP{byte(h.IPAddr), byte(h.IPAddr >> 8), byte(h.IPAddr >> 16), byte(h.IPAddr >> 24)}
+}
+
+func atoiOr(s string, def int) int {
+	v, err := strconv.Atoi(s)
+	if err != nil || v == 0 {
+		return def
+	}
+	return v
+}
+
+func boolToUint8(b bool) uint8 {
 	if b {
 		return 1
 	}
 	return 0
 }
-
-var (
-	titleBarBlue = color.RGBA{R: 42, G: 74, B: 122, A: 255}
-	windowBg     = color.RGBA{R: 208, G: 208, B: 208, A: 255}
-)

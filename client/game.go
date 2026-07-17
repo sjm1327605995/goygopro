@@ -5,33 +5,35 @@ import (
 	"os"
 	"sync"
 
-	"github.com/sjm1327605995/tenon/pkg/engine"
 	"github.com/sjm1327605995/goygopro/protocol"
 )
 
 // Game corresponds to C++ class Game in game.h
-// In the Go/tenon rewrite, Game acts as the global state manager.
+// In the Go rewrite, Game acts as the global state manager.
 type Game struct {
 	mu sync.RWMutex
 
-	Config     Config
-	DInfo      DuelInfo
-	DField     *ClientField
-	DeckMgr    *DeckManager
-	ImageMgr   *ImageManager
+	Config   Config
+	DInfo    DuelInfo
+	DField   *ClientField
+	DeckMgr  *DeckManager
+	ImageMgr *ImageManager
 
-	// Navigator key for declarative scene switching.
-	// Set by cmd/client/main.go after tenon.Run starts.
-	NavigatorKey *engine.GlobalKey
+	// Scene navigation. UI 层订阅它切换场景。
+	SceneSignal *Store[string]
+
+	// Duel 状态（DField / DInfo / 聊天）的变更计数器：这些状态由网络线程整块改写，
+	// 逐字段做成 Store 不划算，改完 Bump 一次让 UI 整体重读。
+	FieldRev *Revision
 
 	// Host info (for room creation)
 	HostInfo protocol.HostInfo
 
 	// Chat
-	ChatMsg      [8]string
-	ChatTiming   [8]int
-	ChatType     [8]int
-	HideChat     bool
+	ChatMsg       [8]string
+	ChatTiming    [8]int
+	ChatType      [8]int
+	HideChat      bool
 	HideChatTimer int
 
 	// Animation / overlay state
@@ -52,15 +54,15 @@ type Game struct {
 	LpCString    string
 
 	// Flags
-	AlwaysChain      bool
-	IgnoreChain      bool
-	ChainWhenAvail   bool
-	IsBuilding       bool
-	IsSiding         bool
-	ExitOnReturn     bool
-	OpenFile         bool
-	OpenFileName     string
-	BotMode          bool
+	AlwaysChain    bool
+	IgnoreChain    bool
+	ChainWhenAvail bool
+	IsBuilding     bool
+	IsSiding       bool
+	ExitOnReturn   bool
+	OpenFile       bool
+	OpenFileName   string
+	BotMode        bool
 
 	// Lobby state
 	HostPrepNames    [4]string
@@ -106,6 +108,8 @@ var MainGame = &Game{
 	DeckMgr:      DeckMgr,
 	ImageMgr:     ImageMgr,
 	Dialog:       NewDialogState(),
+	SceneSignal:  NewStore("mainMenu"),
+	FieldRev:     NewRevision(),
 	XScale:       1.0,
 	YScale:       1.0,
 	WindowWidth:  GameWindowWidth,
@@ -191,18 +195,6 @@ func (g *Game) ClearChatMsg() {
 	}
 }
 
-func (g *Game) SetNavigatorKey(key *engine.GlobalKey) {
-	g.mu.Lock()
-	g.NavigatorKey = key
-	g.mu.Unlock()
-}
-
-func (g *Game) GetNavigatorKey() *engine.GlobalKey {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.NavigatorKey
-}
-
 func (g *Game) SetHostPrepName(pos int, name string) {
 	g.mu.Lock()
 	if pos >= 0 && pos < 4 {
@@ -235,4 +227,14 @@ func (g *Game) GetHostPrepReady(pos int) bool {
 		return g.HostPrepReady[pos]
 	}
 	return false
+}
+
+// PushScene changes to the named scene via the global scene signal.
+func PushScene(name string) {
+	MainGame.SceneSignal.Set(name)
+}
+
+// PopScene returns to the previous scene (simplified: goes to mainMenu).
+func PopScene() {
+	MainGame.SceneSignal.Set("mainMenu")
 }

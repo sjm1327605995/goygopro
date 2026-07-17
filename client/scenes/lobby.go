@@ -3,124 +3,114 @@ package scenes
 import (
 	"fmt"
 
-	"github.com/sjm1327605995/tenon"
-	"github.com/sjm1327605995/tenon/pkg/engine"
-	"github.com/sjm1327605995/tenon/pkg/widgets"
-	"github.com/sjm1327605995/tenon/yoga"
-
 	"github.com/sjm1327605995/goygopro/client"
 	"github.com/sjm1327605995/goygopro/protocol/network"
+	ui "github.com/sjm1327605995/tenon/pkg/ui"
 )
 
-// LobbyScene holds the duel room state.
-var lobbyScene = &LobbyScene{}
+// LobbyScene 是决斗准备房间。玩家列表由服务器推送更新，所以订阅 FieldRev：
+// 旧实现只在进场景时构建一次，别人进房间/准备好了界面都不会动。
+func LobbyScene(_ struct{}) *ui.Node {
+	_ = UseRevision(client.MainGame.FieldRev)
+	host := client.MainGame.HostInfo
 
-// LobbyScene corresponds to C++ handshake lobby (wHostPrepare)
-type LobbyScene struct{}
-
-// LobbyRoute is the tenon RouteBuilder for the lobby.
-func LobbyRoute(ctx engine.BuildContext, params engine.RouteParams) engine.Widget {
-	return lobbyScene.build(ctx)
-}
-
-func (s *LobbyScene) build(ctx engine.BuildContext) engine.Widget {
-	nav := tenon.GetNavigator(ctx)
-
-	// Room info strings
-	hostInfo := client.MainGame.HostInfo
-	roomInfo := []string{
-		fmt.Sprintf("禁限卡表: %d", hostInfo.LFList),
-		fmt.Sprintf("卡片允许: O C G"),
-		fmt.Sprintf("决斗模式: %d", hostInfo.Mode),
-		fmt.Sprintf("每回合时间: %d", hostInfo.TimeLimit),
+	info := []string{
+		fmt.Sprintf("禁卡表: %d", host.LFList),
+		"卡池: OCG",
+		fmt.Sprintf("决斗模式: %d", host.Mode),
+		fmt.Sprintf("时间限制: %d", host.TimeLimit),
 		"==========",
-		fmt.Sprintf("初始基本分: %d", hostInfo.StartLp),
-		fmt.Sprintf("初始手卡数: %d", hostInfo.StartHand),
-		fmt.Sprintf("每回合抽卡: %d", hostInfo.DrawCount),
+		fmt.Sprintf("初始 LP: %d", host.StartLp),
+		fmt.Sprintf("初始手牌: %d", host.StartHand),
+		fmt.Sprintf("每回合抽卡: %d", host.DrawCount),
+	}
+	infoLines := make([]*ui.Node, 0, len(info))
+	for _, line := range info {
+		infoLines = append(infoLines, ui.Text(line, ui.FontSize(12), ui.TextColor(black)))
 	}
 
-	// Deck categories (placeholder)
-	deckCategories := []widgets.SelectOption{{Value: "none", Label: "未分类卡组"}}
-	deckOptions := []widgets.SelectOption{{Value: "starter", Label: "A Starter Deck"}}
-
-	return tenon.Stack(
-		// Background
-			 tenon.Positioned(
-					 tenon.Image(mainMenuScene.bg).Fit(tenon.ObjectFitCover),
-			).L(0).T(0).R(0).B(0),
-		// Centered window
-			 tenon.Positioned(
-					 tenon.Container(
-						 tenon.VStack(
-							 // Title bar
-							 tenon.Container(
-								 tenon.Text("决斗准备").FontSize(13).Color(white),
-							 ).Height(24).Background(titleBarBlue).Padding(0).Width(480),
-							 // Top area: left (players) + right (info)
-							 tenon.HStack(
-								 // Left: duelist list
-								 tenon.VStack(
-									 tenon.Text("决斗者").FontSize(12).Color(black),
-									 s.buildPlayerRows(ctx),
-									 tenon.Button("观战").Style(tenon.ButtonDefault).OnClick(func() {
-										 client.Client.SendPacketToServer(network.CTOS_HS_TOOBSERVER)
-									 }),
-								 ).Gap(4).Padding(8),
-								 // Right: room info
-								 tenon.VStack(
-									 s.buildInfoLines(roomInfo),
-									 tenon.Container(tenon.Spacer()).Height(8),
-									 tenon.Button("准备").Style(tenon.ButtonDefault).OnClick(func() {
-										 client.Client.SendPacketToServer(network.CTOS_HS_READY)
-									 }),
-								 ).Gap(2).Padding(8),
-							 ).Gap(0).AlignItems(tenon.AlignStretch),
-							 // Deck selection
-							 tenon.HStack(
-								 tenon.Container(tenon.Text("卡组选择:").FontSize(12).Color(black)).Width(60),
-								 tenon.Select(deckCategories).Width(120).WithValue("none"),
-								 tenon.Select(deckOptions).Width(160).WithValue("starter"),
-							 ).Gap(6).Padding(8).AlignItems(tenon.AlignCenter),
-							 // Bottom buttons
-							 tenon.HStack(
-								 tenon.Button("开始").Style(tenon.ButtonDefault).OnClick(func() {
-									 client.Client.SendPacketToServer(network.CTOS_HS_START)
-								 }),
-								 tenon.Button("退出").Style(tenon.ButtonDefault).OnClick(func() {
-									 client.Client.StopClient()
-									 if nav != nil { nav.Pop() }
-								 }),
-							 ).Gap(12).Justify(yoga.JustifyCenter).Padding(8),
-						 ).Gap(0).AlignItems(tenon.AlignStretch),
-					 ).Background(windowBg).Width(480).Height(360),
-			).Center(),
-	).Width(client.GameWindowWidth).Height(client.GameWindowHeight)
+	return bg("textures/bg_menu.jpg", []ui.StyleOpt{ui.ItemsCenter, ui.JustifyCenter},
+		ui.Box([]ui.StyleOpt{ui.Width(480), ui.Height(360), ui.Column, ui.Bg(windowBg)},
+			ui.Box([]ui.StyleOpt{ui.Height(24), ui.Bg(titleBarBlue), ui.JustifyCenter, ui.PaddingXY(8, 0)},
+				ui.Text("决斗准备", ui.FontSize(13), ui.TextColor(white)),
+			),
+			ui.Box([]ui.StyleOpt{ui.Row, ui.Grow(1)},
+				ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(4), ui.Padding(8), ui.Grow(1)},
+					ui.Text("决斗者", ui.FontSize(12), ui.TextColor(black)),
+					playerRows(),
+					lobbyButton("旁观", func() {
+						client.Client.SendPacketToServer(network.CTOS_HS_TOOBSERVER)
+					}),
+				),
+				ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(2), ui.Padding(8), ui.Width(200)},
+					append(infoLines,
+						ui.Box([]ui.StyleOpt{ui.Height(8)}),
+						lobbyButton("准备", func() {
+							client.Client.SendPacketToServer(network.CTOS_HS_READY)
+						}),
+					)...,
+				),
+			),
+			ui.Box([]ui.StyleOpt{ui.Row, ui.Gap(12), ui.Padding(8), ui.JustifyCenter},
+				lobbyButton("开始决斗", func() {
+					client.Client.SendPacketToServer(network.CTOS_HS_START)
+				}),
+				lobbyButton("退出", func() {
+					client.Client.StopClient()
+					client.PopScene()
+				}),
+			),
+		),
+	)
 }
 
-func (s *LobbyScene) buildPlayerRows(ctx engine.BuildContext) tenon.Widget {
-	rows := make([]tenon.Widget, 0, 4)
+func playerRows() *ui.Node {
+	rows := make([]*ui.Node, 0, 4)
 	for i := 0; i < 4; i++ {
 		name := client.MainGame.GetHostPrepName(i)
-		if name == "" {
-			name = ""
-		}
 		ready := client.MainGame.GetHostPrepReady(i)
-		_ = ready
-		rows = append(rows, tenon.HStack(
-			 tenon.Button("X").Style(tenon.ButtonGhost).OnClick(func() {
-				 // TODO: kick player
-			 }),
-			 tenon.Input(name).Width(140).Height(20),
-			 tenon.Input("").Width(20).Height(20),
-		).Gap(4).AlignItems(tenon.AlignCenter))
+		readyMark, readyColor := "", cardEmptyBg
+		if ready {
+			readyMark, readyColor = "✓", cmdSummonColor
+		}
+		rows = append(rows, ui.Keyed(fmt.Sprint(i), ui.Box([]ui.StyleOpt{ui.Row, ui.Gap(4), ui.ItemsCenter},
+			ui.Box([]ui.StyleOpt{
+				ui.Width(140), ui.Height(20), ui.Bg(white), ui.PaddingXY(4, 0), ui.JustifyCenter,
+			},
+				ui.Text(name, ui.FontSize(12), ui.TextColor(black)),
+			),
+			ui.Box([]ui.StyleOpt{
+				ui.Width(20), ui.Height(20), ui.Bg(readyColor), ui.ItemsCenter, ui.JustifyCenter,
+			},
+				ui.Text(readyMark, ui.FontSize(12), ui.TextColor(white)),
+			),
+		)))
 	}
-	return tenon.VStack(rows...).Gap(4).AlignItems(tenon.AlignStretch)
+	return ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(4)}, rows...)
 }
 
-func (s *LobbyScene) buildInfoLines(lines []string) tenon.Widget {
-	widgets_ := make([]tenon.Widget, 0, len(lines))
-	for _, line := range lines {
-		widgets_ = append(widgets_, tenon.Text(line).FontSize(12).Color(black))
+type lobbyButtonProps struct {
+	Label   string
+	OnClick func()
+}
+
+func lobbyButton(label string, onClick func()) *ui.Node {
+	return ui.Use(lobbyButtonC, lobbyButtonProps{Label: label, OnClick: onClick})
+}
+
+func lobbyButtonC(p lobbyButtonProps) *ui.Node {
+	hovered, pressed, ia := ui.UseInteraction()
+	face := ui.Hex("#b4b4b4")
+	switch {
+	case pressed:
+		face = ui.Hex("#8f8f8f")
+	case hovered:
+		face = ui.Hex("#c9c9c9")
 	}
-	return tenon.VStack(widgets_...).Gap(2).AlignItems(tenon.AlignCenter)
+	return ui.Button(
+		ui.Style(ui.Height(24), ui.PaddingXY(12, 0), ui.ItemsCenter, ui.JustifyCenter,
+			ui.Bg(face), ui.Border(1, ui.Hex("#6e6e6e")), ui.Radius(2)),
+		ui.OnClick(p.OnClick), ia,
+		ui.Text(p.Label, ui.FontSize(12), ui.TextColor(black)),
+	)
 }

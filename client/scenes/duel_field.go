@@ -1,1161 +1,343 @@
 package scenes
 
 import (
-	"encoding/binary"
 	"fmt"
 	"image"
-	"image/color"
-	"os"
-	"time"
-
-	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/sjm1327605995/tenon"
-	"github.com/sjm1327605995/tenon/pkg/engine"
-	"github.com/sjm1327605995/tenon/yoga"
 
 	"github.com/sjm1327605995/goygopro/client"
 	"github.com/sjm1327605995/goygopro/protocol/network"
+	ui "github.com/sjm1327605995/tenon/pkg/ui"
 )
 
-func cardImage(code int) *ebiten.Image {
-	img := client.ImageMgr.GetTexture(code)
-	if img == nil {
-		return nil
-	}
-	ebImg, ok := img.(*ebiten.Image)
-	if ok {
-		return ebImg
-	}
-	return ebiten.NewImageFromImage(img)
-}
+// 决斗盘 —— 伪 3D。
+//
+// 原版是 Irrlicht 的真 3D 场景：一台相机、每张卡是一个贴了图的四边形。这里不需要 3D 引擎：
+// 卡本来就是平的，把整块桌面交给 tenon 的 Scene3D 当一台共享相机，卡牌作为直接子元素按
+// C++ 的世界坐标（client.ZoneCenter）绝对定位，投影和命中测试由 Scene3D 负责，
+// 点击打在卡的视觉位置上。
+//
+// 摆位坐标全部来自 client/field_location.go（那是 C++ 布局的直译），这里只管怎么画。
+const (
+	// tableTilt 是桌面俯角。原版相机的俯角约 45.7°；这里取更缓的角度是为了取景 ——
+	// 角度越陡，近端手牌在画面里越占地方，而窗口上下还得留给 HUD 条。
+	tableTilt = 34
+	// tablePerspective 是灭点距离（px）。越小透视越夸张；这个值下远端约收窄到七成，
+	// 与原版观感接近。注意它和 tableScale 一起缩放，否则桌子缩小了透视强度却没变。
+	tablePerspective = 1400
 
-// DuelFieldScene corresponds to C++ duel field rendering in game.cpp.
-// Kept as a singleton so background image cache survives route changes.
-type DuelFieldScene struct {
-	bg          *ebiten.Image
-	chatInput   string
-}
+	// 桌面在窗口里的取景。
+	//
+	// C++ 用的是偏心视锥（game.cpp: BuildProjectionMatrix(-0.90, 0.45, -0.42, 0.42, ...)），
+	// 画面整体偏移，近端手牌仍在画面内。Scene3D 只能绕场景中心做对称透视，学不了偏心，
+	// 所以改用最朴素的办法：把整块桌面缩小、居中，给近端手牌和上下 HUD 条留出余量。
+	// 不缩放的话 wy=4.0 的手牌正好压在窗口下边缘，被切掉一半。
+	tableScale = 0.78
+	tableTop   = 44
+)
 
-var duelFieldScene = &DuelFieldScene{}
+func DuelFieldScene(_ struct{}) *ui.Node {
+	// 决斗状态由网络线程整块改写，靠版本号触发重渲染，渲染时直接读 MainGame 的最新值。
+	_ = UseRevision(client.MainGame.FieldRev)
 
-func (s *DuelFieldScene) loadBackground() {
-	if s.bg != nil {
-		return
-	}
-	f, err := os.Open("textures/bg.jpg")
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	img, _, err := image.Decode(f)
-	if err != nil {
-		return
-	}
-	s.bg = ebiten.NewImageFromImage(img)
-}
-
-// DuelFieldRoute is the tenon RouteBuilder for the duel field.
-// The framework invokes this automatically — no explicit Build() call needed.
-func DuelFieldRoute(ctx engine.BuildContext, params engine.RouteParams) engine.Widget {
-	return duelFieldScene.build()
-}
-
-func (s *DuelFieldScene) build() engine.Widget {
-	s.loadBackground()
-
-	return tenon.Stack(
-		// Background - absolute positioned, fills stack
-		tenon.Positioned(
-			tenon.Image(s.bg).Fit(tenon.ObjectFitCover),
-		).L(0).T(0).R(0).B(0),
-
-		// Game UI overlay - absolute positioned, fills stack
-		tenon.Positioned(
-			tenon.VStack(
-				// Opponent info bar
-				s.buildPlayerInfoBar(1),
-				// Field grid
-				s.buildFieldGrid(),
-				// Own info bar
-				s.buildPlayerInfoBar(0),
-				// Command / phase buttons
-				s.buildCmdBar(),
-			).Gap(2),
-		).L(0).T(0).R(0).B(0),
-
-		// Chat overlay - bottom left
-		tenon.Positioned(
-			s.buildChatOverlay(),
-		).L(8).B(80).W(300).H(200),
-
-		// Dialog overlay - absolute positioned, fills stack
-		tenon.Positioned(
-			s.buildDialog(),
-		).L(0).T(0).R(0).B(0),
-	).Width(client.GameWindowWidth).Height(client.GameWindowHeight)
-}
-
-func (s *DuelFieldScene) buildPlayerInfoBar(player int) engine.Widget {
-	lp := client.MainGame.DInfo.LP[player]
-	lpStr := client.MainGame.DInfo.StrLP[player]
-	if lpStr == "" {
-		lpStr = fmt.Sprintf("%d", lp)
-	}
-
-	deckCount := len(client.MainGame.DField.Deck[player])
-	handCount := len(client.MainGame.DField.Hand[player])
-	graveCount := len(client.MainGame.DField.Grave[player])
-	extraCount := len(client.MainGame.DField.Extra[player])
-	removeCount := len(client.MainGame.DField.Remove[player])
-
-	phaseStr := phaseName(client.MainGame.DInfo.Phase)
-	return tenon.Container(
-		tenon.HStack(
-			tenon.Container(tenon.Text(fmt.Sprintf("LP: %s", lpStr)).FontSize(16).Color(white)).W(120),
-			tenon.HStack(
-				tenon.Text(fmt.Sprintf("D:%d", deckCount)).FontSize(11).Color(white),
-				tenon.Text(fmt.Sprintf("H:%d", handCount)).FontSize(11).Color(white),
-				tenon.Text(fmt.Sprintf("G:%d", graveCount)).FontSize(11).Color(white),
-				tenon.Text(fmt.Sprintf("E:%d", extraCount)).FontSize(11).Color(white),
-				tenon.Text(fmt.Sprintf("R:%d", removeCount)).FontSize(11).Color(white),
-			).Gap(6),
-			tenon.Container(
-				tenon.Text(fmt.Sprintf("Turn %d", client.MainGame.DInfo.Turn)).FontSize(12).Color(white),
-			).W(70),
-			tenon.Container(
-				tenon.Text(phaseStr).FontSize(12).Color(white),
-			).W(90),
-		).Gap(8).Padding(4).AlignItems(tenon.AlignCenter),
-	).Background(blackTransparent)
-}
-
-// buildFieldGrid builds the full duel field with both players' zones.
-func (s *DuelFieldScene) buildFieldGrid() engine.Widget {
-	return tenon.VStack(
-		// Opponent side (flipped visually)
-		s.buildPlayerField(1),
-		// Spacer between fields
-		tenon.Container(tenon.Spacer()).H(8),
-		// Own side
-		s.buildPlayerField(0),
-	).Gap(2).AlignItems(tenon.AlignCenter)
-}
-
-// buildPlayerField builds one player's field side:
-// Side bar | SZone (back row) | MZone (front row)
-func (s *DuelFieldScene) buildPlayerField(player int) engine.Widget {
-	return tenon.HStack(
-		// Side bar: Extra / Deck / Grave / Removed / Hand counts
-		s.buildSideBar(player),
-		// Main field: back row (SZone) + front row (MZone)
-		tenon.VStack(
-			s.buildZoneRow(player, 0x08, 8), // SZone: 5 spell/trap + 1 field
-			tenon.Container(tenon.Spacer()).H(4),
-			s.buildZoneRow(player, 0x04, 7), // MZone: 5 monster + 2 extra for alignment
-		).Gap(2),
-	).Gap(4).AlignItems(tenon.AlignCenter)
-}
-
-func (s *DuelFieldScene) buildSideBar(player int) engine.Widget {
-	extraCount := len(client.MainGame.DField.Extra[player])
-	deckCount := len(client.MainGame.DField.Deck[player])
-	graveCount := len(client.MainGame.DField.Grave[player])
-	removeCount := len(client.MainGame.DField.Remove[player])
-	handCount := len(client.MainGame.DField.Hand[player])
-
-	items := []tenon.Widget{
-		s.sideBarItem("Extra", extraCount),
-		s.sideBarItem("Deck", deckCount),
-		s.sideBarItem("Grave", graveCount),
-		s.sideBarItem("Removed", removeCount),
-		s.sideBarItem("Hand", handCount),
-	}
-	return tenon.VStack(items...).Gap(2).AlignItems(tenon.AlignCenter)
-}
-
-func (s *DuelFieldScene) sideBarItem(label string, count int) tenon.Widget {
-	return tenon.Container(
-		tenon.VStack(
-			tenon.Text(label).FontSize(9).Color(white),
-			tenon.Text(fmt.Sprintf("%d", count)).FontSize(10).Color(white),
-		).Gap(0).AlignItems(tenon.AlignCenter),
-	).W(40).H(36).Background(blackTransparent).CornerRadius(4)
-}
-
-// buildZoneRow builds a row of card slots for a zone (MZone or SZone).
-func (s *DuelFieldScene) buildZoneRow(player int, location uint8, slots int) tenon.Widget {
-	cells := make([]tenon.Widget, slots)
-	for i := 0; i < slots; i++ {
-		seq := i
-		if location == 0x08 && i == 5 {
-			// Field spell zone at the end of SZone row
-			seq = 5
-		}
-		card := client.MainGame.DField.GetCard(player, location, seq)
-		cells[i] = s.buildCardSlot(card, player, location, seq)
-	}
-	return tenon.HStack(cells...).Gap(4).Justify(yoga.JustifyCenter)
-}
-
-func (s *DuelFieldScene) buildCardSlot(card *client.ClientCard, player int, location uint8, sequence int) tenon.Widget {
-	placeSelectable := s.isPlaceSelectable(player, location, sequence)
-
-	if card == nil || card.Code == 0 {
-		return s.buildEmptySlot(player, location, sequence, placeSelectable)
-	}
-
-	isSet := card.Position == 0x08 || card.Position == 0x02 // face-down DEF or face-down ATK
-	bg, borderColor, borderW := s.cardColors(card, location, isSet, placeSelectable)
-
-	// Build card content
-	var content tenon.Widget
-	if isSet {
-		content = s.buildSetCardContent(card, placeSelectable)
-	} else {
-		content = s.buildFaceUpCardContent(card, location, placeSelectable)
-	}
-
-	overlays := []tenon.Widget{content}
-	if card.IsShowEquip {
-		overlays = append(overlays, tenon.Positioned(tenon.Container(tenon.Text("E").FontSize(8).Color(white)).Background(equipColor).Padding(1).CornerRadius(2)).R(2).T(2))
-	}
-	if card.IsShowTarget {
-		overlays = append(overlays, tenon.Positioned(tenon.Container(tenon.Text("T").FontSize(8).Color(white)).Background(targetColor).Padding(1).CornerRadius(2)).L(2).T(2))
-	}
-	if card.IsShowChainTarget {
-		overlays = append(overlays, tenon.Positioned(tenon.Container(tenon.Text("C").FontSize(8).Color(white)).Background(chainColor).Padding(1).CornerRadius(2)).L(2).B(2))
-	}
-
-	if len(overlays) > 1 {
-		return tenon.Container(tenon.Stack(overlays...)).
-			W(58).H(78).
-			Background(bg).
-			Border(borderColor, borderW).
-			CornerRadius(6).
-			OnClick(func() {
-				s.onCardClick(card, player, location, sequence)
-			})
-	}
-	return tenon.Container(content).
-		W(58).H(78).
-		Background(bg).
-		Border(borderColor, borderW).
-		CornerRadius(6).
-		OnClick(func() {
-			s.onCardClick(card, player, location, sequence)
-		})
-}
-
-func (s *DuelFieldScene) buildEmptySlot(player int, location uint8, sequence int, placeSelectable bool) tenon.Widget {
-	bg := cardEmptyBg
-	borderColor := color.RGBA{R: 255, G: 255, B: 255, A: 40}
-	borderW := float32(1)
-	if placeSelectable {
-		bg = placePurple
-		borderColor = white
-		borderW = 2
-	}
-	return tenon.Container(tenon.Spacer()).
-		W(58).H(78).
-		Background(bg).
-		Border(borderColor, borderW).
-		CornerRadius(6).
-		OnClick(func() {
-			s.onEmptySlotClick(player, location, sequence)
-		})
-}
-
-func (s *DuelFieldScene) cardColors(card *client.ClientCard, location uint8, isSet, placeSelectable bool) (bg color.Color, borderColor color.Color, borderW float32) {
-	borderW = 1
-	borderColor = color.RGBA{R: 255, G: 255, B: 255, A: 80}
-
-	if card.IsSelected {
-		borderColor = selectedGold
-		borderW = 3
-	} else if card.IsSelectable {
-		borderColor = selectableCyan
-		borderW = 2
-	} else if placeSelectable {
-		borderColor = placePurple
-		borderW = 2
-	}
-
-	if isSet {
-		bg = cardSetBg
-		return
-	}
-
-	switch location {
-	case 0x04: // MZONE
-		bg = cardMonsterBg
-	case 0x08: // SZONE
-		if card.Type&0x4 != 0 { // TYPE_TRAP
-			bg = cardTrapBg
-		} else {
-			bg = cardSpellBg
-		}
-	default:
-		bg = cardMonsterBg
-	}
-	return
-}
-
-
-func (s *DuelFieldScene) buildSetCardContent(card *client.ClientCard, placeSelectable bool) tenon.Widget {
-	return tenon.VStack(
-		tenon.Text("???").FontSize(12).Color(white),
-	).AlignItems(tenon.AlignCenter).Justify(yoga.JustifyCenter)
-}
-
-func (s *DuelFieldScene) buildFaceUpCardContent(card *client.ClientCard, location uint8, placeSelectable bool) tenon.Widget {
-	posText := ""
-	switch card.Position {
-	case 0x01:
-		posText = "ATK"
-	case 0x04:
-		posText = "DEF"
-	}
-
-	// Try to show card image
-	cImg := cardImage(int(card.Code))
-	if cImg != nil {
-		overlay := []tenon.Widget{
-			tenon.Image(cImg).Fit(tenon.ObjectFitCover),
-		}
-		// Overlay position text and badges
-		if posText != "" {
-			overlay = append(overlay, tenon.Positioned(tenon.Container(tenon.Text(posText).FontSize(9).Color(white)).Background(blackTransparent).Padding(1)).L(2).T(2))
-		}
-		if card.CmdFlag != 0 {
-			badges := []tenon.Widget{}
-			if card.CmdFlag&client.CommandSummon != 0 {
-				badges = append(badges, tenon.Container(tenon.Text("SUM").FontSize(7).Color(white)).Background(cmdSummonColor).CornerRadius(2).Padding(1))
-			}
-			if card.CmdFlag&client.CommandAttack != 0 {
-				badges = append(badges, tenon.Container(tenon.Text("ATK").FontSize(7).Color(white)).Background(cmdAttackColor).CornerRadius(2).Padding(1))
-			}
-			if card.CmdFlag&client.CommandActivate != 0 {
-				badges = append(badges, tenon.Container(tenon.Text("ACT").FontSize(7).Color(white)).Background(cmdActivateColor).CornerRadius(2).Padding(1))
-			}
-			if len(badges) > 0 {
-				overlay = append(overlay, tenon.Positioned(tenon.HStack(badges...).Gap(1)).R(2).B(2))
-			}
-		}
-		return tenon.Stack(overlay...)
-	}
-
-	// Fallback: text-only display
-	badges := []tenon.Widget{}
-	if card.CmdFlag != 0 {
-		if card.CmdFlag&client.CommandSummon != 0 {
-			badges = append(badges, tenon.Container(tenon.Text("SUM").FontSize(7).Color(white)).Background(cmdSummonColor).CornerRadius(2).Padding(1))
-		}
-		if card.CmdFlag&client.CommandAttack != 0 {
-			badges = append(badges, tenon.Container(tenon.Text("ATK").FontSize(7).Color(white)).Background(cmdAttackColor).CornerRadius(2).Padding(1))
-		}
-		if card.CmdFlag&client.CommandActivate != 0 {
-			badges = append(badges, tenon.Container(tenon.Text("ACT").FontSize(7).Color(white)).Background(cmdActivateColor).CornerRadius(2).Padding(1))
-		}
-	}
-
-	// Counter text
-	counterText := ""
-	if client.MainGame.DInfo.CurMsg == network.MSG_SELECT_COUNTER && card.IsSelectable {
-		counterText = fmt.Sprintf("C:%d", card.OpParam&0xffff)
-	}
-
-	// Code display (truncated)
-	codeText := fmt.Sprintf("%d", card.Code)
-	if len(codeText) > 8 {
-		codeText = codeText[:8]
-	}
-
-	widgets := []tenon.Widget{
-		tenon.Text(codeText).FontSize(8).Color(white),
-	}
-	if posText != "" {
-		widgets = append(widgets, tenon.Text(posText).FontSize(9).Color(white))
-	}
-	if len(badges) > 0 {
-		widgets = append(widgets, tenon.HStack(badges...).Gap(2))
-	}
-	if counterText != "" {
-		widgets = append(widgets, tenon.Text(counterText).FontSize(8).Color(white))
-	}
-
-	return tenon.VStack(widgets...).Gap(2).AlignItems(tenon.AlignCenter).Justify(yoga.JustifyCenter)
-}
-
-func (s *DuelFieldScene) isPlaceSelectable(player int, location uint8, sequence int) bool {
-	curMsg := client.MainGame.DInfo.CurMsg
-	if curMsg != network.MSG_SELECT_PLACE && curMsg != network.MSG_SELECT_DISFIELD {
-		return false
-	}
-	field := client.MainGame.DField.SelectableField
-	var bit uint32
-	switch {
-	case player == 0 && location == 0x04: // MZONE
-		bit = 1 << sequence
-	case player == 0 && location == 0x08 && sequence < 6: // SZONE
-		bit = 1 << (sequence + 8)
-	case player == 0 && location == 0x08 && sequence >= 6: // SZONE PZONE
-		bit = 1 << (sequence + 8)
-	case player == 1 && location == 0x04: // MZONE
-		bit = 1 << (sequence + 16)
-	case player == 1 && location == 0x08 && sequence < 6: // SZONE
-		bit = 1 << (sequence + 24)
-	case player == 1 && location == 0x08 && sequence >= 6: // SZONE PZONE
-		bit = 1 << (sequence + 24)
-	}
-	return field&bit != 0
-}
-
-func (s *DuelFieldScene) onCardClick(card *client.ClientCard, player int, location uint8, sequence int) {
-	// Handle selection during dialog
-	dialog := client.MainGame.Dialog
-	if dialog.Visible && dialog.Type == client.DialogCardSelect {
-		if card.IsSelectable {
-			card.IsSelected = !card.IsSelected
-		}
-		return
-	}
-
-	// Handle place/disfield selection
-	curMsg := client.MainGame.DInfo.CurMsg
-	if curMsg == network.MSG_SELECT_PLACE || curMsg == network.MSG_SELECT_DISFIELD {
-		if s.isPlaceSelectable(player, location, sequence) {
-			resp := []byte{uint8(player), location, uint8(sequence)}
-			client.MainGame.DField.SelectableField = 0
-			client.Client.SetResponseB(resp)
-			client.Client.SendResponse()
-		}
-		return
-	}
-
-	// Handle counter selection
-	if curMsg == network.MSG_SELECT_COUNTER {
-		if card.IsSelectable {
-			card.OpParam--
-			if card.OpParam&0xffff == 0 {
-				card.IsSelectable = false
-			}
-			client.MainGame.DField.SelectCounterCount--
-			if client.MainGame.DField.SelectCounterCount == 0 {
-				// Build response
-				resp := make([]byte, len(client.MainGame.DField.SelectableCards)*2)
-				for i, c := range client.MainGame.DField.SelectableCards {
-					val := uint16((c.OpParam >> 16) - (c.OpParam & 0xffff))
-					binary.LittleEndian.PutUint16(resp[i*2:], val)
-				}
-				client.Client.SetResponseB(resp)
-				client.Client.SendResponse()
-				client.MainGame.DField.ClearSelect()
-			}
-		}
-		return
-	}
-
-	// Handle command selection during IDLECMD / BATTLECMD
-	if curMsg == network.MSG_SELECT_IDLECMD || curMsg == network.MSG_SELECT_BATTLECMD {
-		if card.CmdFlag != 0 {
-			s.handleCmdClick(card, curMsg)
+	// 悬停预览的状态提到这里：卡自己知道有没有被悬停，但预览面板画在场景外面。
+	hovered, setHovered := ui.UseState[*client.ClientCard](nil)
+	onHoverCard := ui.UseCallback(func(card *client.ClientCard, on bool) {
+		if on {
+			setHovered(card)
 			return
 		}
-	}
+		// 只有「离开的正是当前预览的那张」才清空：鼠标从 A 滑到 B 时，
+		// B 的进入可能先于 A 的离开到达，不判断就会把 B 的预览误清掉。
+		if hovered == card {
+			setHovered(nil)
+		}
+	}, hovered)
 
-	fmt.Printf("Clicked card code=%d loc=%d seq=%d\n", card.Code, location, sequence)
-}
+	return ui.Box([]ui.StyleOpt{ui.Fill, ui.Bg(black)},
+		texture("bg", client.ImageMgr.TBackGround, ui.FitCover,
+			ui.Absolute, ui.Top(0), ui.Left(0), ui.Fill),
 
-func (s *DuelFieldScene) onEmptySlotClick(player int, location uint8, sequence int) {
-	curMsg := client.MainGame.DInfo.CurMsg
-	if curMsg == network.MSG_SELECT_PLACE || curMsg == network.MSG_SELECT_DISFIELD {
-		if s.isPlaceSelectable(player, location, sequence) {
-			resp := []byte{uint8(player), location, uint8(sequence)}
-			client.MainGame.DField.SelectableField = 0
-			client.Client.SetResponseB(resp)
-			client.Client.SendResponse()
-		}
-	}
-}
+		fieldScene(onHoverCard),
 
-func (s *DuelFieldScene) handleCmdClick(card *client.ClientCard, curMsg int16) {
-	df := client.MainGame.DField
-	options := []string{}
-	resps := []int32{}
-
-	if curMsg == network.MSG_SELECT_IDLECMD {
-		for i, c := range df.SummonableCards {
-			if c == card {
-				options = append(options, "Summon")
-				resps = append(resps, int32(i<<16))
-			}
-		}
-		for i, c := range df.SPSummonableCards {
-			if c == card {
-				options = append(options, "Special Summon")
-				resps = append(resps, int32((i<<16)+1))
-			}
-		}
-		for i, c := range df.ReposableCards {
-			if c == card {
-				options = append(options, "Repos")
-				resps = append(resps, int32((i<<16)+2))
-			}
-		}
-		for i, c := range df.MSetableCards {
-			if c == card {
-				options = append(options, "Set")
-				resps = append(resps, int32((i<<16)+3))
-			}
-		}
-		for i, c := range df.SSetableCards {
-			if c == card {
-				options = append(options, "Set Spell/Trap")
-				resps = append(resps, int32((i<<16)+4))
-			}
-		}
-		for i, c := range df.ActivatableCards {
-			if c == card {
-				flag := df.ActivatableDescs[i][1]
-				if flag&client.EDESCOperation != 0 {
-					continue
-				}
-				options = append(options, "Activate")
-				resps = append(resps, int32((i<<16)+5))
-			}
-		}
-	} else if curMsg == network.MSG_SELECT_BATTLECMD {
-		for i, c := range df.ActivatableCards {
-			if c == card {
-				flag := df.ActivatableDescs[i][1]
-				if flag&client.EDESCOperation != 0 {
-					continue
-				}
-				options = append(options, "Activate")
-				resps = append(resps, int32(i<<16))
-			}
-		}
-		for i, c := range df.AttackableCards {
-			if c == card {
-				options = append(options, "Attack")
-				resps = append(resps, int32((i<<16)+1))
-			}
-		}
-	}
-
-	if len(options) == 1 {
-		client.MainGame.DField.ClearCommandFlag()
-		client.Client.SetResponseI(resps[0])
-		client.Client.SendResponse()
-	} else if len(options) > 1 {
-		client.MainGame.Dialog.ShowCmdSelect(options, resps)
-	}
-}
-
-// ----- Dialog rendering -----
-
-func (s *DuelFieldScene) buildDialog() engine.Widget {
-	dialog := client.MainGame.Dialog
-	if !dialog.Visible {
-		return tenon.Container(tenon.Spacer())
-	}
-
-	return tenon.Container(
-		tenon.Stack(
-			// Dim background - absolute positioned, fills stack
-			tenon.Positioned(
-				tenon.Container(tenon.Spacer()).Background(modalOverlay),
-			).L(0).T(0).R(0).B(0),
-			// Dialog content - absolute positioned, fills stack
-			tenon.Positioned(
-				tenon.VStack(
-					tenon.Container(tenon.Spacer()).H(80),
-					s.buildDialogContent(),
-					tenon.Container(tenon.Spacer()).H(80),
-				).AlignItems(tenon.AlignCenter).Justify(yoga.JustifyCenter),
-			).L(0).T(0).R(0).B(0),
+		ui.Box([]ui.StyleOpt{ui.Absolute, ui.Left(8), ui.Top(56)},
+			cardPreview(hovered),
 		),
+
+		// —— 平面 HUD：不进 3D，始终正对观察者 ——
+		ui.Box([]ui.StyleOpt{ui.Absolute, ui.Top(0), ui.Left(0), ui.WidthPct(100)},
+			playerInfoBar(1),
+		),
+		ui.Box([]ui.StyleOpt{ui.Absolute, ui.Bottom(0), ui.Left(0), ui.WidthPct(100), ui.Column},
+			playerInfoBar(0),
+			cmdBar(),
+		),
+		ui.Box([]ui.StyleOpt{ui.Absolute, ui.Left(8), ui.Bottom(64), ui.MaxWidth(340), ui.Column, ui.Gap(4)},
+			chatOverlay(),
+			ui.Use(chatBar, chatBarProps{}),
+		),
+		duelDialog(),
 	)
 }
 
-func (s *DuelFieldScene) buildDialogContent() engine.Widget {
-	dialog := client.MainGame.Dialog
-	switch dialog.Type {
-	case client.DialogYesNo:
-		return s.buildYesNoDialog()
-	case client.DialogOption:
-		return s.buildOptionDialog()
-	case client.DialogCardSelect:
-		return s.buildCardSelectDialog()
-	case client.DialogCmdSelect:
-		return s.buildCmdSelectDialog()
-	case client.DialogPosition:
-		return s.buildPositionDialog()
-	case client.DialogSort:
-		return s.buildSortDialog()
-	case client.DialogRace:
-		return s.buildRaceDialog()
-	case client.DialogAttrib:
-		return s.buildAttribDialog()
-	case client.DialogCard:
-		return s.buildAnnounceCardDialog()
-	default:
-		return tenon.Container(tenon.Spacer())
-	}
+// fieldScene 是那张倾斜的桌子。Scene3D 只对**直接子元素**生效 —— 卡牌必须直接挂在这里，
+// 中间多套一层容器，那层会被当作一个整体投影，尺寸一大就失真。
+func fieldScene(onHoverCard func(*client.ClientCard, bool)) *ui.Node {
+	kids := []*ui.Node{fieldTexture()}
+	kids = append(kids, zoneSlots()...)
+	kids = append(kids, cardNodes(onHoverCard)...)
+
+	w, h := tableSize()
+	return ui.Box([]ui.StyleOpt{
+		ui.Absolute, ui.Left((float32(client.GameWindowWidth) - w) / 2), ui.Top(tableTop),
+		ui.Width(w), ui.Height(h),
+		ui.Scene3D, ui.Perspective(tablePerspective * tableScale), ui.RotateX(tableTilt),
+	}, kids...)
 }
 
-func (s *DuelFieldScene) animatedDialogContent(content tenon.Widget, w, h float32) tenon.Widget {
-	return tenon.NewAnimatedContainer().
-		WithChild(content).
-		WithSize(w, h).
-		WithDuration(200 * time.Millisecond).
-		WithCurve(tenon.EaseInOutCurve{})
+// tableSize 是桌面盒子在窗口里的像素尺寸。
+func tableSize() (w, h float32) {
+	fw, fh := client.FieldSize()
+	return fw * tableScale, fh * tableScale
 }
 
-func (s *DuelFieldScene) buildYesNoDialog() engine.Widget {
-	desc := fmt.Sprintf("Effect #%d", client.MainGame.Dialog.YesNoDesc)
-	content := tenon.Container(
-		tenon.VStack(
-			tenon.Text(desc).FontSize(18).Color(white),
-			tenon.Container(tenon.Spacer()).H(20),
-			tenon.HStack(
-				tenon.Button("Yes").OnClick(func() {
-					client.Client.SetResponseI(1)
-					client.Client.SendResponse()
-					client.MainGame.Dialog.Hide()
-				}),
-				tenon.Button("No").Style(tenon.ButtonOutline).OnClick(func() {
-					client.Client.SetResponseI(0)
-					client.Client.SendResponse()
-					client.MainGame.Dialog.Hide()
-				}),
-			).Gap(16).Justify(yoga.JustifyCenter),
-		).Gap(12).Padding(24).AlignItems(tenon.AlignCenter),
-	).Background(white).CornerRadius(12).W(400).H(180)
-	return s.animatedDialogContent(content, 400, 180)
+// tableRect 把桌面平面坐标（client.ZoneCenter 那套，以中心点表示）换算成桌面盒子内
+// 左上角对齐的绝对定位。缩放是整体的：坐标和卡牌尺寸必须同步缩，否则卡会挤出格子。
+func tableRect(cx, cy float32) (left, top, w, h float32) {
+	cw, ch := client.CardSize()
+	cw, ch = cw*tableScale, ch*tableScale
+	return cx*tableScale - cw/2, cy*tableScale - ch/2, cw, ch
 }
 
-func (s *DuelFieldScene) buildOptionDialog() engine.Widget {
-	options := client.MainGame.Dialog.Options
-	buttons := make([]tenon.Widget, 0, len(options))
-	for i, opt := range options {
-		idx := i
-		label := fmt.Sprintf("Option %d", opt)
-		switch client.MainGame.DInfo.CurMsg {
-		case network.MSG_ROCK_PAPER_SCISSORS:
-			switch opt {
-			case 1:
-				label = "Rock"
-			case 2:
-				label = "Paper"
-			case 3:
-				label = "Scissors"
-			}
-		case network.MSG_ANNOUNCE_NUMBER:
-			label = fmt.Sprintf("%d", opt)
-		}
-		buttons = append(buttons,
-			tenon.Button(label).OnClick(func() {
-				if client.MainGame.Dialog.OnOptionSelected != nil {
-					client.MainGame.Dialog.OnOptionSelected(idx)
-				} else {
-					client.Client.SetResponseI(int32(idx))
-					client.Client.SendResponse()
-				}
-				client.MainGame.Dialog.Hide()
-			}),
-		)
+// fieldTexture 铺原版那张整幅场地图。
+//
+// 必须用 PlaneImage 而不是普通 Img：地板是场上最大的元素，又是卡牌落位的参照系。
+// Scene3D 画内容用的是仿射，偏差随元素尺寸增长，这么大的图会被画成斜切的平行四边形，
+// 格线不朝灭点收敛，卡（小元素、投影准确）就明显对不上格子。PlaneImage 用精确单应把图
+// CPU 预变形一次再正着贴，且变形所用投影与卡牌同源，二者严丝合缝。
+func fieldTexture() *ui.Node {
+	w, h := tableSize()
+	rule := client.FieldRule()
+	img := client.ImageMgr.TField[rule]
+	if img == nil {
+		return nil
 	}
-	title := "Select an effect to activate"
-	switch client.MainGame.DInfo.CurMsg {
-	case network.MSG_ROCK_PAPER_SCISSORS:
-		title = "Rock Paper Scissors"
-	case network.MSG_ANNOUNCE_NUMBER:
-		title = "Select a number"
-	}
-	content := tenon.Container(
-		tenon.VStack(
-			tenon.Text(title).FontSize(18).Color(white),
-			tenon.Container(tenon.Spacer()).H(12),
-			tenon.VStack(buttons...).Gap(8).AlignItems(tenon.AlignStretch),
-		).Gap(12).Padding(24).AlignItems(tenon.AlignCenter),
-	).Background(white).CornerRadius(12).W(400)
-	return s.animatedDialogContent(content, 400, 300)
+	return ui.Img(ui.PlaneImage(fmt.Sprintf("field:%d", rule), img),
+		ui.Style(ui.Absolute, ui.Left(0), ui.Top(0), ui.Width(w), ui.Height(h)))
 }
 
-func (s *DuelFieldScene) buildCardSelectDialog() engine.Widget {
-	dialog := client.MainGame.Dialog
-	title := dialog.SelectHint
-	if title == "" {
-		title = "Select cards"
+// texture 画一张由 ImageManager 管着的贴图。
+//
+// 用 SrcImage 而不是 Src(路径)：贴图在 ImageManager.Initial 时就已解码在内存里，
+// 再让 tenon 去读一次盘只会让首帧闪空白（Src 是异步解码，要等一次 Post 才出图）。
+func texture(key string, img image.Image, fit ui.ObjectFit, opts ...ui.StyleOpt) *ui.Node {
+	if img == nil {
+		return nil
 	}
-	cards := dialog.SelectCards
+	return ui.Img(ui.SrcImage(key, img), ui.Fit(fit), ui.Style(opts...))
+}
 
-	cardWidgets := make([]tenon.Widget, 0, len(cards))
-	for i, card := range cards {
-		idx := i
-		bg := cardGray
-		if card.IsSelected {
-			bg = color.RGBA{R: 100, G: 200, B: 100, A: 255}
-		}
-		var cardContent tenon.Widget
-		cImg := cardImage(int(card.Code))
-		if cImg != nil {
-			cardContent = tenon.Image(cImg).Fit(tenon.ObjectFitCover)
-		} else {
-			cardContent = tenon.VStack(
-				tenon.Text(fmt.Sprintf("%d", card.Code)).FontSize(10).Color(black),
-			).AlignItems(tenon.AlignCenter).Justify(yoga.JustifyCenter)
-		}
-		cardWidgets = append(cardWidgets,
-			tenon.Container(cardContent).
-				W(60).H(80).Background(bg).CornerRadius(4).OnClick(func() {
-				cards[idx].IsSelected = !cards[idx].IsSelected
-			}),
-		)
-	}
-
-	buttons := []tenon.Widget{}
-	if dialog.SelectCancelable {
-		buttons = append(buttons, tenon.Button("Cancel").Style(tenon.ButtonOutline).OnClick(func() {
-			client.Client.SetResponseI(-1)
-			client.Client.SendResponse()
-			client.MainGame.DField.ClearSelect()
-			client.MainGame.Dialog.Hide()
-		}))
-	}
-	buttons = append(buttons, tenon.Button("OK").OnClick(func() {
-		var resp []byte
-		count := 0
-		for _, c := range cards {
-			if c.IsSelected {
-				count++
+// zoneSlots 画出怪兽/魔陷区的空格子。它们同时是「选择位置」时的点击目标。
+func zoneSlots() []*ui.Node {
+	rule := client.FieldRule()
+	var out []*ui.Node
+	for player := 0; player < 2; player++ {
+		for _, z := range []struct {
+			loc   uint8
+			slots int
+		}{{0x04, 7}, {0x08, 8}} {
+			for seq := 0; seq < z.slots; seq++ {
+				// 有卡的格子也画：格线是桌面的一部分，卡是压在它上面的。
+				// 卡在 kids 里排在后面，自然盖住格子并接管点击。
+				x, y := client.ZoneCenter(player, z.loc, seq, rule)
+				out = append(out, ui.Keyed(
+					fmt.Sprintf("slot-%d-%d-%d", player, z.loc, seq),
+					ui.Use(zoneSlot, zoneSlotProps{
+						Player: player, Location: z.loc, Sequence: seq, X: x, Y: y,
+						Selectable: isPlaceSelectable(player, z.loc, seq),
+					}),
+				))
 			}
 		}
-		resp = append(resp, byte(count))
-
-		if client.MainGame.DInfo.CurMsg == network.MSG_SELECT_SUM {
-			// MSG_SELECT_SUM: must_select cards have select_seq=0,
-			// optional cards use their index in the optional list
-			for _, c := range cards {
-				if c.IsSelected {
-					resp = append(resp, byte(c.SelectSeq))
-				}
-			}
-		} else {
-			for i, c := range cards {
-				if c.IsSelected {
-					resp = append(resp, byte(i))
-				}
-			}
-		}
-		client.Client.SetResponseB(resp)
-		client.Client.SendResponse()
-		client.MainGame.DField.ClearSelect()
-		client.MainGame.Dialog.Hide()
-	}))
-
-	content := tenon.Container(
-		tenon.VStack(
-			tenon.Text(title).FontSize(16).Color(white),
-			tenon.Container(tenon.Spacer()).H(8),
-			tenon.HStack(cardWidgets...).Gap(4),
-			tenon.Container(tenon.Spacer()).H(12),
-			tenon.HStack(buttons...).Gap(12).Justify(yoga.JustifyCenter),
-		).Gap(8).Padding(16).AlignItems(tenon.AlignCenter),
-	).Background(white).CornerRadius(12).W(600)
-	return s.animatedDialogContent(content, 600, 200)
+	}
+	return out
 }
 
-func (s *DuelFieldScene) buildCmdBar() engine.Widget {
+type zoneSlotProps struct {
+	Player     int
+	Location   uint8
+	Sequence   int
+	X, Y       float32
+	Selectable bool
+}
+
+func zoneSlot(p zoneSlotProps) *ui.Node {
+	hovered, _, ia := ui.UseInteraction()
+
+	face, border, bw := cardEmptyBg, ui.Hex("#ffffff29"), float32(1)
+	if p.Selectable {
+		face, border, bw = placePurple, white, 2
+		if hovered {
+			face = ui.Mix(placePurple, white, 0.3)
+		}
+	}
+
+	left, top, cw, ch := tableRect(p.X, p.Y)
+	style := []ui.StyleOpt{
+		ui.Absolute, ui.Left(left), ui.Top(top), ui.Width(cw), ui.Height(ch),
+		ui.Bg(face), ui.Border(bw, border), ui.Radius(4),
+	}
+	if !p.Selectable {
+		return ui.Box(style)
+	}
+	return ui.Button(ui.Style(style...), ia,
+		ui.OnClick(func() { onEmptySlotClick(p.Player, p.Location, p.Sequence) }),
+	)
+}
+
+// cardNodes 把双方所有区域里的卡摊平成场景的直接子元素。
+func cardNodes(onHoverCard func(*client.ClientCard, bool)) []*ui.Node {
 	df := client.MainGame.DField
-	curMsg := client.MainGame.DInfo.CurMsg
-	buttons := []tenon.Widget{}
+	var out []*ui.Node
 
-	if curMsg == network.MSG_SELECT_IDLECMD {
+	for player := 0; player < 2; player++ {
+		lists := []struct {
+			loc   uint8
+			cards []*client.ClientCard
+		}{
+			{0x01, df.Deck[player]},
+			{0x40, df.Extra[player]},
+			{0x10, df.Grave[player]},
+			{0x20, df.Remove[player]},
+			{0x04, df.MZone[player]},
+			{0x08, df.SZone[player]},
+			{0x02, df.Hand[player]}, // 手牌最后：叠在最上层
+		}
+		for _, l := range lists {
+			for _, card := range l.cards {
+				if card == nil {
+					continue
+				}
+				// key 跟着卡走（UID），不跟着位置走 —— 否则卡一换区 key 就变，
+				// tenon 会当成旧节点消失、新节点出现，移动动画无从谈起。
+				out = append(out, ui.Keyed(
+					fmt.Sprintf("card-%d", card.UID),
+					ui.Use(fieldCard, fieldCardProps{Card: card, OnHoverCard: onHoverCard}),
+				))
+			}
+		}
+	}
+	return out
+}
+
+// ---- HUD ----
+
+func playerInfoBar(player int) *ui.Node {
+	g := client.MainGame
+	df := g.DField
+
+	lp := g.DInfo.StrLP[player]
+	if lp == "" {
+		lp = fmt.Sprintf("%d", g.DInfo.LP[player])
+	}
+	counts := fmt.Sprintf("卡组:%d  手牌:%d  墓地:%d  额外:%d  除外:%d",
+		len(df.Deck[player]), len(df.Hand[player]), len(df.Grave[player]),
+		len(df.Extra[player]), len(df.Remove[player]))
+
+	return ui.Box([]ui.StyleOpt{
+		ui.Row, ui.Gap(12), ui.Padding(4), ui.ItemsCenter, ui.Bg(infoBarBg),
+	},
+		ui.Box([]ui.StyleOpt{ui.Width(110)},
+			ui.Text("LP: "+lp, ui.FontSize(16), ui.TextColor(white)),
+		),
+		ui.Text(counts, ui.FontSize(11), ui.TextColor(white)),
+		ui.Box([]ui.StyleOpt{ui.Grow(1)}),
+		ui.Text(fmt.Sprintf("回合 %d", g.DInfo.Turn), ui.FontSize(12), ui.TextColor(white)),
+		ui.Text(phaseName(g.DInfo.Phase), ui.FontSize(12), ui.TextColor(selectedGold)),
+	)
+}
+
+func cmdBar() *ui.Node {
+	df := client.MainGame.DField
+	var btns []*ui.Node
+
+	switch client.MainGame.DInfo.CurMsg {
+	case network.MSG_SELECT_IDLECMD:
 		if df.ShowBP {
-			buttons = append(buttons, tenon.Button("BP").OnClick(func() {
-				client.MainGame.DField.ClearCommandFlag()
-				client.Client.SetResponseI(6)
-				client.Client.SendResponse()
-			}))
+			btns = append(btns, lobbyButton("进入战斗阶段", func() { sendCmd(6) }))
 		}
 		if df.ShowEP {
-			buttons = append(buttons, tenon.Button("EP").OnClick(func() {
-				client.MainGame.DField.ClearCommandFlag()
-				client.Client.SetResponseI(7)
-				client.Client.SendResponse()
-			}))
+			btns = append(btns, lobbyButton("结束回合", func() { sendCmd(7) }))
 		}
 		if df.ShowShuffle {
-			buttons = append(buttons, tenon.Button("Shuffle").OnClick(func() {
-				client.MainGame.DField.ClearCommandFlag()
-				client.Client.SetResponseI(8)
-				client.Client.SendResponse()
-			}))
+			btns = append(btns, lobbyButton("洗切手牌", func() { sendCmd(8) }))
 		}
-	} else if curMsg == network.MSG_SELECT_BATTLECMD {
+	case network.MSG_SELECT_BATTLECMD:
 		if df.ShowM2 {
-			buttons = append(buttons, tenon.Button("M2").OnClick(func() {
-				client.MainGame.DField.ClearCommandFlag()
-				client.Client.SetResponseI(2)
-				client.Client.SendResponse()
-			}))
+			btns = append(btns, lobbyButton("进入主要阶段2", func() { sendCmd(2) }))
 		}
 		if df.ShowEP {
-			buttons = append(buttons, tenon.Button("EP").OnClick(func() {
-				client.MainGame.DField.ClearCommandFlag()
-				client.Client.SetResponseI(3)
-				client.Client.SendResponse()
-			}))
+			btns = append(btns, lobbyButton("结束回合", func() { sendCmd(3) }))
 		}
 	}
 
-	if len(buttons) == 0 {
-		return tenon.Container(tenon.Spacer())
+	if len(btns) == 0 {
+		return nil
 	}
-
-	return tenon.Container(
-		tenon.HStack(buttons...).Gap(8).Justify(yoga.JustifyCenter),
-	).Background(blackTransparent).Padding(4)
+	return ui.Box([]ui.StyleOpt{
+		ui.Row, ui.Gap(8), ui.Padding(4), ui.JustifyCenter, ui.ItemsCenter, ui.Bg(blackTransparent),
+	}, btns...)
 }
 
-func (s *DuelFieldScene) buildChatOverlay() engine.Widget {
+func chatOverlay() *ui.Node {
 	if client.MainGame.HideChat {
-		// Minimized chat - just input box
-		return tenon.Container(
-			tenon.Input("Chat...").Value(s.chatInput).FontSize(12).Background(blackTransparent).Border(white, 1).CornerRadius(4).Padding(4).OnChange(func(v string) {
-				s.chatInput = v
-			}).OnSubmit(func(v string) {
-				if v != "" {
-					client.Client.SendChat(v)
-					s.chatInput = ""
-				}
-			}),
-		).Background(blackTransparent).Padding(4).CornerRadius(6)
+		return nil
 	}
-
-	msgs := make([]tenon.Widget, 0, 8)
+	var msgs []*ui.Node
 	for i := 7; i >= 0; i-- {
 		msg := client.MainGame.ChatMsg[i]
 		if msg == "" {
 			continue
 		}
-		playerType := client.MainGame.ChatType[i]
 		prefix := ""
-		if playerType < 4 {
-			prefix = fmt.Sprintf("P%d: ", playerType)
-		} else if playerType < 8 {
-			prefix = "OBS: "
+		switch t := client.MainGame.ChatType[i]; {
+		case t < 4:
+			prefix = fmt.Sprintf("P%d: ", t)
+		case t < 8:
+			prefix = "观战: "
 		}
-		msgs = append(msgs, tenon.Text(prefix+msg).FontSize(11).Color(white))
+		msgs = append(msgs, ui.Keyed(fmt.Sprint(i),
+			ui.Text(prefix+msg, ui.FontSize(11), ui.TextColor(white))))
 	}
 	if len(msgs) == 0 {
-		msgs = append(msgs, tenon.Text("").FontSize(11))
+		return nil
 	}
-
-	return tenon.Container(
-		tenon.VStack(
-			tenon.VStack(msgs...).Gap(2).AlignItems(tenon.AlignFlexStart),
-			tenon.Container(tenon.Spacer()).H(4),
-			tenon.Input("Chat...").Value(s.chatInput).FontSize(12).Background(blackTransparent).Border(white, 1).CornerRadius(4).Padding(4).OnChange(func(v string) {
-				s.chatInput = v
-			}).OnSubmit(func(v string) {
-				if v != "" {
-					client.Client.SendChat(v)
-					s.chatInput = ""
-				}
-			}),
-		).Gap(4),
-	).Background(blackTransparent).Padding(6).CornerRadius(6)
-}
-
-func (s *DuelFieldScene) buildCmdSelectDialog() engine.Widget {
-	dialog := client.MainGame.Dialog
-	buttons := make([]tenon.Widget, 0, len(dialog.CmdSelectOptions))
-	for i, opt := range dialog.CmdSelectOptions {
-		idx := i
-		buttons = append(buttons,
-			tenon.Button(opt).OnClick(func() {
-				client.MainGame.DField.ClearCommandFlag()
-				client.Client.SetResponseI(dialog.CmdSelectResp[idx])
-				client.Client.SendResponse()
-				client.MainGame.Dialog.Hide()
-			}),
-		)
-	}
-	content := tenon.Container(
-		tenon.VStack(
-			tenon.Text("Select Command").FontSize(18).Color(white),
-			tenon.Container(tenon.Spacer()).H(12),
-			tenon.VStack(buttons...).Gap(8).AlignItems(tenon.AlignStretch),
-		).Gap(12).Padding(24).AlignItems(tenon.AlignCenter),
-	).Background(white).CornerRadius(12).W(300)
-	return s.animatedDialogContent(content, 300, 250)
-}
-
-func (s *DuelFieldScene) buildPositionDialog() engine.Widget {
-	dialog := client.MainGame.Dialog
-	buttons := []tenon.Widget{}
-
-	posMap := []struct {
-		flag  uint8
-		label string
-	}{
-		{0x01, "Face-up ATK"},
-		{0x02, "Face-down ATK"},
-		{0x04, "Face-up DEF"},
-		{0x08, "Face-down DEF"},
-	}
-
-	for _, p := range posMap {
-		if dialog.PositionOptions&p.flag != 0 {
-			val := int32(p.flag)
-			buttons = append(buttons,
-				tenon.Button(p.label).OnClick(func() {
-					client.Client.SetResponseI(val)
-					client.Client.SendResponse()
-					client.MainGame.Dialog.Hide()
-				}),
-			)
-		}
-	}
-
-	content := tenon.Container(
-		tenon.VStack(
-			tenon.Text(fmt.Sprintf("Select position for %d", dialog.PositionCode)).FontSize(16).Color(white),
-			tenon.Container(tenon.Spacer()).H(12),
-			tenon.VStack(buttons...).Gap(8).AlignItems(tenon.AlignStretch),
-		).Gap(12).Padding(24).AlignItems(tenon.AlignCenter),
-	).Background(white).CornerRadius(12).W(300)
-	return s.animatedDialogContent(content, 300, 220)
-}
-
-func (s *DuelFieldScene) buildSortDialog() engine.Widget {
-	dialog := client.MainGame.Dialog
-	cards := dialog.SortCards
-	order := dialog.SortOrder
-
-	cardWidgets := make([]tenon.Widget, 0, len(cards))
-	for i, card := range cards {
-		idx := i
-		bg := cardGray
-		sortText := ""
-		if order[idx] > 0 {
-			bg = color.RGBA{R: 100, G: 200, B: 100, A: 255}
-			sortText = fmt.Sprintf("#%d", order[idx])
-		}
-		var cardContent tenon.Widget
-		cImg := cardImage(int(card.Code))
-		if cImg != nil {
-			cardContent = tenon.Stack(
-				tenon.Image(cImg).Fit(tenon.ObjectFitCover),
-				tenon.Positioned(tenon.Container(tenon.Text(sortText).FontSize(14).Color(white)).Background(blackTransparent).Padding(2)).L(2).B(2),
-			)
-		} else {
-			cardContent = tenon.VStack(
-				tenon.Text(fmt.Sprintf("%d", card.Code)).FontSize(10).Color(black),
-				tenon.Text(sortText).FontSize(12).Color(black),
-			).AlignItems(tenon.AlignCenter).Justify(yoga.JustifyCenter)
-		}
-		cardWidgets = append(cardWidgets,
-			tenon.Container(cardContent).
-				W(60).H(80).Background(bg).CornerRadius(4).OnClick(func() {
-				if order[idx] > 0 {
-					// Unassign
-					removed := order[idx]
-					order[idx] = 0
-					dialog.SortCur--
-					for j := range order {
-						if order[j] > removed {
-							order[j]--
-						}
-					}
-				} else {
-					// Assign next number
-					order[idx] = dialog.SortCur
-					dialog.SortCur++
-					if dialog.SortCur > len(cards)+1 {
-						dialog.SortCur = len(cards) + 1
-					}
-					// Auto-send when all assigned
-					assigned := 0
-					for _, v := range order {
-						if v > 0 {
-							assigned++
-						}
-					}
-					if assigned == len(cards) {
-						resp := make([]byte, len(cards))
-						for j, v := range order {
-							resp[j] = byte(v - 1)
-						}
-						client.Client.SetResponseB(resp)
-						client.Client.SendResponse()
-						client.MainGame.Dialog.Hide()
-					}
-				}
-			}),
-		)
-	}
-
-	content := tenon.Container(
-		tenon.VStack(
-			tenon.Text("Sort cards (click in order)").FontSize(16).Color(white),
-			tenon.Container(tenon.Spacer()).H(8),
-			tenon.HStack(cardWidgets...).Gap(4),
-			tenon.Container(tenon.Spacer()).H(12),
-			tenon.Button("Cancel").Style(tenon.ButtonOutline).OnClick(func() {
-				client.Client.SetResponseI(-1)
-				client.Client.SendResponse()
-				client.MainGame.Dialog.Hide()
-			}),
-		).Gap(8).Padding(16).AlignItems(tenon.AlignCenter),
-	).Background(white).CornerRadius(12).W(600)
-	return s.animatedDialogContent(content, 600, 200)
-}
-
-func (s *DuelFieldScene) buildRaceDialog() engine.Widget {
-	avail := client.MainGame.Dialog.AnnounceRaceAvail
-	raceMap := []struct {
-		bit   uint32
-		label string
-	}{
-		{0x1, "Warrior"},
-		{0x2, "Spellcaster"},
-		{0x4, "Fairy"},
-		{0x8, "Fiend"},
-		{0x10, "Zombie"},
-		{0x20, "Machine"},
-		{0x40, "Aqua"},
-		{0x80, "Pyro"},
-		{0x100, "Rock"},
-		{0x200, "Winged Beast"},
-		{0x400, "Plant"},
-		{0x800, "Insect"},
-		{0x1000, "Thunder"},
-		{0x2000, "Dragon"},
-		{0x4000, "Beast"},
-		{0x8000, "Beast-Warrior"},
-		{0x10000, "Dinosaur"},
-		{0x20000, "Fish"},
-		{0x40000, "Sea Serpent"},
-		{0x80000, "Reptile"},
-		{0x100000, "Psychic"},
-		{0x200000, "Divine"},
-		{0x400000, "Creator God"},
-		{0x800000, "Wyrm"},
-		{0x1000000, "Cyberse"},
-	}
-
-	selected := uint32(0)
-	buttons := make([]tenon.Widget, 0)
-	for _, r := range raceMap {
-		if avail&r.bit == 0 {
-			continue
-		}
-		bit := r.bit
-		buttons = append(buttons,
-			tenon.Button(r.label).OnClick(func() {
-				selected |= bit
-				client.Client.SetResponseI(int32(selected))
-				client.Client.SendResponse()
-				client.MainGame.Dialog.Hide()
-			}),
-		)
-	}
-	content := tenon.Container(
-		tenon.VStack(
-			tenon.Text("Select Race").FontSize(16).Color(white),
-			tenon.Container(tenon.Spacer()).H(12),
-			tenon.VStack(buttons...).Gap(4).AlignItems(tenon.AlignStretch),
-		).Gap(12).Padding(24).AlignItems(tenon.AlignCenter),
-	).Background(white).CornerRadius(12).W(300)
-	return s.animatedDialogContent(content, 300, 350)
-}
-
-func (s *DuelFieldScene) buildAttribDialog() engine.Widget {
-	avail := client.MainGame.Dialog.AnnounceAttribAvail
-	attribMap := []struct {
-		bit   uint32
-		label string
-	}{
-		{0x01, "EARTH"},
-		{0x02, "WATER"},
-		{0x04, "FIRE"},
-		{0x08, "WIND"},
-		{0x10, "LIGHT"},
-		{0x20, "DARK"},
-		{0x40, "DIVINE"},
-	}
-
-	selected := uint32(0)
-	buttons := make([]tenon.Widget, 0)
-	for _, a := range attribMap {
-		if avail&a.bit == 0 {
-			continue
-		}
-		bit := a.bit
-		buttons = append(buttons,
-			tenon.Button(a.label).OnClick(func() {
-				selected |= bit
-				client.Client.SetResponseI(int32(selected))
-				client.Client.SendResponse()
-				client.MainGame.Dialog.Hide()
-			}),
-		)
-	}
-	content := tenon.Container(
-		tenon.VStack(
-			tenon.Text("Select Attribute").FontSize(16).Color(white),
-			tenon.Container(tenon.Spacer()).H(12),
-			tenon.VStack(buttons...).Gap(4).AlignItems(tenon.AlignStretch),
-		).Gap(12).Padding(24).AlignItems(tenon.AlignCenter),
-	).Background(white).CornerRadius(12).W(300)
-	return s.animatedDialogContent(content, 300, 280)
-}
-
-func (s *DuelFieldScene) buildAnnounceCardDialog() engine.Widget {
-	// Without card database, we can't filter by opcodes.
-	// Show a simple input placeholder.
-	content := tenon.Container(
-		tenon.VStack(
-			tenon.Text("Announce Card (placeholder)").FontSize(16).Color(white),
-			tenon.Container(tenon.Spacer()).H(12),
-			tenon.Text("Card database not available").FontSize(12).Color(gray),
-			tenon.Container(tenon.Spacer()).H(12),
-			tenon.Button("Cancel").Style(tenon.ButtonOutline).OnClick(func() {
-				client.Client.SetResponseI(0)
-				client.Client.SendResponse()
-				client.MainGame.Dialog.Hide()
-			}),
-		).Gap(12).Padding(24).AlignItems(tenon.AlignCenter),
-	).Background(white).CornerRadius(12).W(300)
-	return s.animatedDialogContent(content, 300, 180)
+	return ui.Box([]ui.StyleOpt{
+		ui.Column, ui.Gap(2), ui.Padding(6), ui.Bg(blackTransparent), ui.Radius(6),
+	}, msgs...)
 }
 
 func phaseName(phase uint16) string {
 	switch phase {
 	case 0x01:
-		return "DP"
+		return "抽卡阶段"
 	case 0x02:
-		return "SP"
+		return "准备阶段"
 	case 0x04:
-		return "M1"
+		return "主要阶段1"
 	case 0x08:
-		return "BP Start"
+		return "战斗开始"
 	case 0x10:
-		return "BP Step"
+		return "步骤阶段"
 	case 0x20:
-		return "Damage"
+		return "伤害阶段"
 	case 0x40:
-		return "Damage Calc"
+		return "伤害计算"
 	case 0x80:
-		return "BP"
+		return "战斗结束"
 	case 0x100:
-		return "M2"
+		return "主要阶段2"
 	case 0x200:
-		return "EP"
+		return "结束阶段"
 	default:
 		return ""
 	}

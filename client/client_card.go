@@ -2,18 +2,18 @@ package client
 
 import (
 	"encoding/binary"
-	"image"
+	"sync/atomic"
 )
 
 // Command flags (correspond to C++ COMMAND_* in client_card.h)
 const (
-	CommandSummon    = 0x01
-	CommandSPSummon  = 0x02
-	CommandRepos     = 0x04
-	CommandMSet      = 0x08
-	CommandSSet      = 0x10
-	CommandActivate  = 0x20
-	CommandAttack    = 0x40
+	CommandSummon   = 0x01
+	CommandSPSummon = 0x02
+	CommandRepos    = 0x04
+	CommandMSet     = 0x08
+	CommandSSet     = 0x10
+	CommandActivate = 0x20
+	CommandAttack   = 0x40
 )
 
 // EDESC flags for activatable_descs
@@ -22,28 +22,30 @@ const (
 	EDESCReset     = 0x02
 )
 
+// cardUID 给每张卡发一个进程内唯一的号。
+//
+// 卡在区域之间移动时用的自始至终是同一个 ClientCard 对象（见 event_handler 的 MSG_MOVE：
+// 从旧位置 GetCard 出来再 AddCard 回新位置），但它的 Controler/Location/Sequence 都会变，
+// 没法拿来当身份。UI 需要一个跟着卡走的稳定标识，才能认出「这还是刚才那张卡，它移动了」
+// 并播放移动动画，而不是当成旧的消失、新的出现。
+var cardUID atomic.Uint64
+
 // ClientCard corresponds to C++ class ClientCard in client_card.h
 // Represents a card on the client side with rendering and animation state.
 type ClientCard struct {
-	// Transform / animation (mapped from Irrlicht 3D to 2D UI)
-	CurPos image.Point
-	CurRot image.Point
-	DPos   image.Point
-	DRot   image.Point
+	// UID 是这张卡的稳定标识，创建时分配，之后不变。见 cardUID。
+	UID uint64
 
-	CurAlpha uint32
-	DAlpha   uint32
-	AniFrame uint32
+	// 这里曾有一整套逐帧动画状态（CurPosX/TargetX/DPosX/AniFrame/CurAlpha/IsMoving…），
+	// 是 C++ ClientCard 的直译。GUI 层换成 tenon 后由它负责动画：位置变化用 FLIP
+	// （ui.Animated）自动补间，悬停/浮起用 UseTween，都不需要在模型里存插值中间量。
+	// 两套动画并存只会互相打架，故删除。卡摆在哪由 GetCardLocation 现算。
 
-	IsMoving          bool
-	IsFading          bool
-	IsHovered         bool
 	IsSelectable      bool
 	IsSelected        bool
 	IsShowEquip       bool
 	IsShowTarget      bool
 	IsShowChainTarget bool
-	IsHighlighting    bool
 	IsReversed        bool
 
 	Code      uint32
@@ -96,6 +98,7 @@ type ClientCard struct {
 
 func NewClientCard() *ClientCard {
 	return &ClientCard{
+		UID:         cardUID.Add(1),
 		Equipped:    make(map[*ClientCard]struct{}),
 		CardTarget:  make(map[*ClientCard]struct{}),
 		OwnerTarget: make(map[*ClientCard]struct{}),
@@ -260,7 +263,6 @@ func (c *ClientCard) ClearData() {
 }
 
 func ClientCardSort(c1, c2 *ClientCard) bool {
-	// C++ sorts by controler then location then sequence
 	if c1.Controler != c2.Controler {
 		return c1.Controler < c2.Controler
 	}
@@ -269,3 +271,20 @@ func ClientCardSort(c1, c2 *ClientCard) bool {
 	}
 	return c1.Sequence < c2.Sequence
 }
+
+// CardRotationName returns a human-readable rotation description.
+func (c *ClientCard) CardRotationName() string {
+	if c.Location == 0x04 { // MZONE
+		if c.Position&0x04 != 0 {
+			return "DEF"
+		}
+		return "ATK"
+	}
+	return ""
+}
+
+// IsFaceDown reports whether the card is face-down.
+func (c *ClientCard) IsFaceDown() bool {
+	return c.Position&0x08 != 0 || c.Position&0x02 != 0
+}
+
