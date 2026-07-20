@@ -43,6 +43,7 @@ func LobbyScene(_ struct{}) *ui.Node {
 				ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(2), ui.Padding(8), ui.Width(200)},
 					append(infoLines,
 						ui.Box([]ui.StyleOpt{ui.Height(8)}),
+						ui.Use(deckPicker, struct{}{}),
 						readyButton(),
 					)...,
 				),
@@ -195,5 +196,62 @@ func kickButton(p kickButtonProps) *ui.Node {
 			ui.Bg(face), ui.Border(1, ui.Hex("#6e6e6e")), ui.Radius(2)),
 		ui.OnClick(func() { client.Client.Kick(p.Pos) }), ia,
 		ui.Text("×", ui.FontSize(12), ui.TextColor(black)),
+	)
+}
+
+// deckPicker 让玩家在自己的卡组之间切换。
+//
+// 此前客户端只认死路径 deck/default.ydk —— 玩家没法用自己的牌联机。
+// 「准备」会把当前卡组发给服务器（见 onReady），所以这个选择必须在准备之前生效。
+func deckPicker(_ struct{}) *ui.Node {
+	dm := client.MainGame.DeckMgr
+	cfg := &client.MainGame.Config
+
+	// 目录内容在进入大厅时读一次就够，不必每帧扫盘。
+	names := ui.UseMemo(func() []string {
+		return dm.DeckNames(cfg.LastCategory)
+	}, cfg.LastCategory)
+
+	current, setCurrent := ui.UseState(cfg.LastDeck)
+	errMsg, setErr := ui.UseState("")
+
+	if len(names) == 0 {
+		return ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(2)},
+			ui.Text("卡组", ui.FontSize(12), ui.TextColor(black)),
+			ui.Text("deck 目录里没有 .ydk", ui.FontSize(11), ui.TextColor(cmdAttackColor)),
+		)
+	}
+
+	// 配置里记的卡组可能已经被删掉了，回退到第一个。
+	idx := 0
+	for i, n := range names {
+		if n == current {
+			idx = i
+			break
+		}
+	}
+
+	pick := func(delta int) {
+		next := names[((idx+delta)%len(names)+len(names))%len(names)]
+		if err := dm.LoadCurrentDeck(cfg.LastCategory, next); err != nil {
+			setErr("载入失败: " + err.Error())
+			return
+		}
+		setErr("")
+		setCurrent(next)
+	}
+
+	return ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(2)},
+		ui.Text("卡组", ui.FontSize(12), ui.TextColor(black)),
+		ui.Box([]ui.StyleOpt{ui.Row, ui.Gap(4), ui.ItemsCenter},
+			lobbyButton("‹", func() { pick(-1) }),
+			ui.Box([]ui.StyleOpt{
+				ui.Width(110), ui.Height(22), ui.Bg(white), ui.PaddingXY(4, 0), ui.JustifyCenter,
+			},
+				ui.Text(names[idx], ui.FontSize(12), ui.TextColor(black)),
+			),
+			lobbyButton("›", func() { pick(1) }),
+		),
+		ui.If(errMsg != "", ui.Text(errMsg, ui.FontSize(10), ui.TextColor(cmdAttackColor))),
 	)
 }

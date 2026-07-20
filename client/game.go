@@ -1,8 +1,6 @@
 package client
 
 import (
-	"encoding/json"
-	"os"
 	"sync"
 
 	"github.com/sjm1327605995/goygopro/protocol"
@@ -127,28 +125,20 @@ func (g *Game) Initialize() bool {
 }
 
 func (g *Game) LoadConfig() {
-	data, err := os.ReadFile("system.conf")
-	if err != nil {
+	// 在默认值基础上覆盖：配置文件里没写的项保持默认，与 C++ 行为一致。
+	if err := LoadConfigFile("system.conf", &g.Config); err != nil {
 		return
 	}
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err == nil {
-		g.Config = cfg
-		if g.Config.WindowWidth == 0 {
-			g.Config.WindowWidth = GameWindowWidth
-		}
-		if g.Config.WindowHeight == 0 {
-			g.Config.WindowHeight = GameWindowHeight
-		}
+	if g.Config.WindowWidth == 0 {
+		g.Config.WindowWidth = GameWindowWidth
+	}
+	if g.Config.WindowHeight == 0 {
+		g.Config.WindowHeight = GameWindowHeight
 	}
 }
 
 func (g *Game) SaveConfig() {
-	data, err := json.MarshalIndent(g.Config, "", "  ")
-	if err != nil {
-		return
-	}
-	_ = os.WriteFile("system.conf", data, 0644)
+	_ = SaveConfigFile("system.conf", &g.Config)
 }
 
 func (g *Game) LocalPlayer(player int) int {
