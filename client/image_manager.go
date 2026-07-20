@@ -232,3 +232,30 @@ func itoa(i int) string {
 	}
 	return string(buf[:n])
 }
+
+// ClearTexture 清空卡图缓存（对应 C++ ImageManager::ClearTexture）。
+//
+// 缓存是三个没有上限的 map：卡图、缩略图、预转过的卡图。一局决斗见到的卡越多，
+// 它们只增不减 —— 一张 177x254 的 RGBA 约 180KB，几百张就是几十 MB，
+// 预转的图还要再翻一倍。C++ 在关闭对局时清一次，这里照做。
+//
+// 系统贴图（卡背、场地、背景）不在此列：它们在 Initial 时加载，整个进程都用得着。
+func (im *ImageManager) ClearTexture() {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	im.TMap[0] = make(map[int]image.Image)
+	im.TMap[1] = make(map[int]image.Image)
+	im.TThumb = make(map[int]image.Image)
+	im.TFields = make(map[int]image.Image)
+	im.TButton = make(map[int]image.Image)
+	im.TButtonDefense = make(map[int]image.Image)
+	im.TRotated = make(map[string]image.Image)
+}
+
+// CachedCount 返回当前缓存的图片张数，用于观察内存占用。
+func (im *ImageManager) CachedCount() int {
+	im.mu.RLock()
+	defer im.mu.RUnlock()
+	return len(im.TMap[0]) + len(im.TMap[1]) + len(im.TThumb) +
+		len(im.TFields) + len(im.TButton) + len(im.TButtonDefense) + len(im.TRotated)
+}

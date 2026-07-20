@@ -85,6 +85,10 @@ func (dc *DuelClient) StopClient() {
 		dc.conn.Close()
 	}
 	close(dc.closeChan)
+
+	// 离开对局时把卡图缓存清掉（对应 C++ 在关闭对局窗口时调 ImageManager::ClearTexture）。
+	// 那三个 map 没有上限，一局见过的卡越多涨得越厉害，不清的话连打几局就一直堆着。
+	ImageMgr.ClearTexture()
 }
 
 func (dc *DuelClient) msgLoop() {

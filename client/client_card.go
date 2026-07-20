@@ -48,36 +48,36 @@ type ClientCard struct {
 	IsShowChainTarget bool
 	IsReversed        bool
 
-	Code      uint32
-	ChainCode uint32
-	Alias     uint32
-	Type      uint32
-	Level     uint32
-	Rank      uint32
-	Link      uint32
-	Attribute uint32
-	Race      uint32
-	Attack    int
-	Defense   int
-	BaseAttack int
+	Code        uint32
+	ChainCode   uint32
+	Alias       uint32
+	Type        uint32
+	Level       uint32
+	Rank        uint32
+	Link        uint32
+	Attribute   uint32
+	Race        uint32
+	Attack      int
+	Defense     int
+	BaseAttack  int
 	BaseDefense int
-	LScale     uint32
-	RScale     uint32
-	LinkMarker uint32
-	Reason     uint32
-	SelectSeq  uint32
+	LScale      uint32
+	RScale      uint32
+	LinkMarker  uint32
+	Reason      uint32
+	SelectSeq   uint32
 
-	Owner      uint8
-	Controler  uint8
-	Location   uint8
-	Sequence   uint8
-	Position   uint8
-	Status     uint32
-	CHint      uint8
-	ChValue    uint32
-	OpParam    uint32
-	Symbol     uint32
-	CmdFlag    uint32
+	Owner     uint8
+	Controler uint8
+	Location  uint8
+	Sequence  uint8
+	Position  uint8
+	Status    uint32
+	CHint     uint8
+	ChValue   uint32
+	OpParam   uint32
+	Symbol    uint32
+	CmdFlag   uint32
 
 	OverlayTarget *ClientCard
 	Overlayed     []*ClientCard
@@ -117,12 +117,26 @@ func (c *ClientCard) UpdateInfo(buf []byte) {
 	}
 	flag := binary.LittleEndian.Uint32(buf)
 	buf = buf[4:]
+	// flag == 0 表示这张卡已经没有可见数据了（离场、被翻回背面等），要清空而不是保留旧值。
+	// 漏掉这一步的话，卡面会一直停在上一次看到的攻守与类型上。
+	if flag == 0 {
+		c.ClearData()
+		return
+	}
 	if flag&0x1 != 0 && len(buf) >= 4 { // QUERY_CODE
-		c.Code = binary.LittleEndian.Uint32(buf)
+		code := binary.LittleEndian.Uint32(buf)
+		// C++ 在 code 为 0 时先 ClearData 再 SetCode —— 卡号没了，旧的数值也不该留着。
+		if code == 0 {
+			c.ClearData()
+		}
+		c.SetCode(code)
 		buf = buf[4:]
 	}
 	if flag&0x2 != 0 && len(buf) >= 4 { // QUERY_POSITION
-		c.Position = buf[0]
+		// 引擎发的是 get_info_location()：controler | location<<8 | sequence<<16 | position<<24，
+		// 表示形式在**最高**字节。此前读的是 buf[0]（controler，只有 0/1），
+		// 于是所有卡的表示形式都是错的 —— 守备与盖伏一律显示成表侧攻击。
+		c.Position = buf[3]
 		buf = buf[4:]
 	}
 	if flag&0x4 != 0 && len(buf) >= 4 { // QUERY_ALIAS
@@ -173,27 +187,39 @@ func (c *ClientCard) UpdateInfo(buf []byte) {
 	if flag&0x2000 != 0 && len(buf) >= 4 {
 		buf = buf[4:]
 	}
-	// QUERY_EQUIP_CARD (0x4000) skip
+	// QUERY_EQUIP_CARD (0x4000)：装备关系。此前只跳过字节，于是装备卡与被装备卡
+	// 互相不认识，界面上的「装」标记永远不出现。
 	if flag&0x4000 != 0 && len(buf) >= 4 {
+		ec, el, es := MainGame.LocalPlayer(int(buf[0])), buf[1], int(buf[2])
 		buf = buf[4:]
+		if ecard := MainGame.DField.GetCard(ec, el, es); ecard != nil {
+			c.EquipTarget = ecard
+			ecard.Equipped[c] = struct{}{}
+		}
 	}
-	// QUERY_TARGET_CARD (0x8000) skip
-	if flag&0x8000 != 0 {
-		if len(buf) >= 4 {
-			count := int(binary.LittleEndian.Uint32(buf))
+	// QUERY_TARGET_CARD (0x8000)：这张卡指示了谁。同样此前只跳字节，
+	// 「标」标记因此永远不出现。
+	if flag&0x8000 != 0 && len(buf) >= 4 {
+		count := int(binary.LittleEndian.Uint32(buf))
+		buf = buf[4:]
+		for i := 0; i < count && len(buf) >= 4; i++ {
+			tc, tl, ts := MainGame.LocalPlayer(int(buf[0])), buf[1], int(buf[2])
 			buf = buf[4:]
-			for i := 0; i < count && len(buf) >= 4; i++ {
-				buf = buf[4:]
+			if tcard := MainGame.DField.GetCard(tc, tl, ts); tcard != nil {
+				c.CardTarget[tcard] = struct{}{}
+				tcard.OwnerTarget[c] = struct{}{}
 			}
 		}
 	}
-	// QUERY_OVERLAY_CARD (0x10000) skip
-	if flag&0x10000 != 0 {
-		if len(buf) >= 4 {
-			count := int(binary.LittleEndian.Uint32(buf))
+	// QUERY_OVERLAY_CARD (0x10000)：超量素材的卡号。此前跳过，素材翻开后仍是背面。
+	if flag&0x10000 != 0 && len(buf) >= 4 {
+		count := int(binary.LittleEndian.Uint32(buf))
+		buf = buf[4:]
+		for i := 0; i < count && len(buf) >= 4; i++ {
+			code := binary.LittleEndian.Uint32(buf)
 			buf = buf[4:]
-			for i := 0; i < count && len(buf) >= 4; i++ {
-				buf = buf[4:]
+			if i < len(c.Overlayed) && c.Overlayed[i] != nil {
+				c.Overlayed[i].SetCode(code)
 			}
 		}
 	}
@@ -202,10 +228,12 @@ func (c *ClientCard) UpdateInfo(buf []byte) {
 		if len(buf) >= 4 {
 			count := int(binary.LittleEndian.Uint32(buf))
 			buf = buf[4:]
-			for i := 0; i < count && len(buf) >= 8; i++ {
+			// 每条计数器是 uint16 类型 + uint16 数量 = 4 字节。
+			// 此前按 8 字节读，多吃一倍，其后的 OWNER/STATUS/LSCALE/RSCALE/LINK 全部错位。
+			for i := 0; i < count && len(buf) >= 4; i++ {
 				ctype := int(binary.LittleEndian.Uint16(buf))
 				cval := int(binary.LittleEndian.Uint16(buf[2:]))
-				buf = buf[8:]
+				buf = buf[4:]
 				c.Counters[ctype] = cval
 			}
 		}
@@ -229,6 +257,11 @@ func (c *ClientCard) UpdateInfo(buf []byte) {
 	if flag&0x400000 != 0 && len(buf) >= 4 { // QUERY_LINK
 		c.Link = binary.LittleEndian.Uint32(buf)
 		buf = buf[4:]
+		// 连接标记（箭头方向）紧随其后，此前没读，LINK 怪的箭头全丢。
+		if len(buf) >= 4 {
+			c.LinkMarker = binary.LittleEndian.Uint32(buf)
+			buf = buf[4:]
+		}
 	}
 }
 
@@ -287,4 +320,3 @@ func (c *ClientCard) CardRotationName() string {
 func (c *ClientCard) IsFaceDown() bool {
 	return c.Position&0x08 != 0 || c.Position&0x02 != 0
 }
-
