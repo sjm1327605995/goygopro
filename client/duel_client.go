@@ -294,3 +294,38 @@ func StringToUtf16(s string, maxLen int) []uint16 {
 	}
 	return res
 }
+
+// SendUpdateDeck 把当前卡组发给服务器。对应 C++ DuelClient::SendUpdateDeck。
+//
+// 这是联机的必经一步，此前完全没有实现：服务器在两处等这个包 ——
+// 进房间准备时（core/duel 会 LoadDeck + CheckDeck），以及 match 换副卡组后
+// （STOC_CHANGE_SIDE 之后玩家 state 被设成 CTOS_UPDATE_DECK，走 LoadSide 校验）。
+// 不发的话，前者点了准备也开不了局，后者第二局直接卡死。
+//
+// 线上格式：mainc(int32) = 主卡组+额外卡组张数，sidec(int32) = 副卡组张数，
+// 之后是三段卡号（主、额外、副）依次排开 —— 额外卡组并进 mainc 里，
+// 服务端靠卡片类型再把它们拆回去（见 core/duel 的 LoadDeck）。
+func (dc *DuelClient) SendUpdateDeck(deck *Deck) {
+	if deck == nil {
+		return
+	}
+	dc.SendBufferToServer(network.CTOS_UPDATE_DECK, buildUpdateDeckPayload(deck))
+}
+
+// buildUpdateDeckPayload 拼 CTOS_UPDATE_DECK 的负载。
+// 单独拆出来是为了能直接对着 protocol 的解包器做往返测试 —— 这条格式错了，
+// 症状是「点了准备开不了局」，从界面上根本看不出是哪一步出的问题。
+func buildUpdateDeckPayload(deck *Deck) []byte {
+	mainc := len(deck.Main) + len(deck.Extra)
+	sidec := len(deck.Side)
+
+	payload := make([]byte, 0, 8+(mainc+sidec)*4)
+	payload = binary.LittleEndian.AppendUint32(payload, uint32(mainc))
+	payload = binary.LittleEndian.AppendUint32(payload, uint32(sidec))
+	for _, list := range [][]uint32{deck.Main, deck.Extra, deck.Side} {
+		for _, code := range list {
+			payload = binary.LittleEndian.AppendUint32(payload, code)
+		}
+	}
+	return payload
+}

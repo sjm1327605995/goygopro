@@ -59,10 +59,14 @@ type Game struct {
 	ChainWhenAvail bool
 	IsBuilding     bool
 	IsSiding       bool
-	ExitOnReturn   bool
-	OpenFile       bool
-	OpenFileName   string
-	BotMode        bool
+	// 换副卡组前三部分的张数。换牌只允许在主/额外/副之间挪，三边数量必须保持不变。
+	SidePreMain  int
+	SidePreExtra int
+	SidePreSide  int
+	ExitOnReturn bool
+	OpenFile     bool
+	OpenFileName string
+	BotMode      bool
 
 	// Lobby state
 	HostPrepNames    [4]string

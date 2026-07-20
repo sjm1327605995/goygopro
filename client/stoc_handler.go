@@ -55,6 +55,13 @@ func (dc *DuelClient) HandleSTOCPacket(data []byte) {
 		MainGame.DInfo.IsInDuel = false
 		MainGame.DField.Clear()
 		MainGame.IsSiding = true
+		// 记下换牌前三部分的张数：换副卡组只允许在主/额外/副之间挪牌，
+		// 三边张数必须与换前完全一致（服务端 LoadSide 也会再验一次）。
+		d := &MainGame.DeckMgr.CurrentDeck
+		MainGame.SidePreMain = len(d.Main)
+		MainGame.SidePreExtra = len(d.Extra)
+		MainGame.SidePreSide = len(d.Side)
+		PushScene("sideDeck")
 	case network.STOC_WAITING_SIDE:
 		MainGame.DInfo.IsInDuel = false
 		MainGame.DField.Clear()

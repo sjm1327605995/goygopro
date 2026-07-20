@@ -45,9 +45,7 @@ func LobbyScene(_ struct{}) *ui.Node {
 				ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(2), ui.Padding(8), ui.Width(200)},
 					append(infoLines,
 						ui.Box([]ui.StyleOpt{ui.Height(8)}),
-						lobbyButton("准备", func() {
-							client.Client.SendPacketToServer(network.CTOS_HS_READY)
-						}),
+						lobbyButton("准备", onReady),
 					)...,
 				),
 			),
@@ -62,6 +60,16 @@ func LobbyScene(_ struct{}) *ui.Node {
 			),
 		),
 	)
+}
+
+// onReady 点「准备」：先把卡组发给服务器，再发 READY。
+//
+// 顺序不能反，也不能只发 READY —— 服务器要靠 CTOS_UPDATE_DECK 拿到卡组才能校验并开局
+// （core/duel 的 LoadDeck + CheckDeck）。这一步此前完全缺失，点了准备也开不了局。
+// 对应 C++ menu_handler.cpp：UpdateDeck() 紧接着 SendPacketToServer(CTOS_HS_READY)。
+func onReady() {
+	client.Client.SendUpdateDeck(&client.MainGame.DeckMgr.CurrentDeck)
+	client.Client.SendPacketToServer(network.CTOS_HS_READY)
 }
 
 func playerRows() *ui.Node {

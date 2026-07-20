@@ -21,6 +21,8 @@ func App(_ struct{}) *ui.Node {
 		return ui.Use(DuelFieldScene, struct{}{})
 	case "deckEdit":
 		return ui.Use(DeckEditScene, struct{}{})
+	case "sideDeck":
+		return ui.Use(SideDeckScene, struct{}{})
 	default:
 		return ui.Use(MainMenuScene, struct{}{})
 	}
