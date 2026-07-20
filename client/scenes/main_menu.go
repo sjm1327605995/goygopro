@@ -23,7 +23,7 @@ func MainMenuScene(_ struct{}) *ui.Node {
 			},
 				menuButton("联机模式", func() { client.PushScene("lanWindow") }),
 				menuButton("单人模式", nil),
-				menuButton("观看录像", nil),
+				menuButton("观看录像", func() { client.PushScene("replayList") }),
 				menuButton("编辑卡组", func() { client.PushScene("deckEdit") }),
 				menuButton("退出", func() { os.Exit(0) }),
 			),

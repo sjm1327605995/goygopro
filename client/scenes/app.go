@@ -35,6 +35,8 @@ func sceneNode(scene string) *ui.Node {
 		return ui.Use(DeckEditScene, struct{}{})
 	case "sideDeck":
 		return ui.Use(SideDeckScene, struct{}{})
+	case "replayList":
+		return ui.Use(ReplayListScene, struct{}{})
 	default:
 		return ui.Use(MainMenuScene, struct{}{})
 	}

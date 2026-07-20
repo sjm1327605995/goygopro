@@ -3,8 +3,6 @@ package client
 import (
 	"encoding/binary"
 	"fmt"
-	"os"
-	"time"
 
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
@@ -76,12 +74,13 @@ func (dc *DuelClient) HandleSTOCPacket(data []byte) {
 	case network.STOC_DUEL_END:
 		dc.handleSTOCDuelEnd()
 	case network.STOC_REPLAY:
-		// Save replay data if auto-save is enabled
+		// 存进 replay 目录，文件名用录像自带的开始时间 —— 此前存到**当前目录**、
+		// 名字是进程的 Unix 时间戳，录像列表根本找不到它们。
 		if MainGame.Config.AutoSaveReplay != 0 && len(payload) > 0 {
-			timestamp := time.Now().Unix()
-			filename := fmt.Sprintf("replay_%d.yrp", timestamp)
-			if err := os.WriteFile(filename, payload, 0644); err == nil {
-				fmt.Printf("Replay saved: %s\n", filename)
+			if path, err := SaveReplayFile(payload); err == nil {
+				fmt.Printf("录像已保存: %s\n", path)
+			} else {
+				fmt.Printf("录像保存失败: %v\n", err)
 			}
 		}
 	case network.STOC_TIME_LIMIT:
