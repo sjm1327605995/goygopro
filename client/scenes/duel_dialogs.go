@@ -49,9 +49,9 @@ func dialogContent(d *client.DialogState) *ui.Node {
 	case client.DialogSort:
 		return sortDialog(d)
 	case client.DialogRace:
-		return bitChoiceDialog("选择种族", d.AnnounceRaceAvail, raceNames)
+		return bitChoiceDialog("选择种族", d.AnnounceRaceAvail, sysRaceBase, raceCount)
 	case client.DialogAttrib:
-		return bitChoiceDialog("选择属性", d.AnnounceAttribAvail, attribNames)
+		return bitChoiceDialog("选择属性", d.AnnounceAttribAvail, sysAttribBase, attribCount)
 	case client.DialogCard:
 		return announceCardDialog()
 	default:
@@ -296,13 +296,17 @@ func toggleSortPick(d *client.DialogState, idx int) {
 }
 
 // bitChoiceDialog 是「从一个位掩码里挑一项」的通用框（种族、属性）。
-func bitChoiceDialog(title string, avail uint32, names []string) *ui.Node {
+//
+// 名字按位取自 strings.conf：属性从系统串 1010 起、种族从 1020 起，第 n 位对应 base+n。
+// 此前是手打的两张表，字面可能与原版不一致，多一个少一个也无从发现。
+func bitChoiceDialog(title string, avail uint32, base, count int) *ui.Node {
 	var btns []*ui.Node
-	for i, name := range names {
+	for i := 0; i < count; i++ {
 		bit := uint32(1) << i
 		if avail&bit == 0 {
 			continue
 		}
+		name := client.Strings.System(base + i)
 		btns = append(btns, ui.Keyed(name, lobbyButton(name, func() { respondI(int32(bit)) })))
 	}
 	return ui.Fragment(
@@ -369,13 +373,14 @@ func respondI(v int32) {
 	client.MainGame.FieldRev.Bump()
 }
 
-var raceNames = []string{
-	"战士", "魔法师", "天使", "恶魔", "不死", "机械", "水", "炎",
-	"岩石", "鸟兽", "植物", "昆虫", "雷", "龙", "兽", "兽战士",
-	"恐龙", "鱼", "海龙", "爬虫类", "念动力", "幻神兽", "创造神", "幻龙", "电子界",
-}
-
-var attribNames = []string{"地", "水", "炎", "风", "光", "暗", "神"}
+// 种族与属性的名字在 strings.conf 里按位排开：属性 1010..1016，种族 1020..1044。
+// 这里只记起始编号和条数，文字本身交给 strings.conf —— 手抄一遍就会漂。
+const (
+	sysAttribBase = 1010
+	attribCount   = 7
+	sysRaceBase   = 1020
+	raceCount     = 25
+)
 
 // cancelButton 是各选择框统一的「取消 / 完成 / 不连锁」出口。
 //

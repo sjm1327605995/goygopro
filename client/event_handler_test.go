@@ -25,9 +25,11 @@ func TestHandleWin(t *testing.T) {
 		winType uint8
 		want    string
 	}{
-		{"自己获胜", 0, 0x00, "LP 归零"},
+		// 文案来自 strings.conf 的 !victory 段。0x0 是「投降」不是「LP 归零」——
+		// 此前硬编码的六条整体错位一格，这个用例当时也跟着写错了。
+		{"自己获胜", 0, 0x01, "基本分变成0"},
 		{"平局", 2, 0x00, "平局"},
-		{"与玩家无关的原因不带名字", 0, 0x10, "胜利条件 16"},
+		{"投降", 0, 0x00, "投降"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			newTestField()

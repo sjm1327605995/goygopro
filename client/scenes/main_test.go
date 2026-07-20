@@ -16,6 +16,6 @@ func TestMain(m *testing.M) {
 	if err := os.Chdir("../.."); err != nil {
 		panic(err)
 	}
-	client.MainGame.Initialize()
+	client.MainGame.Initialize() // 顺带把 strings.conf 读进来，界面文案才是真的
 	os.Exit(m.Run())
 }

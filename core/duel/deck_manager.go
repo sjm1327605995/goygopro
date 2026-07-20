@@ -77,8 +77,11 @@ func (d *deckManager) LoadLFListSingle(path string) {
 				continue
 			}
 
+			// 真实的 lflist.conf 每行是「卡号 限制数 --卡名」三段，注释在后面，
+			// 要求恰好两段会把**每一条禁限都跳过** —— 表能建起来但内容全空，
+			// 于是所有禁限都不生效。C++ 那边用 strtoul 逐个解析，不管后面跟了什么。
 			fields := strings.Fields(line)
-			if len(fields) != 2 {
+			if len(fields) < 2 {
 				continue
 			}
 

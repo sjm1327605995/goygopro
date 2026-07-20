@@ -39,47 +39,81 @@ type DeckManager struct {
 
 var DeckMgr = &DeckManager{}
 
+// LoadLFList 读入禁卡表（lflist.conf）。
+//
+// 段落头是 `!名称`，不是 `[名称]` —— 此前认错了标记，于是**一个禁卡表都载不进来**，
+// 卡组的禁限校验形同虚设。
+//
+// hash 尤其要紧：它是服务端匹配禁卡表的键（房间里选了哪个表就发哪个 hash），
+// 算法必须与 C++ 逐位一致，否则两边对不上号。种子 0x7dfcee6a 与每条的异或式
+// 都照抄 deck_manager.cpp 的 LoadLFListSingle。
 func (dm *DeckManager) LoadLFList() {
-	f, err := os.Open("lflist.conf")
+	// 顺序与 C++ 一致：先扩展包的，再根目录的，最后补一个「无限制」。
+	dm.loadLFListSingle("expansions/lflist.conf")
+	dm.loadLFListSingle("lflist.conf")
+	// N/A 是「不套用任何禁卡表」，hash 固定为 0。少了它，房间里就没法选「无限制」，
+	// 而且表的下标会跟服务端整体错开一位。
+	dm.LFLists = append(dm.LFLists, LFList{
+		ListName: "N/A",
+		Hash:     0,
+		Content:  make(map[uint32]int),
+	})
+}
+
+// loadLFListSingle 读一个禁卡表文件。文件不存在是常事（多数人没有 expansions），直接跳过。
+func (dm *DeckManager) loadLFListSingle(path string) {
+	f, err := os.Open(path)
 	if err != nil {
 		return
 	}
 	defer f.Close()
 
-	var current *LFList
+	var cur *LFList
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "#") {
 			continue
 		}
-		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			name := line[1 : len(line)-1]
-			current = &LFList{
-				ListName: name,
+		if strings.HasPrefix(line, "!") {
+			dm.LFLists = append(dm.LFLists, LFList{
+				ListName: strings.TrimSpace(line[1:]),
+				Hash:     lfListSeed,
 				Content:  make(map[uint32]int),
-			}
-			dm.LFLists = append(dm.LFLists, *current)
-			current = &dm.LFLists[len(dm.LFLists)-1]
+			})
+			cur = &dm.LFLists[len(dm.LFLists)-1]
 			continue
 		}
-		if current == nil {
+		if cur == nil {
 			continue
 		}
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
 			continue
 		}
-		code, err := strconv.ParseUint(parts[0], 10, 32)
+		code, err := strconv.ParseUint(fields[0], 10, 32)
 		if err != nil {
 			continue
 		}
-		limit, err := strconv.Atoi(parts[1])
-		if err != nil {
+		limit, err := strconv.Atoi(fields[1])
+		// 限制数只能是 0/1/2（禁止/限制/准限制），别的值是脏行
+		if err != nil || limit < 0 || limit > 2 {
 			continue
 		}
-		current.Content[uint32(code)] = limit
+		cur.Content[uint32(code)] = limit
+		cur.Hash = lfListHashStep(cur.Hash, uint32(code), limit)
 	}
+}
+
+// lfListSeed 是禁卡表 hash 的种子（C++ deck_manager.cpp 里的 0x7dfcee6a）。
+const lfListSeed uint32 = 0x7dfcee6a
+
+// lfListHashStep 把一条禁限并进 hash。两处循环移位的位数与 C++ 完全一致 ——
+// 差一位算出来就是另一个表，服务端会认为你用的禁卡表不对。
+func lfListHashStep(h, code uint32, count int) uint32 {
+	c := uint(count)
+	return h ^ ((code << 18) | (code >> 14)) ^ ((code << (27 + c)) | (code >> (5 - c)))
 }
 
 func (dm *DeckManager) GetLFListName(lfhash uint32) string {

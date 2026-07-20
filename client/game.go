@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/sjm1327605995/goygopro/protocol"
@@ -118,6 +119,11 @@ var MainGame = &Game{
 
 func (g *Game) Initialize() bool {
 	g.LoadConfig()
+	// 界面上的中文提示都来自 strings.conf。读不到不算致命错误 ——
+	// 各 Get 会回显编号，界面还能用，只是文字变成「系统提示 1390」这样。
+	if err := Strings.LoadStrings("strings.conf"); err != nil {
+		fmt.Printf("strings.conf 读取失败，界面文本将显示为编号: %v\n", err)
+	}
 	if !g.ImageMgr.Initial() {
 		return false
 	}

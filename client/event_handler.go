@@ -2139,32 +2139,22 @@ func winnerLine(name string, winType, matchKill int) string {
 	}
 }
 
-// victoryReason 是 C++ DataManager.GetVictoryString 的最小替代。
-// 完整文本在 strings.conf 里（!victory 段），仓库暂无该文件，故先内置常见几项。
+// victoryReason 取胜负原因的文本（strings.conf 的 !victory 段）。
+//
+// 此前这里是硬编码的六条，而且**每一条都错位了**：0x0 被当成「LP 归零」，
+// 实际是「投降」；0x1 才是基本分变成 0。玩家看到的败因根本对不上。
+// 真实数据有 26 条，包括各种卡的特殊胜利，猜是猜不出来的。
 func victoryReason(winType int) string {
-	switch winType {
-	case 0x00:
-		return "LP 归零"
-	case 0x01:
-		return "卡组抽空"
-	case 0x02:
-		return "超时"
-	case 0x03:
-		return "连接中断"
-	case 0x04:
-		return "认输"
-	case 0x05:
-		return "遭到反则负"
-	default:
-		return fmt.Sprintf("胜利条件 %d", winType)
-	}
+	return Strings.Victory(winType)
 }
 
 // MSG_WAITING (3) — 等待对方操作。
 // C++ 是把 stHintMsg 设为系统串 1390 并显示；这里写进 ShowingText，由 GUI 呈现。
 func (dc *DuelClient) handleWaiting() bool {
 	MainGame.WaitFrame = 0
-	MainGame.ShowingText = "等待对方操作……"
+	// 1390 是 C++ 这里用的系统串（"等待行动中..."）。此前是硬编码的自拟文案，
+	// 现在统一走 strings.conf，跟原版一字不差。
+	MainGame.ShowingText = Strings.System(1390)
 	return true
 }
 
