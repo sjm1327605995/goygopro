@@ -116,6 +116,39 @@ func duelResult() *ui.Node {
 	)
 }
 
+// surrenderBar 是决斗中右上角的投降入口。
+//
+// 此前决斗中根本没有退出手段：认输要发 CTOS_SURRENDER，而客户端从来没发过这个包。
+// 二次确认对齐 C++（event_handler.cpp 的 wSurrender 询问框）—— 误点一下就判负太糟。
+// surrenderBarC 是它的组件形态：投降的确认状态要用 UseState 存，必须是独立组件。
+func surrenderBarC(_ struct{}) *ui.Node { return surrenderBar() }
+
+func surrenderBar() *ui.Node {
+	asking, setAsking := ui.UseState(false)
+
+	if client.MainGame.DInfo.IsFinished {
+		return nil // 已经结束了，投降没有意义
+	}
+	if !asking {
+		return ui.Box([]ui.StyleOpt{ui.Row},
+			lobbyButton("投降", func() { setAsking(true) }),
+		)
+	}
+	return ui.Box([]ui.StyleOpt{
+		ui.Column, ui.Gap(6), ui.Padding(8), ui.ItemsCenter,
+		ui.Bg(blackTransparent), ui.Radius(6),
+	},
+		ui.Text("确定认输？", ui.FontSize(13), ui.TextColor(white)),
+		ui.Box([]ui.StyleOpt{ui.Row, ui.Gap(8)},
+			lobbyButton("确定", func() {
+				client.Client.Surrender()
+				setAsking(false)
+			}),
+			lobbyButton("取消", func() { setAsking(false) }),
+		),
+	)
+}
+
 // waitingHint 是「等待对方操作」的提示条（MSG_WAITING）。
 // 决斗结束后不再显示 —— 那时等的不是对方。
 func waitingHint() *ui.Node {

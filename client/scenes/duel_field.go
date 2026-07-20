@@ -62,6 +62,9 @@ func DuelFieldScene(_ struct{}) *ui.Node {
 		ui.Box([]ui.StyleOpt{ui.Absolute, ui.Left(8), ui.Top(56)},
 			cardPreview(hovered),
 		),
+		ui.Box([]ui.StyleOpt{ui.Absolute, ui.Right(8), ui.Top(56)},
+			ui.Use(surrenderBarC, struct{}{}),
+		),
 
 		// —— 平面 HUD：不进 3D，始终正对观察者 ——
 		ui.Box([]ui.StyleOpt{ui.Absolute, ui.Top(0), ui.Left(0), ui.WidthPct(100)},
@@ -81,7 +84,8 @@ func DuelFieldScene(_ struct{}) *ui.Node {
 		},
 			waitingHint(),
 		),
-		duelDialog(),
+		// duelDialog 挂在 App 根上（见 app.go）—— 猜拳/先后攻发生在大厅，
+		// 挂在这里的话那两步没法进行。
 		duelResult(),
 	)
 }

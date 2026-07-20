@@ -17,18 +17,18 @@ import (
 type DuelClient struct {
 	mu sync.RWMutex
 
-	conn       net.Conn
-	connected  atomic.Bool
-	isHost     bool
-	selfType   uint8
-	watching   uint32
-	selectHint int
+	conn               net.Conn
+	connected          atomic.Bool
+	isHost             bool
+	selfType           uint8
+	watching           uint32
+	selectHint         int
 	selectUnselectHint int
 	lastSelectHint     int
-	isClosing  bool
-	isSwapping bool
-	isRefreshing bool
-	matchKill  int
+	isClosing          bool
+	isSwapping         bool
+	isRefreshing       bool
+	matchKill          int
 
 	responseBuf [256]byte
 	responseLen int
@@ -36,9 +36,9 @@ type DuelClient struct {
 	hosts []protocol.HostPacket
 
 	// Channels for UI communication
-	stocChan   chan []byte
-	msgChan    chan []byte
-	closeChan  chan struct{}
+	stocChan  chan []byte
+	msgChan   chan []byte
+	closeChan chan struct{}
 }
 
 var Client = &DuelClient{
@@ -125,7 +125,7 @@ func (dc *DuelClient) handlePacket(data []byte) {
 		if offset+2 > len(data) {
 			break
 		}
-		pktLen := int(binary.BigEndian.Uint16(data[offset:offset+2]))
+		pktLen := int(binary.BigEndian.Uint16(data[offset : offset+2]))
 		if offset+2+pktLen > len(data) {
 			break
 		}
@@ -167,7 +167,15 @@ func (dc *DuelClient) SendBufferToServer(proto uint8, payload []byte) {
 	dc.send(buf)
 }
 
+// sendHook 若非 nil，则每个出站包都会先交给它。仅供测试用：
+// 「点了这个按钮到底发出了什么」是这些交互唯一值得断言的东西，而未连接时 send() 直接丢弃，
+// 从外部看不出区别。
+var sendHook func(proto uint8, payload []byte)
+
 func (dc *DuelClient) send(buf []byte) {
+	if sendHook != nil && len(buf) >= 3 {
+		sendHook(buf[2], buf[3:])
+	}
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
 	if dc.conn != nil {
@@ -216,8 +224,6 @@ func (dc *DuelClient) SetResponseI(resp int32) {
 func (dc *DuelClient) SetResponseB(resp []byte) {
 	dc.responseLen = copy(dc.responseBuf[:], resp)
 }
-
-
 
 func (dc *DuelClient) SendChat(msg string) {
 	// CTOS_CHAT format: uint16_t array (player type + message UTF-16 LE)
@@ -328,4 +334,54 @@ func buildUpdateDeckPayload(deck *Deck) []byte {
 		}
 	}
 	return payload
+}
+
+// ---- 房间与对局的操作 ----
+//
+// 这几个动作服务端一直支持（core/duel/packet_handlers.go 都有对应 handler），
+// 只是客户端从来没发过，于是玩家做不了：投降、正常离开、取消准备、观众转回决斗者、踢人。
+
+// Surrender 认输。服务端对这个包不校验玩家状态（netserver.cpp 里 CTOS_SURRENDER
+// 与 CTOS_CHAT 一样是白名单），所以决斗中任何时候都能投。
+func (dc *DuelClient) Surrender() {
+	dc.SendPacketToServer(network.CTOS_SURRENDER)
+}
+
+// LeaveGame 主动离开房间。
+//
+// 与直接 StopClient 的区别：这条会让服务端把你从房间里摘掉、通知其他人。
+// 直接断连服务端只能等超时或靠 TCP 错误发现，对局中途更会被判成掉线。
+func (dc *DuelClient) LeaveGame() {
+	dc.SendPacketToServer(network.CTOS_LEAVE_GAME)
+}
+
+// NotReady 取消准备。准备之后想换卡组就得先取消。
+func (dc *DuelClient) NotReady() {
+	dc.SendPacketToServer(network.CTOS_HS_NOTREADY)
+}
+
+// ToDuelist 从观众席回到决斗席。此前只实现了反向的 CTOS_HS_TOOBSERVER，
+// 一旦转成观众就再也回不去。
+func (dc *DuelClient) ToDuelist() {
+	dc.SendPacketToServer(network.CTOS_HS_TODUELIST)
+}
+
+// Kick 把某个位置上的玩家踢出房间（仅房主有效，服务端会核对）。
+func (dc *DuelClient) Kick(pos uint8) {
+	dc.SendStruct(network.CTOS_HS_KICK, protocol.CTOSKick{Pos: pos})
+}
+
+// IsHost 表示自己是不是房主（只有房主能开始决斗、踢人）。
+func (dc *DuelClient) IsHost() bool {
+	dc.mu.RLock()
+	defer dc.mu.RUnlock()
+	return dc.isHost
+}
+
+// IsObserver 表示自己当前在观众席。服务端用 NETPLAYER_TYPE_OBSERVER(7) 表示观战，
+// 小于它的都是决斗席上的位置。
+func (dc *DuelClient) IsObserver() bool {
+	dc.mu.RLock()
+	defer dc.mu.RUnlock()
+	return dc.selfType >= network.NETPLAYER_TYPE_OBSERVER
 }

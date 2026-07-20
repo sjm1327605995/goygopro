@@ -12,6 +12,18 @@ import (
 func App(_ struct{}) *ui.Node {
 	scene := UseStore(client.MainGame.SceneSignal)
 
+	// 对话框挂在根上，不属于任何场景。
+	//
+	// 曾经它只挂在决斗盘里，结果猜拳和先后攻根本没法进行：服务端在双方准备好之后
+	// 立刻发 STOC_SELECT_HAND / STOC_SELECT_TP，而客户端要等 MSG_START 才切到决斗盘 ——
+	// 那两步都发生在大厅，弹窗无处可显示，玩家点不了，决斗永远开不了局。
+	return ui.Box([]ui.StyleOpt{ui.Fill},
+		sceneNode(scene),
+		ui.Use(globalDialog, struct{}{}),
+	)
+}
+
+func sceneNode(scene string) *ui.Node {
 	switch scene {
 	case "lanWindow":
 		return ui.Use(LanWindowScene, struct{}{})
@@ -26,6 +38,12 @@ func App(_ struct{}) *ui.Node {
 	default:
 		return ui.Use(MainMenuScene, struct{}{})
 	}
+}
+
+// globalDialog 订阅决斗状态，好在对话框弹出/关闭时重渲染。
+func globalDialog(_ struct{}) *ui.Node {
+	_ = UseRevision(client.MainGame.FieldRev)
+	return duelDialog()
 }
 
 // bg 铺一张整屏背景图，内容压在它上面 —— ygopro 每个界面都是这个结构。

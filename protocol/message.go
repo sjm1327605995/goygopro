@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"reflect"
 
 	"github.com/go-restruct/restruct"
 )
@@ -247,10 +248,10 @@ type SumEntry struct {
 }
 
 type SelectSumMsg struct {
-	_        byte  `struct:"uint8"`
-	Player   uint8 `struct:"uint8"`
+	_        byte    `struct:"uint8"`
+	Player   uint8   `struct:"uint8"`
 	_        [6]byte `struct:"[6]byte"`
-	CountA   uint8 `struct:"uint8,sizeof=EntriesA"`
+	CountA   uint8   `struct:"uint8,sizeof=EntriesA"`
 	EntriesA []SumEntry
 	CountB   uint8 `struct:"uint8,sizeof=EntriesB"`
 	EntriesB []SumEntry
@@ -771,8 +772,20 @@ func UnpackGameMsg(data []byte, msg interface{}) error {
 	return restruct.Unpack(data, binary.LittleEndian, msg)
 }
 
-// PackGameMsg 用 restruct 将消息打包为字节切片
+// PackGameMsg 用 restruct 将消息打包为字节切片。
+//
+// 传值和传指针都可以：restruct 只认指针，拿到非指针的结构体会打出一串零而**不报错**。
+// 这个坑很深 —— 客户端曾经全部用值传递，于是 CTOS_JOIN_GAME 的版本号、
+// CTOS_PLAYER_INFO 的玩家名、CTOS_CREATE_GAME 的房间参数、猜拳与先后攻的选择
+// 通通发成了 0，症状是连不上服务器、或者选了什么都不算数，而代码看上去毫无问题。
+// 所以在这里统一兜住，不要求调用方记得取地址。
 func PackGameMsg(msg interface{}) []byte {
+	v := reflect.ValueOf(msg)
+	if v.Kind() != reflect.Ptr && v.IsValid() {
+		p := reflect.New(v.Type())
+		p.Elem().Set(v)
+		msg = p.Interface()
+	}
 	data, _ := restruct.Pack(binary.LittleEndian, msg)
 	return data
 }

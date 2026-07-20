@@ -38,28 +38,71 @@ func LobbyScene(_ struct{}) *ui.Node {
 				ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(4), ui.Padding(8), ui.Grow(1)},
 					ui.Text("决斗者", ui.FontSize(12), ui.TextColor(black)),
 					playerRows(),
-					lobbyButton("旁观", func() {
-						client.Client.SendPacketToServer(network.CTOS_HS_TOOBSERVER)
-					}),
+					seatButton(),
 				),
 				ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(2), ui.Padding(8), ui.Width(200)},
 					append(infoLines,
 						ui.Box([]ui.StyleOpt{ui.Height(8)}),
-						lobbyButton("准备", onReady),
+						readyButton(),
 					)...,
 				),
 			),
 			ui.Box([]ui.StyleOpt{ui.Row, ui.Gap(12), ui.Padding(8), ui.JustifyCenter},
-				lobbyButton("开始决斗", func() {
+				// 只有房主能开始决斗；其他人点了服务端也不认，不如直接禁用。
+				lobbyButtonDisabled("开始决斗", !client.Client.IsHost(), func() {
 					client.Client.SendPacketToServer(network.CTOS_HS_START)
 				}),
-				lobbyButton("退出", func() {
-					client.Client.StopClient()
-					client.PopScene()
-				}),
+				lobbyButton("退出", leaveRoom),
 			),
 		),
 	)
+}
+
+// readyButton 是「准备 / 取消准备」的切换。
+// 准备之后想换卡组必须能反悔 —— 此前只有单向的准备，按下去就没法回头了。
+func readyButton() *ui.Node {
+	if client.Client.IsObserver() {
+		return nil // 观众没有准备一说
+	}
+	if selfReady() {
+		return lobbyButton("取消准备", func() {
+			client.Client.NotReady()
+		})
+	}
+	return lobbyButton("准备", onReady)
+}
+
+// seatButton 在决斗席与观众席之间切换。
+// 此前只有「旁观」这一个方向，转成观众后就再也回不到决斗席。
+func seatButton() *ui.Node {
+	if client.Client.IsObserver() {
+		return lobbyButton("回到决斗席", func() {
+			client.Client.ToDuelist()
+		})
+	}
+	return lobbyButton("旁观", func() {
+		client.Client.SendPacketToServer(network.CTOS_HS_TOOBSERVER)
+	})
+}
+
+// selfReady 是自己当前是否已准备。服务端用 STOC_HS_PLAYER_CHANGE 广播各位置的状态，
+// 客户端记在 HostPrepReady 里。
+func selfReady() bool {
+	pos := int(client.MainGame.DInfo.PlayerType)
+	if pos < 0 || pos >= 4 {
+		return false
+	}
+	return client.MainGame.GetHostPrepReady(pos)
+}
+
+// leaveRoom 正常离开房间：先告诉服务端，再断连。
+//
+// 直接 StopClient 是粗暴断连 —— 服务端只能等超时或 TCP 出错才发现，
+// 对局中途还会被判成掉线。
+func leaveRoom() {
+	client.Client.LeaveGame()
+	client.Client.StopClient()
+	client.PopScene()
 }
 
 // onReady 点「准备」：先把卡组发给服务器，再发 READY。
@@ -81,6 +124,7 @@ func playerRows() *ui.Node {
 		if ready {
 			readyMark, readyColor = "✓", cmdSummonColor
 		}
+		pos := uint8(i)
 		rows = append(rows, ui.Keyed(fmt.Sprint(i), ui.Box([]ui.StyleOpt{ui.Row, ui.Gap(4), ui.ItemsCenter},
 			ui.Box([]ui.StyleOpt{
 				ui.Width(140), ui.Height(20), ui.Bg(white), ui.PaddingXY(4, 0), ui.JustifyCenter,
@@ -92,6 +136,9 @@ func playerRows() *ui.Node {
 			},
 				ui.Text(readyMark, ui.FontSize(12), ui.TextColor(white)),
 			),
+			// 踢人只有房主能用，且空位无人可踢。
+			ui.If(client.Client.IsHost() && name != "",
+				ui.Use(kickButton, kickButtonProps{Pos: pos})),
 		)))
 	}
 	return ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(4)}, rows...)
@@ -132,4 +179,21 @@ func lobbyButtonC(p lobbyButtonProps) *ui.Node {
 			ui.JustifyCenter, ui.Bg(face), ui.Border(1, ui.Hex("#6e6e6e")), ui.Radius(2)}, label)
 	}
 	return ui.Button(style, ui.OnClick(p.OnClick), ia, label)
+}
+
+type kickButtonProps struct{ Pos uint8 }
+
+// kickButton 是玩家行末尾的小叉：房主用来把某个位置上的人请出房间。
+func kickButton(p kickButtonProps) *ui.Node {
+	hovered, _, ia := ui.UseInteraction()
+	face := ui.Hex("#c0c0c0")
+	if hovered {
+		face = cmdAttackColor
+	}
+	return ui.Button(
+		ui.Style(ui.Width(20), ui.Height(20), ui.ItemsCenter, ui.JustifyCenter,
+			ui.Bg(face), ui.Border(1, ui.Hex("#6e6e6e")), ui.Radius(2)),
+		ui.OnClick(func() { client.Client.Kick(p.Pos) }), ia,
+		ui.Text("×", ui.FontSize(12), ui.TextColor(black)),
+	)
 }

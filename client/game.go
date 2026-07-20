@@ -69,11 +69,9 @@ type Game struct {
 	BotMode      bool
 
 	// Lobby state
-	HostPrepNames    [4]string
-	HostPrepReady    [4]bool
-	HostPrepIsHost   bool
-	HostPrepSelfType uint8
-	ObserverCount    int
+	HostPrepNames [4]string
+	HostPrepReady [4]bool
+	ObserverCount int
 
 	// Dialog state (for select popups)
 	Dialog *DialogState
