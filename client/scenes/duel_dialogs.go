@@ -120,7 +120,9 @@ func cardSelectDialog(d *client.DialogState) *ui.Node {
 		picks = append(picks, ui.Keyed(fmt.Sprint(i), ui.Use(dialogCard, dialogCardProps{
 			Card:    card,
 			Marked:  card.IsSelected,
-			OnClick: func() { cards[idx].IsSelected = !cards[idx].IsSelected; client.MainGame.FieldRev.Bump() },
+			// 走 selectCardClick 而不是直接翻转：凑数值的两种选择每点一下都要重算
+			// 剩下哪些卡还凑得出来，绕过它就等于没有可选性判定。
+			OnClick: func() { selectCardClick(cards[idx]) },
 			Overlay: "",
 		})))
 	}
@@ -135,7 +137,13 @@ func cardSelectDialog(d *client.DialogState) *ui.Node {
 			client.MainGame.FieldRev.Bump()
 		}))
 	}
-	btns = append(btns, lobbyButton("确定", func() {
+	// 凑数值的选择要等组合合法（SelectReady）才能提交 —— 否则点了也只会被服务器拒绝。
+	// 其余选择没有这个约束。
+	sumMode := client.MainGame.DInfo.CurMsg == network.MSG_SELECT_SUM ||
+		client.MainGame.DInfo.CurMsg == network.MSG_SELECT_TRIBUTE
+	confirmDisabled := sumMode && !client.MainGame.DField.SelectReady
+
+	btns = append(btns, lobbyButtonDisabled("确定", confirmDisabled, func() {
 		count := 0
 		for _, c := range cards {
 			if c.IsSelected {

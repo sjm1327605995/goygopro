@@ -10,6 +10,23 @@ import (
 // 决斗盘上的点击语义 —— 点一张卡该给服务器回什么，取决于当前正在等待哪条消息。
 // 这里不碰任何渲染库：换 GUI 时这部分应当原样存活。
 
+// selectCardClick 处理选卡框里的一次点击。
+//
+// 「凑数值」的两种选择（MSG_SELECT_SUM 同调/超量素材等、MSG_SELECT_TRIBUTE 祭品）
+// 要走 ToggleSumPick：每点一下都得重算剩下哪些卡还凑得出来。其余选择只是简单翻转。
+func selectCardClick(card *client.ClientCard) {
+	switch client.MainGame.DInfo.CurMsg {
+	case network.MSG_SELECT_SUM, network.MSG_SELECT_TRIBUTE:
+		client.MainGame.DField.ToggleSumPick(card, client.MainGame.DInfo.CurMsg)
+	default:
+		if !card.IsSelectable {
+			return
+		}
+		card.IsSelected = !card.IsSelected
+	}
+	client.MainGame.FieldRev.Bump()
+}
+
 func isPlaceSelectable(player int, location uint8, sequence int) bool {
 	curMsg := client.MainGame.DInfo.CurMsg
 	if curMsg != network.MSG_SELECT_PLACE && curMsg != network.MSG_SELECT_DISFIELD {
@@ -33,10 +50,7 @@ func isPlaceSelectable(player int, location uint8, sequence int) bool {
 func onCardClick(card *client.ClientCard, player int, location uint8, sequence int) {
 	dialog := client.MainGame.Dialog
 	if dialog.Visible && dialog.Type == client.DialogCardSelect {
-		if card.IsSelectable {
-			card.IsSelected = !card.IsSelected
-			client.MainGame.FieldRev.Bump()
-		}
+		selectCardClick(card)
 		return
 	}
 

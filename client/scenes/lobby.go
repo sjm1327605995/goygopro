@@ -90,27 +90,38 @@ func playerRows() *ui.Node {
 }
 
 type lobbyButtonProps struct {
-	Label   string
-	OnClick func()
+	Label    string
+	OnClick  func()
+	Disabled bool
 }
 
 func lobbyButton(label string, onClick func()) *ui.Node {
 	return ui.Use(lobbyButtonC, lobbyButtonProps{Label: label, OnClick: onClick})
 }
 
+// lobbyButtonDisabled 是带禁用态的版本：disabled 时变灰且点不动。
+// 用在「当前选择还不合法」这类地方 —— 让按钮点了没反应，不如直接告诉玩家不能点。
+func lobbyButtonDisabled(label string, disabled bool, onClick func()) *ui.Node {
+	return ui.Use(lobbyButtonC, lobbyButtonProps{Label: label, OnClick: onClick, Disabled: disabled})
+}
+
 func lobbyButtonC(p lobbyButtonProps) *ui.Node {
 	hovered, pressed, ia := ui.UseInteraction()
-	face := ui.Hex("#b4b4b4")
+	face, fg := ui.Hex("#b4b4b4"), black
 	switch {
+	case p.Disabled:
+		face, fg = ui.Hex("#a8a8a8"), gray
 	case pressed:
 		face = ui.Hex("#8f8f8f")
 	case hovered:
 		face = ui.Hex("#c9c9c9")
 	}
-	return ui.Button(
-		ui.Style(ui.Height(24), ui.PaddingXY(12, 0), ui.ItemsCenter, ui.JustifyCenter,
-			ui.Bg(face), ui.Border(1, ui.Hex("#6e6e6e")), ui.Radius(2)),
-		ui.OnClick(p.OnClick), ia,
-		ui.Text(p.Label, ui.FontSize(12), ui.TextColor(black)),
-	)
+	style := ui.Style(ui.Height(24), ui.PaddingXY(12, 0), ui.ItemsCenter, ui.JustifyCenter,
+		ui.Bg(face), ui.Border(1, ui.Hex("#6e6e6e")), ui.Radius(2))
+	label := ui.Text(p.Label, ui.FontSize(12), ui.TextColor(fg))
+	if p.Disabled {
+		return ui.Box([]ui.StyleOpt{ui.Height(24), ui.PaddingXY(12, 0), ui.ItemsCenter,
+			ui.JustifyCenter, ui.Bg(face), ui.Border(1, ui.Hex("#6e6e6e")), ui.Radius(2)}, label)
+	}
+	return ui.Button(style, ui.OnClick(p.OnClick), ia, label)
 }

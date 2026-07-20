@@ -170,3 +170,40 @@ func hasText(h *ui.Harness, want string) bool {
 func preview(h *ui.Harness, card *client.ClientCard) bool {
 	return hasText(h, fmt.Sprintf("卡密: %d", card.Code))
 }
+
+// 选卡框里点一张卡，必须走到 ToggleSumPick 去重算可选集 —— 这条线断掉的话，
+// 玩家能一路点出凑不成的组合，界面还显示合法（此前正是 "Simplified: skip CheckSelectSum"）。
+func TestSelectSumClickRecomputesSelectable(t *testing.T) {
+	resetField()
+	df := client.MainGame.DField
+	client.MainGame.DInfo.CurMsg = network.MSG_SELECT_SUM
+
+	// 目标 8，池子 4/4/3：唯一解是 4+4，那张 3 谁都配不上。
+	mk := func(op1 int) *client.ClientCard {
+		c := client.NewClientCard()
+		c.OpParam = uint32(op1)
+		return c
+	}
+	a, b, three := mk(4), mk(4), mk(3)
+	df.SelectSumVal, df.SelectMin, df.SelectMax, df.SelectMode = 8, 1, 99, 0
+	df.SelectSumAll = []*client.ClientCard{a, b, three}
+	df.SelectedCards = nil
+	df.CheckSelectSum()
+
+	if !a.IsSelectable || three.IsSelectable {
+		t.Fatal("前提不成立：两张 4 应当可选、3 不可选")
+	}
+
+	// 走 GUI 的点击入口
+	selectCardClick(a)
+
+	if !a.IsSelected {
+		t.Error("点击后应当选中")
+	}
+	if !b.IsSelectable {
+		t.Error("还差 4，另一张 4 应当仍可选")
+	}
+	if three.IsSelectable {
+		t.Error("3 仍然凑不出来，不该可选 —— 点击没有触发重算")
+	}
+}

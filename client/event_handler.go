@@ -1239,12 +1239,15 @@ func (dc *DuelClient) handleSelectTribute(pbuf []byte) bool {
 		}
 	}
 
-	// Simplified: skip CheckSelectTribute, allow any selection up to max
+	// 算出哪些卡还能选：祭品数要落在 [min,max]，凑不出来的卡不该可点。
+	MainGame.DField.SelectReady = MainGame.DField.CheckSelectTribute()
+
 	hint := dc.selectHint
 	if hint == 0 {
 		hint = 531 // default tribute string
 	}
-	MainGame.Dialog.ShowCardSelect(MainGame.DField.SelectableCards, min, max, cancelable, fmt.Sprintf("Select Tribute %d-%d", min, max))
+	MainGame.Dialog.ShowCardSelect(MainGame.DField.SelectableCards, min, max, cancelable,
+		fmt.Sprintf("选择祭品 %d-%d", min, max))
 	return false
 }
 func (dc *DuelClient) handleSelectCounter(pbuf []byte) bool {
@@ -1284,8 +1287,7 @@ func (dc *DuelClient) handleSelectCounter(pbuf []byte) bool {
 	return false
 }
 func (dc *DuelClient) handleSelectSum(pbuf []byte) bool {
-	selectMode := pbuf[0]
-	_ = selectMode
+	selectMode := int(pbuf[0])
 	pbuf = pbuf[1:]
 	_ = pbuf[0] // selecting_player
 	pbuf = pbuf[1:]
@@ -1368,12 +1370,17 @@ func (dc *DuelClient) handleSelectSum(pbuf []byte) bool {
 	MainGame.DField.SelectableCards = allCards
 	MainGame.DField.SelectSumAll = optCards
 
-	// Simplified: skip CheckSelectSum, allow any selection within min-max
+	// 算出哪些卡还能选。selectMode 0 是「和正好等于目标」，非 0 是「达到即可但不能多余」。
+	MainGame.DField.SelectMode = selectMode
+	MainGame.DField.SelectSumVal = int(sumVal)
+	MainGame.DField.SelectReady = MainGame.DField.CheckSelectSum()
+
 	hint := dc.selectHint
 	if hint == 0 {
 		hint = 560
 	}
-	MainGame.Dialog.ShowCardSelect(allCards, min+mustCount, max+mustCount, false, fmt.Sprintf("Select Sum %d (target %d)", sumVal, sumVal))
+	MainGame.Dialog.ShowCardSelect(MainGame.DField.SelectableCards, min+mustCount, max+mustCount, false,
+		fmt.Sprintf("选择卡片凑出 %d", sumVal))
 	return false
 }
 func (dc *DuelClient) handleSelectDisfield(pbuf []byte) bool {
