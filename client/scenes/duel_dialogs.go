@@ -85,18 +85,21 @@ func optionDialog(d *client.DialogState) *ui.Node {
 		idx, label := i, fmt.Sprintf("选项 %d", opt)
 		switch client.MainGame.DInfo.CurMsg {
 		case network.MSG_ROCK_PAPER_SCISSORS:
+			// 顺序由贴图定：f1 是剪刀（V 字）、f2 是石头（拳头）、f3 是布（张开手），
+			// 而回给服务器的值就是 i+1（C++ event_handler.cpp 的 BUTTON_HAND1+i）。
+			// 此前把 1/2 标成了「石头/剪刀」，正好和图相反 —— 玩家看图点会点错。
 			switch opt {
 			case 1:
-				label = "石头"
-			case 2:
 				label = "剪刀"
+			case 2:
+				label = "石头"
 			case 3:
 				label = "布"
 			}
 		case network.MSG_ANNOUNCE_NUMBER:
 			label = fmt.Sprint(opt)
 		}
-		btns = append(btns, ui.Keyed(fmt.Sprint(i), lobbyButton(label, func() {
+		pick := func() {
 			if d.OnOptionSelected != nil {
 				d.OnOptionSelected(idx)
 				d.Hide()
@@ -104,11 +107,23 @@ func optionDialog(d *client.DialogState) *ui.Node {
 				return
 			}
 			respondI(int32(idx))
-		})))
+		}
+		// 猜拳用原版的手势图（f1/f2/f3），比三个文字按钮直观
+		if client.MainGame.DInfo.CurMsg == network.MSG_ROCK_PAPER_SCISSORS &&
+			opt >= 1 && opt <= 3 && client.ImageMgr.THand[opt-1] != nil {
+			btns = append(btns, ui.Keyed(fmt.Sprint(i),
+				ui.Use(handButton, handButtonProps{Hand: int(opt), Label: label, OnClick: pick})))
+			continue
+		}
+		btns = append(btns, ui.Keyed(fmt.Sprint(i), lobbyButton(label, pick)))
+	}
+	layout := []ui.StyleOpt{ui.Column, ui.Gap(8)}
+	if client.MainGame.DInfo.CurMsg == network.MSG_ROCK_PAPER_SCISSORS {
+		layout = []ui.StyleOpt{ui.Row, ui.Gap(12)}
 	}
 	return ui.Fragment(
 		dialogTitle(title),
-		ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(8)}, btns...),
+		ui.Box(layout, btns...),
 		// 「不连锁」在这里 —— 服务器每问一次要不要连锁，玩家都得有说「不」的出口，
 		// 否则对方每发动一个效果就被迫连锁一张。
 		cancelButton(),
@@ -400,5 +415,32 @@ func cancelButton() *ui.Node {
 			}
 			client.MainGame.FieldRev.Bump()
 		}),
+	)
+}
+
+type handButtonProps struct {
+	Hand    int // 1=石头 2=剪刀 3=布，对应 THand[0..2]
+	Label   string
+	OnClick func()
+}
+
+// handButton 是猜拳的手势按钮。原版用 f1/f2/f3 三张图，比纯文字直观得多。
+func handButton(p handButtonProps) *ui.Node {
+	hovered, _, ia := ui.UseInteraction()
+	border := ui.Hex("#00000000")
+	if hovered {
+		border = selectableCyan
+	}
+	img := client.ImageMgr.THand[p.Hand-1]
+
+	return ui.Button(
+		ui.Style(ui.Column, ui.ItemsCenter, ui.Gap(4), ui.Padding(6),
+			ui.Border(2, border), ui.Radius(6)),
+		ui.OnClick(p.OnClick), ia,
+		ui.Box([]ui.StyleOpt{ui.Width(72), ui.Height(72), ui.Radius(4), ui.Clip},
+			ui.Img(ui.SrcImage(fmt.Sprintf("hand:%d", p.Hand), img), ui.Fit(ui.FitCover),
+				ui.Style(ui.Absolute, ui.Left(0), ui.Top(0), ui.Fill)),
+		),
+		ui.Text(p.Label, ui.FontSize(12), ui.TextColor(white)),
 	)
 }

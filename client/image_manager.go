@@ -77,10 +77,30 @@ func (im *ImageManager) Initial() bool {
 	im.TTarget = im.loadImage("textures/target.png")
 	im.TUnknown = im.makePlaceholder(CardImgWidth, CardImgHeight, color.RGBA{80, 80, 80, 255})
 	im.TUnknownThumb = im.makePlaceholder(CardThumbWidth, CardThumbHeight, color.RGBA{80, 80, 80, 255})
-	// 场地贴图按规则分两套：0=旧规则（5 魔陷区），1=新大师规则（额外怪兽区）。
-	// 对应 C++ 的 imageManager.tField[rule]。
-	im.TField[0] = im.loadImage("textures/field.png")
-	im.TField[1] = im.loadImage("textures/field2.png")
+
+	// 场地贴图按规则分两套。注意编号：rule 0 用 field2.png、rule 1 用 field3.png
+	// （C++ image_manager.cpp 的 tField[0]/tField[1]）。文件名里的数字比下标大一 ——
+	// 此前照字面写成 field/field2，整体错了一位，新大师规则铺的其实是旧规则的场地图，
+	// 中间那两个额外怪兽区的格子根本不存在。field.png 是更早的遗留文件，原版不再加载。
+	im.TField[0] = im.loadImage("textures/field2.png")
+	im.TField[1] = im.loadImage("textures/field3.png")
+	im.TFieldTransparent[0] = im.loadImage("textures/field-transparent2.png")
+	im.TFieldTransparent[1] = im.loadImage("textures/field-transparent3.png")
+
+	// 决斗中的各种标记与仪表。这些字段一直声明着却没人加载，于是界面上
+	// 效果被无效、连锁序号、限制卡标记、LP 条统统画不出来。
+	im.TNegated = im.loadImage("textures/negated.png")
+	im.TNumber = im.loadImage("textures/number.png")
+	im.TLPBar = im.loadImage("textures/lp.png")
+	im.TLPFrame = im.loadImage("textures/lpf.png")
+	im.TMask = im.loadImage("textures/mask.png")
+	im.TLim = im.loadImage("textures/lim.png")
+	im.TOT = im.loadImage("textures/ot.png")
+
+	// 猜拳的手势图（石头/剪刀/布）
+	im.THand[0] = im.loadImage("textures/f1.jpg")
+	im.THand[1] = im.loadImage("textures/f2.jpg")
+	im.THand[2] = im.loadImage("textures/f3.jpg")
 	return true
 }
 
