@@ -76,6 +76,8 @@ func optionDialog(d *client.DialogState) *ui.Node {
 		title = "猜拳"
 	case network.MSG_ANNOUNCE_NUMBER:
 		title = "选择数字"
+	case network.MSG_SELECT_CHAIN:
+		title = "选择要连锁的卡"
 	}
 
 	btns := make([]*ui.Node, 0, len(d.Options))
@@ -104,7 +106,13 @@ func optionDialog(d *client.DialogState) *ui.Node {
 			respondI(int32(idx))
 		})))
 	}
-	return ui.Fragment(dialogTitle(title), ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(8)}, btns...))
+	return ui.Fragment(
+		dialogTitle(title),
+		ui.Box([]ui.StyleOpt{ui.Column, ui.Gap(8)}, btns...),
+		// 「不连锁」在这里 —— 服务器每问一次要不要连锁，玩家都得有说「不」的出口，
+		// 否则对方每发动一个效果就被迫连锁一张。
+		cancelButton(),
+	)
 }
 
 func cardSelectDialog(d *client.DialogState) *ui.Node {
@@ -118,8 +126,8 @@ func cardSelectDialog(d *client.DialogState) *ui.Node {
 	for i, card := range cards {
 		idx := i
 		picks = append(picks, ui.Keyed(fmt.Sprint(i), ui.Use(dialogCard, dialogCardProps{
-			Card:    card,
-			Marked:  card.IsSelected,
+			Card:   card,
+			Marked: card.IsSelected,
 			// 走 selectCardClick 而不是直接翻转：凑数值的两种选择每点一下都要重算
 			// 剩下哪些卡还凑得出来，绕过它就等于没有可选性判定。
 			OnClick: func() { selectCardClick(cards[idx]) },
@@ -368,3 +376,24 @@ var raceNames = []string{
 }
 
 var attribNames = []string{"地", "水", "炎", "风", "光", "暗", "神"}
+
+// cancelButton 是各选择框统一的「取消 / 完成 / 不连锁」出口。
+//
+// 按钮文案与是否显示都问 ClientField —— 判断跟实际动作出自同一处，
+// 不会出现「按钮在但点了没反应」。翻译自 C++ event_handler.cpp 的
+// ClientField::CancelOrFinish 与 ShowCancelOrFinishButton。
+func cancelButton() *ui.Node {
+	df := client.MainGame.DField
+	curMsg := client.MainGame.DInfo.CurMsg
+	if !df.CanCancel(curMsg) {
+		return nil
+	}
+	return ui.Box([]ui.StyleOpt{ui.Row, ui.JustifyCenter, ui.Padding(4)},
+		lobbyButton(df.CancelLabel(curMsg), func() {
+			if df.CancelOrFinish(curMsg) == client.CancelResponded {
+				client.MainGame.Dialog.Hide()
+			}
+			client.MainGame.FieldRev.Bump()
+		}),
+	)
+}

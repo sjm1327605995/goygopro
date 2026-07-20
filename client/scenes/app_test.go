@@ -49,3 +49,49 @@ func dialogVisible(h *ui.Harness, want string) bool {
 	}
 	return false
 }
+
+// 连锁选择框里必须有「不连锁」这个出口。
+//
+// 服务器每问一次「要不要连锁」都会弹这个框，此前只列出可连锁的卡 ——
+// 对方每发动一个效果，玩家都被迫连锁一张，决斗根本没法正常进行。
+func TestChainDialogHasDeclineButton(t *testing.T) {
+	client.MainGame.DField = client.NewClientField()
+	client.MainGame.DInfo = client.DuelInfo{
+		DuelRule: 5, CurMsg: network.MSG_SELECT_CHAIN,
+	}
+	client.MainGame.Dialog = client.NewDialogState()
+	client.MainGame.SceneSignal.Set("duelField")
+	client.MainGame.Dialog.ShowOption([]int32{0, 1})
+
+	h := ui.Mount(ui.Use(App, struct{}{}),
+		client.GameWindowWidth, client.GameWindowHeight)
+
+	if !dialogVisible(h, "不连锁") {
+		t.Error("连锁选择框里没有「不连锁」—— 玩家被迫连锁")
+	}
+
+	client.MainGame.Dialog.Hide()
+	client.MainGame.SceneSignal.Set("mainMenu")
+}
+
+// 强制连锁时不该出现「不连锁」——那时本来就没得选，按了服务器也不认。
+func TestForcedChainHidesDeclineButton(t *testing.T) {
+	client.MainGame.DField = client.NewClientField()
+	client.MainGame.DField.ChainForced = true
+	client.MainGame.DInfo = client.DuelInfo{
+		DuelRule: 5, CurMsg: network.MSG_SELECT_CHAIN,
+	}
+	client.MainGame.Dialog = client.NewDialogState()
+	client.MainGame.SceneSignal.Set("duelField")
+	client.MainGame.Dialog.ShowOption([]int32{0})
+
+	h := ui.Mount(ui.Use(App, struct{}{}),
+		client.GameWindowWidth, client.GameWindowHeight)
+
+	if dialogVisible(h, "不连锁") {
+		t.Error("强制连锁时不该给「不连锁」按钮")
+	}
+
+	client.MainGame.Dialog.Hide()
+	client.MainGame.SceneSignal.Set("mainMenu")
+}
