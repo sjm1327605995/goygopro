@@ -5,29 +5,34 @@ import (
 	"math/rand"
 )
 
+// CardQuestion 对应 C++ client_field.h 末尾的 CARD_QUESTION（"special cards"）。
+// 它不是真卡号，而是个哨兵：MSG_PLAYER_HINT 里带上它表示「不能查看墓地」，
+// 而不是往提示表里加一条普通提示。
+const CardQuestion = 38723936
+
 // ChainInfo corresponds to C++ struct ChainInfo in client_field.h
 type ChainInfo struct {
-	ChainPos    [3]float32
-	ChainCard   *ClientCard
-	Code        int
-	Desc        int
-	Controler   int
-	Location    int
-	Sequence    int
-	Solved      bool
-	Target      map[*ClientCard]struct{}
+	ChainPos  [3]float32
+	ChainCard *ClientCard
+	Code      int
+	Desc      int
+	Controler int
+	Location  int
+	Sequence  int
+	Solved    bool
+	Target    map[*ClientCard]struct{}
 }
 
 // ClientField corresponds to C++ class ClientField in client_field.h
 // Holds the complete state of both players' fields.
 type ClientField struct {
-	Deck    [2][]*ClientCard
-	Hand    [2][]*ClientCard
-	MZone   [2][]*ClientCard
-	SZone   [2][]*ClientCard
-	Grave   [2][]*ClientCard
-	Remove  [2][]*ClientCard
-	Extra   [2][]*ClientCard
+	Deck         [2][]*ClientCard
+	Hand         [2][]*ClientCard
+	MZone        [2][]*ClientCard
+	SZone        [2][]*ClientCard
+	Grave        [2][]*ClientCard
+	Remove       [2][]*ClientCard
+	Extra        [2][]*ClientCard
 	OverlayCards map[*ClientCard]struct{}
 
 	SummonableCards    []*ClientCard
@@ -73,24 +78,24 @@ type ClientField struct {
 	SortList           []int
 	PlayerDescHints    [2]map[int]int
 
-	GraveAct   [2]bool
-	RemoveAct  [2]bool
-	DeckAct    [2]bool
-	ExtraAct   [2]bool
-	PZoneAct   [2]bool
-	ContiAct   bool
-	ChainForced bool
-	CurrentChain ChainInfo
-	LastChain   bool
-	DeckReversed bool
-	SelectContinuous bool
-	CantCheckGrave bool
-	TagSurrender bool
+	GraveAct             [2]bool
+	RemoveAct            [2]bool
+	DeckAct              [2]bool
+	ExtraAct             [2]bool
+	PZoneAct             [2]bool
+	ContiAct             bool
+	ChainForced          bool
+	CurrentChain         ChainInfo
+	LastChain            bool
+	DeckReversed         bool
+	SelectContinuous     bool
+	CantCheckGrave       bool
+	TagSurrender         bool
 	TagTeammateSurrender bool
 
-	ShowBP     bool
-	ShowM2     bool
-	ShowEP     bool
+	ShowBP      bool
+	ShowM2      bool
+	ShowEP      bool
 	ShowShuffle bool
 
 	rnd *rand.Rand
@@ -98,14 +103,14 @@ type ClientField struct {
 
 func NewClientField() *ClientField {
 	return &ClientField{
-		OverlayCards:     make(map[*ClientCard]struct{}),
-		SelectSumCards:   make(map[*ClientCard]struct{}),
-		PlayerDescHints:  [2]map[int]int{make(map[int]int), make(map[int]int)},
-		rnd:              rand.New(rand.NewSource(1)),
-		SelectedOption:   0,
-		DisabledField:    0,
-		SelectableField:  0,
-		SelectedField:    0,
+		OverlayCards:    make(map[*ClientCard]struct{}),
+		SelectSumCards:  make(map[*ClientCard]struct{}),
+		PlayerDescHints: [2]map[int]int{make(map[int]int), make(map[int]int)},
+		rnd:             rand.New(rand.NewSource(1)),
+		SelectedOption:  0,
+		DisabledField:   0,
+		SelectableField: 0,
+		SelectedField:   0,
 	}
 }
 

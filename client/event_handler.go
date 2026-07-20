@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/bits"
 
+	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
 
@@ -23,6 +24,14 @@ func (dc *DuelClient) ClientAnalyze(msg []byte) bool {
 
 	// C++: mainGame->dField.HideMenu()
 	// The tenon-based cmd bar is rebuilt every frame; no explicit hide needed.
+
+	// 收到新消息就撤掉「等待对方操作」的提示（C++ duelclient.cpp 同一位置）。
+	// MSG_WAITING 自己要排除掉 —— 它正是来立这个提示的；MSG_CARD_SELECTED 也排除，
+	// 因为它是对方选卡过程中的播报，等待其实还没结束。
+	if msgType != network.MSG_WAITING && msgType != network.MSG_CARD_SELECTED {
+		MainGame.WaitFrame = -1
+		MainGame.ShowingText = ""
+	}
 
 	switch msgType {
 	case network.MSG_RETRY:
@@ -185,6 +194,16 @@ func (dc *DuelClient) ClientAnalyze(msg []byte) bool {
 		return dc.handleMatchKill(pbuf)
 	case network.MSG_CUSTOM_MSG:
 		return dc.handleCustomMsg(pbuf)
+	case network.MSG_WIN:
+		return dc.handleWin(pbuf)
+	case network.MSG_WAITING:
+		return dc.handleWaiting()
+	case network.MSG_CARD_HINT:
+		return dc.handleCardHint(pbuf)
+	case network.MSG_PLAYER_HINT:
+		return dc.handlePlayerHint(pbuf)
+	case network.MSG_CONFIRM_EXTRATOP:
+		return dc.handleConfirmExtratop(pbuf)
 	default:
 		fmt.Printf("Unhandled MSG type: %d\n", msgType)
 		return true
@@ -924,6 +943,7 @@ func (dc *DuelClient) handleSelectIdleCmd(pbuf []byte) bool {
 
 	return false
 }
+
 // MSG_SELECT_YESNO (13) and MSG_SELECT_EFFECTYN (12)
 func (dc *DuelClient) handleSelectYesNo(pbuf []byte) bool {
 	_ = pbuf[0] // selecting_player
@@ -1105,7 +1125,7 @@ func (dc *DuelClient) handleSelectPlace(pbuf []byte) bool {
 	field := ^binary.LittleEndian.Uint32(pbuf)
 
 	if selectingPlayer == MainGame.LocalPlayer(1) {
-		field = (field>>16)|(field<<16)
+		field = (field >> 16) | (field << 16)
 	}
 
 	MainGame.DField.SelectMin = count
@@ -1134,7 +1154,7 @@ func (dc *DuelClient) handleSelectPlace(pbuf []byte) bool {
 		} else if field&0xc000 != 0 {
 			resp[0] = uint8(MainGame.LocalPlayer(0))
 			resp[1] = 0x08 // SZONE
-			resp[2] = byte(bits.TrailingZeros32((field >> 14) & 0x3)) + 6
+			resp[2] = byte(bits.TrailingZeros32((field>>14)&0x3)) + 6
 		} else if field&0x7f0000 != 0 {
 			resp[0] = uint8(MainGame.LocalPlayer(1))
 			resp[1] = 0x04 // MZONE
@@ -1146,7 +1166,7 @@ func (dc *DuelClient) handleSelectPlace(pbuf []byte) bool {
 		} else if field&0xc0000000 != 0 {
 			resp[0] = uint8(MainGame.LocalPlayer(1))
 			resp[1] = 0x08 // SZONE
-			resp[2] = byte(bits.TrailingZeros32((field >> 30) & 0x3)) + 6
+			resp[2] = byte(bits.TrailingZeros32((field>>30)&0x3)) + 6
 		}
 		MainGame.DField.SelectableField = 0
 		Client.SetResponseB(resp)
@@ -1846,7 +1866,7 @@ func (dc *DuelClient) handleTossDice(pbuf []byte) bool {
 	return true
 }
 func (dc *DuelClient) handleRockPaperScissors(pbuf []byte) bool {
-	_ = pbuf[0] // player
+	_ = pbuf[0]                                  // player
 	MainGame.Dialog.ShowOption([]int32{1, 2, 3}) // Rock, Paper, Scissors
 	return false
 }
@@ -2069,5 +2089,180 @@ func (dc *DuelClient) handleMatchKill(pbuf []byte) bool {
 func (dc *DuelClient) handleCustomMsg(pbuf []byte) bool {
 	msg := string(pbuf)
 	fmt.Printf("Custom msg: %s\n", msg)
+	return true
+}
+
+// MSG_WIN (5) — 决斗结束。
+// 对应 C++ duelclient.cpp 的 case MSG_WIN。
+func (dc *DuelClient) handleWin(pbuf []byte) bool {
+	if len(pbuf) < 2 {
+		return true
+	}
+	player := int(pbuf[0])
+	winType := int(pbuf[1])
+
+	MainGame.DInfo.IsFinished = true
+	MainGame.DInfo.WinPlayer = player
+	MainGame.DInfo.WinType = winType
+
+	// player == 2 表示平局；否则按本地视角判断是自己还是对手赢。
+	// C++ 用 showcardcode 1/2/3 驱动一张胜负图，这里只记文本，由 GUI 决定怎么呈现。
+	switch {
+	case player == 2:
+		MainGame.DInfo.VicString = "平局"
+	case MainGame.LocalPlayer(player) == 0:
+		MainGame.DInfo.VicString = winnerLine(MainGame.DInfo.ClientName, winType, dc.matchKill)
+	default:
+		MainGame.DInfo.VicString = winnerLine(MainGame.DInfo.HostName, winType, dc.matchKill)
+	}
+	MainGame.ShowCard = 101
+	return true
+}
+
+// winnerLine 拼胜利文本。type >= 0x10 的胜利原因与玩家无关（超时、连接断开等），
+// C++ 那边也是只显示原因、不带名字。matchKill 非零时是「某张卡直接终结比赛」。
+func winnerLine(name string, winType, matchKill int) string {
+	switch {
+	case matchKill != 0:
+		return fmt.Sprintf("由「%d」终结比赛", matchKill)
+	case winType < 0x10:
+		return fmt.Sprintf("[%s] %s", name, victoryReason(winType))
+	default:
+		return victoryReason(winType)
+	}
+}
+
+// victoryReason 是 C++ DataManager.GetVictoryString 的最小替代。
+// 完整文本在 strings.conf 里（!victory 段），仓库暂无该文件，故先内置常见几项。
+func victoryReason(winType int) string {
+	switch winType {
+	case 0x00:
+		return "LP 归零"
+	case 0x01:
+		return "卡组抽空"
+	case 0x02:
+		return "超时"
+	case 0x03:
+		return "连接中断"
+	case 0x04:
+		return "认输"
+	case 0x05:
+		return "遭到反则负"
+	default:
+		return fmt.Sprintf("胜利条件 %d", winType)
+	}
+}
+
+// MSG_WAITING (3) — 等待对方操作。
+// C++ 是把 stHintMsg 设为系统串 1390 并显示；这里写进 ShowingText，由 GUI 呈现。
+func (dc *DuelClient) handleWaiting() bool {
+	MainGame.WaitFrame = 0
+	MainGame.ShowingText = "等待对方操作……"
+	return true
+}
+
+// MSG_CARD_HINT (160) — 给某张卡挂提示。
+// 格式: player(1) location(1) sequence(1) 保留(1) chtype(1) value(4)
+func (dc *DuelClient) handleCardHint(pbuf []byte) bool {
+	if len(pbuf) < 9 {
+		return true
+	}
+	con := MainGame.LocalPlayer(int(pbuf[0]))
+	loc := pbuf[1]
+	seq := int(pbuf[2])
+	// pbuf[3] 是 C++ 里读掉但没用的一字节
+	chType := int(pbuf[4])
+	value := int(binary.LittleEndian.Uint32(pbuf[5:]))
+
+	pcard := MainGame.DField.GetCard(con, loc, seq)
+	if pcard == nil {
+		return true
+	}
+
+	switch chType {
+	case ocgcore.CHINT_DESC_ADD:
+		pcard.DescHints[value]++
+	case ocgcore.CHINT_DESC_REMOVE:
+		pcard.DescHints[value]--
+		if pcard.DescHints[value] == 0 {
+			delete(pcard.DescHints, value)
+		}
+	default:
+		pcard.CHint = uint8(chType)
+		pcard.ChValue = uint32(value)
+	}
+	MainGame.FieldRev.Bump()
+	return true
+}
+
+// MSG_PLAYER_HINT (165) — 给某个玩家挂提示。
+// 格式: player(1) chtype(1) value(4)
+func (dc *DuelClient) handlePlayerHint(pbuf []byte) bool {
+	if len(pbuf) < 6 {
+		return true
+	}
+	player := MainGame.LocalPlayer(int(pbuf[0]))
+	chType := int(pbuf[1])
+	value := int(binary.LittleEndian.Uint32(pbuf[2:]))
+
+	// value == CARD_QUESTION 且是自己时，这条提示的含义是「不能查看墓地」，
+	// 而不是往提示表里塞一条（C++ duelclient.cpp 里的特例）。
+	if value == CardQuestion && player == 0 {
+		switch chType {
+		case ocgcore.PHINT_DESC_ADD:
+			MainGame.DField.CantCheckGrave = true
+		case ocgcore.PHINT_DESC_REMOVE:
+			MainGame.DField.CantCheckGrave = false
+		}
+		MainGame.FieldRev.Bump()
+		return true
+	}
+
+	hints := MainGame.DField.PlayerDescHints[player]
+	switch chType {
+	case ocgcore.PHINT_DESC_ADD:
+		hints[value]++
+	case ocgcore.PHINT_DESC_REMOVE:
+		hints[value]--
+		if hints[value] == 0 {
+			delete(hints, value)
+		}
+	}
+	MainGame.FieldRev.Bump()
+	return true
+}
+
+// MSG_CONFIRM_EXTRATOP (42) — 确认额外卡组顶端的若干张。
+// 格式: player(1) count(1) 之后每张 code(4) + 3 字节位置信息
+//
+// 取卡的方式照搬 C++：从 extra 末尾往前数，跳过已翻开的 extra_p_count 张 ——
+// 额外卡组里表侧的（灵摆）排在末尾，要确认的是它们下面那些背面的。
+func (dc *DuelClient) handleConfirmExtratop(pbuf []byte) bool {
+	if len(pbuf) < 2 {
+		return true
+	}
+	player := MainGame.LocalPlayer(int(pbuf[0]))
+	count := int(pbuf[1])
+
+	MainGame.DField.SelectableCards = nil
+	extra := MainGame.DField.Extra[player]
+	rest := pbuf[2:]
+	for i := 0; i < count; i++ {
+		if len(rest) < 7 {
+			break
+		}
+		code := binary.LittleEndian.Uint32(rest)
+		rest = rest[7:] // code(4) + 3 字节
+
+		idx := len(extra) - 1 - i - MainGame.DField.ExtraPCount[player]
+		if idx < 0 || idx >= len(extra) || extra[idx] == nil {
+			continue
+		}
+		if code != 0 {
+			extra[idx].SetCode(code)
+		}
+		MainGame.DField.SelectableCards = append(MainGame.DField.SelectableCards, extra[idx])
+	}
+	MainGame.FieldRev.Bump()
 	return true
 }

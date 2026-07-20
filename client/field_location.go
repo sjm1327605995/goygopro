@@ -87,7 +87,7 @@ func zoneCenter(controler int, location uint8, sequence int, rule int) (x, y flo
 				wx = 1.75 + float32(sequence)*1.1
 				wy = 1.4
 			} else if sequence == 5 {
-				wx, wy = 2.95, 0.0
+				wx, wy = 2.85, 0.0
 			} else {
 				wx, wy = 5.05, 0.0
 			}
@@ -98,7 +98,7 @@ func zoneCenter(controler int, location uint8, sequence int, rule int) (x, y flo
 			} else if sequence == 5 {
 				wx, wy = 5.05, 0.0
 			} else {
-				wx, wy = 2.95, 0.0
+				wx, wy = 2.85, 0.0
 			}
 		}
 	case 0x08: // SZONE

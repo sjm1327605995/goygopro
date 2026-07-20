@@ -78,3 +78,54 @@ func chatBar(_ chatBarProps) *ui.Node {
 		lobbyButton("发送", func() { send(msg) }),
 	)
 }
+
+// duelResult 是决斗结束时盖在场上的结果横幅。
+// MSG_WIN 会置 DInfo.IsFinished 与 VicString（见 client/event_handler.go 的 handleWin）；
+// 没有这块，决斗结束在界面上完全没有反馈 —— 场面就那么停住。
+func duelResult() *ui.Node {
+	if !client.MainGame.DInfo.IsFinished {
+		return nil
+	}
+	win := client.MainGame.DInfo.WinPlayer
+	title, accent := "决斗结束", white
+	switch {
+	case win == 2:
+		title = "平局"
+	case client.MainGame.LocalPlayer(win) == 0:
+		title, accent = "胜利", cmdSummonColor
+	default:
+		title, accent = "败北", cmdAttackColor
+	}
+
+	return ui.Box([]ui.StyleOpt{
+		ui.Absolute, ui.Left(0), ui.Top(0), ui.Fill, ui.ItemsCenter, ui.JustifyCenter,
+		ui.Bg(modalOverlay),
+	},
+		ui.Box([]ui.StyleOpt{
+			ui.Column, ui.ItemsCenter, ui.Gap(10), ui.Padding(28),
+			ui.Bg(ui.Hex("#1e1e1e")), ui.Border(2, accent), ui.Radius(12),
+		},
+			ui.Text(title, ui.FontSize(30), ui.Bold, ui.TextColor(accent)),
+			ui.If(client.MainGame.DInfo.VicString != "",
+				ui.Text(client.MainGame.DInfo.VicString, ui.FontSize(14), ui.TextColor(white))),
+			lobbyButton("返回主菜单", func() {
+				client.Client.StopClient()
+				client.PopScene()
+			}),
+		),
+	)
+}
+
+// waitingHint 是「等待对方操作」的提示条（MSG_WAITING）。
+// 决斗结束后不再显示 —— 那时等的不是对方。
+func waitingHint() *ui.Node {
+	text := client.MainGame.ShowingText
+	if text == "" || client.MainGame.DInfo.IsFinished {
+		return nil
+	}
+	return ui.Box([]ui.StyleOpt{
+		ui.PaddingXY(12, 6), ui.Bg(blackTransparent), ui.Radius(6),
+	},
+		ui.Text(text, ui.FontSize(13), ui.TextColor(selectedGold)),
+	)
+}

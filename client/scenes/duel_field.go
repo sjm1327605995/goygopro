@@ -75,7 +75,14 @@ func DuelFieldScene(_ struct{}) *ui.Node {
 			chatOverlay(),
 			ui.Use(chatBar, chatBarProps{}),
 		),
+		// 等待提示居中偏下，压在指令栏上方 —— 那是视线自然落点。
+		ui.Box([]ui.StyleOpt{
+			ui.Absolute, ui.Left(0), ui.Bottom(96), ui.WidthPct(100), ui.ItemsCenter,
+		},
+			waitingHint(),
+		),
 		duelDialog(),
+		duelResult(),
 	)
 }
 
