@@ -192,15 +192,19 @@ func (r *Replay) EndRecord() {
 		return
 	}
 
-	// output format: 13-byte LZMA file header + compressed data
-	// header: 1 byte props + 4 bytes dict size + 8 bytes uncompressed size
-	// YGOPro expects: 5 bytes props (props[0] + dict size) + raw compressed data
+	// ulikunitz 产出的是「13 字节 LZMA 文件头 + 压缩数据」，其中前 5 字节正是
+	// props（1 字节编码参数 + 4 字节字典大小），后 8 字节是原始长度。
+	//
+	// yrp 的布局是 header + **纯压缩数据**：props 只存在于 header.Props 里，
+	// 原始长度存在 header.DataSize 里（见 C++ replay.cpp 的 EndRecord/SaveReplay，
+	// LzmaCompress 把 props 单独输出到 pheader.base.props，comp_data 只有压缩数据）。
+	// 曾经这里把 props 又写进了压缩数据段开头，于是文件比原版多 5 字节 ——
+	// 存出来的录像原版 ygopro 打不开，原版的录像这边也读不了。
 	r.pheader.Base.Flag |= REPLAY_COMPRESSED
 	copy(r.pheader.Base.Props[:], output[0:5])
 	compLen := len(output) - 13
-	copy(r.compData, output[0:5])
-	copy(r.compData[5:], output[13:])
-	r.compSize = 5 + compLen
+	copy(r.compData, output[13:])
+	r.compSize = compLen
 	r.isRecording = false
 }
 
@@ -283,15 +287,16 @@ func (r *Replay) OpenReplay(name string) bool {
 		r.compSize, _ = rfp.Read(r.compData)
 		r.replaySize = int(r.pheader.Base.DataSize)
 
-		// LZMA decompression
-		// compData format: 5 bytes props + compressed data
-		// Construct fake LZMA file header for ulikunitz/xz/lzma.Reader
+		// 文件里的压缩数据段是纯压缩数据，props 在 header 里（见 EndRecord 的说明）。
+		// ulikunitz 的 Reader 要的是「13 字节文件头 + 压缩数据」，所以这里拿 header 的
+		// props 拼出那 13 字节：前 5 字节是 props，后 8 字节是原始长度 ——
+		// 填 0xFF 表示「长度未知」，让它一直解到流结束。
 		var fakeHeader [13]byte
 		copy(fakeHeader[0:5], r.pheader.Base.Props[:5])
 		for i := 5; i < 13; i++ {
 			fakeHeader[i] = 0xFF
 		}
-		fullData := append(fakeHeader[:], r.compData[5:r.compSize]...)
+		fullData := append(fakeHeader[:], r.compData[:r.compSize]...)
 		reader, err := lzma.NewReader(bytes.NewReader(fullData))
 		if err != nil {
 			r.Reset()
@@ -383,12 +388,27 @@ func (r *Replay) ReadData(data interface{}, length int) bool {
 		return false
 	}
 	if length > 0 {
+		src := r.replayData[r.dataPosition : r.dataPosition+length]
 		switch d := data.(type) {
 		case []byte:
-			copy(d, r.replayData[r.dataPosition:r.dataPosition+length])
+			copy(d, src)
 		case []uint16:
 			for i := 0; i < length/2 && i < len(d); i++ {
-				d[i] = binary.LittleEndian.Uint16(r.replayData[r.dataPosition+i*2:])
+				d[i] = binary.LittleEndian.Uint16(src[i*2:])
+			}
+		case []uint32:
+			for i := 0; i < length/4 && i < len(d); i++ {
+				d[i] = binary.LittleEndian.Uint32(src[i*4:])
+			}
+		default:
+			// 结构体指针（DuelParameters 等）走通用路径。
+			//
+			// 这里原本只有前两个 case，其余类型一个都不匹配 —— 什么都不写，
+			// 却照样推进位置并返回 true。于是录像里的决斗参数和卡组读出来全是 0，
+			// 而调用方完全看不出失败。默认分支宁可报错，也不能再静默吞掉。
+			if err := binary.Read(bytes.NewReader(src), binary.LittleEndian, data); err != nil {
+				r.canRead = false
+				return false
 			}
 		}
 	}
@@ -400,6 +420,13 @@ func (r *Replay) ReadInt32() int32 {
 	var b [4]byte
 	r.ReadData(b[:], 4)
 	return int32(binary.LittleEndian.Uint32(b[:]))
+}
+
+// ReadUint16 读两个字节。录像里的脚本名长度用的就是这个宽度。
+func (r *Replay) ReadUint16() uint16 {
+	var b [2]byte
+	r.ReadData(b[:], 2)
+	return binary.LittleEndian.Uint16(b[:])
 }
 
 func (r *Replay) Rewind() {
@@ -508,7 +535,8 @@ func (r *Replay) ReadInfo() bool {
 	}
 	
 	if r.pheader.Base.Flag&REPLAY_SINGLE_MODE != 0 {
-		slen := r.ReadInt32()
+		// C++ 这里读的是 uint16_t（replay.cpp 的 ReadInfo），读成 4 字节会让其后全部错位
+		slen := int32(r.ReadUint16())
 		if slen == 0 || slen > 255 {
 			return false
 		}

@@ -31,16 +31,16 @@ func TestReplayLZMACompression(t *testing.T) {
 		t.Fatal("LZMA props not set")
 	}
 
-	// compData format: 5 bytes props + compressed data
+	// yrp 的压缩段是纯压缩数据，props 在 header 里
 	// To verify, construct a fake LZMA file header and decompress
 	var fakeHeader [13]byte
-	copy(fakeHeader[0:5], r.compData[0:5])
+	copy(fakeHeader[0:5], r.pheader.Base.Props[:5])
 	// uncompressed size = unknown (0xFFFFFFFFFFFFFFFF)
 	for i := 5; i < 13; i++ {
 		fakeHeader[i] = 0xFF
 	}
 
-	fullData := append(fakeHeader[:], r.compData[5:r.compSize]...)
+	fullData := append(fakeHeader[:], r.compData[:r.compSize]...)
 
 	reader, err := lzma.NewReader(bytes.NewReader(fullData))
 	if err != nil {
@@ -132,14 +132,17 @@ func TestReplaySaveAndOpen(t *testing.T) {
 		t.Fatal("REPLAY_COMPRESSED not set in saved file")
 	}
 
-	// Manually decompress and verify
+	// 手工解压验证文件布局：header 之后应当直接是纯压缩数据。
+	// props 存在 header 里（ReplayHeader 的偏移：id4 + version4 + flag4 + seed4 +
+	// datasize4 + start_time4 = 24，其后 8 字节是 props），压缩段里不再重复一份 ——
+	// 这正是与原版 ygopro 互通的关键，多 5 字节两边就都读不了对方的录像。
 	compOffset := binary.Size(ExtendedReplayHeader{})
 	var fakeHeader [13]byte
-	copy(fakeHeader[0:5], data[compOffset:compOffset+5])
+	copy(fakeHeader[0:5], data[24:29])
 	for i := 5; i < 13; i++ {
 		fakeHeader[i] = 0xFF
 	}
-	fullData := append(fakeHeader[:], data[compOffset+5:compOffset+r.compSize]...)
+	fullData := append(fakeHeader[:], data[compOffset:compOffset+r.compSize]...)
 	reader, err := lzma.NewReader(bytes.NewReader(fullData))
 	if err != nil {
 		t.Fatalf("Failed to create LZMA reader: %v", err)
