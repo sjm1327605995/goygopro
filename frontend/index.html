@@ -9,6 +9,9 @@
 <body>
   <div id="app">
 
+    <!-- Global Sound Toggle -->
+    <button id="btn-sound-toggle" style="position:fixed; top:16px; right:16px; z-index:999; background:rgba(0,0,0,0.6); border:1px solid var(--border-cyan); border-radius:50%; width:40px; height:40px; color:#fff; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center;">🔊</button>
+
     <!-- ============================================================== -->
     <!-- 1. MAIN MENU SCREEN                                            -->
     <!-- ============================================================== -->
@@ -27,7 +30,7 @@
         <div id="menu-practice-btn" class="menu-card-btn">
           <div class="menu-card-icon">⚡</div>
           <div class="menu-card-title">Practice Duel</div>
-          <div class="menu-card-desc">Interactive 3D board simulation with full animations.</div>
+          <div class="menu-card-desc">Play offline against intelligent AI with full 3D animations.</div>
         </div>
         <div id="menu-deck-btn" class="menu-card-btn">
           <div class="menu-card-icon">🎴</div>
@@ -36,8 +39,8 @@
         </div>
         <div id="menu-replay-btn" class="menu-card-btn">
           <div class="menu-card-icon">🎬</div>
-          <div class="menu-card-title">Replays</div>
-          <div class="menu-card-desc">Watch saved tournament matches and duel records.</div>
+          <div class="menu-card-title">Replay Theater</div>
+          <div class="menu-card-desc">Step-by-step match playback with speed controls and analysis.</div>
         </div>
       </div>
 
@@ -56,7 +59,6 @@
       </div>
 
       <div class="lobby-content">
-        <!-- Connect Panel -->
         <div id="server-connect-panel" class="server-panel">
           <h3 style="color:var(--primary); margin-bottom:16px;">Server Connection</h3>
           <div class="form-group">
@@ -85,7 +87,6 @@
           <button id="server-host-btn" class="btn btn-gold">Start Server & Host</button>
         </div>
 
-        <!-- Room Lobby Waiting Panel (Shown after connect) -->
         <div id="room-lobby-panel" class="room-lobby-panel" style="display:none;">
           <h3 style="color:var(--primary); margin-bottom:16px;">Room Waiting Area</h3>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
@@ -115,7 +116,6 @@
           </div>
         </div>
 
-        <!-- Room Create Form Sidebar -->
         <div class="room-create-panel">
           <h3 style="color:var(--text-main); margin-bottom:16px;">Room Options</h3>
           <div class="form-group">
@@ -151,14 +151,10 @@
     <!-- 3. 3D DUEL SCREEN & HUD                                        -->
     <!-- ============================================================== -->
     <div id="duel-screen" class="screen">
-      <!-- Three.js 3D Canvas Target -->
       <div id="duel-canvas-container"></div>
 
-      <!-- 2D HUD Overlays -->
       <div id="duel-hud-layer">
-        <!-- Top Bar: Opponent Info & Phases -->
         <div class="duel-top-bar">
-          <!-- Opponent Status -->
           <div class="player-info-card">
             <div class="player-avatar" style="border-color:#ef4444;">OP</div>
             <div class="player-meta">
@@ -172,7 +168,6 @@
             </div>
           </div>
 
-          <!-- Phase Navigation Ribbon -->
           <div class="phase-bar">
             <div class="phase-item active" data-phase="DP">DP</div>
             <div class="phase-item" data-phase="SP">SP</div>
@@ -182,7 +177,6 @@
             <div class="phase-item" data-phase="EP">EP</div>
           </div>
 
-          <!-- Player Status -->
           <div class="player-info-card">
             <div class="player-avatar">YOU</div>
             <div class="player-meta">
@@ -197,7 +191,6 @@
           </div>
         </div>
 
-        <!-- Left Sidebar: Card Inspector -->
         <div class="card-inspector">
           <div class="inspector-pic-box">
             <canvas id="inspector-pic-canvas" width="220" height="230"></canvas>
@@ -210,7 +203,6 @@
           </div>
         </div>
 
-        <!-- Right Sidebar: Duel Log & Surrender Button -->
         <div class="duel-log-drawer">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <span style="font-weight:700; color:var(--primary); font-size:13px;">Duel Log</span>
@@ -219,13 +211,11 @@
           <div id="duel-log-list" class="log-messages"></div>
         </div>
 
-        <!-- Bottom Hand Dock -->
         <div class="hand-dock-container">
           <div id="hand-cards-dock" class="hand-cards"></div>
         </div>
       </div>
 
-      <!-- Action Command Wheel / Menu -->
       <div id="action-popup" class="action-popup" style="display:none;"></div>
     </div>
 
@@ -246,7 +236,6 @@
       </div>
 
       <div class="deck-main-layout">
-        <!-- Deck Inspector (Reuses Left Inspector Style) -->
         <div class="card-inspector" style="position:static; width:100%; height:100%;">
           <div class="inspector-pic-box">
             <canvas id="deck-inspector-pic" width="220" height="230"></canvas>
@@ -257,7 +246,6 @@
           </div>
         </div>
 
-        <!-- Deck Zones (Main, Extra, Side) -->
         <div class="deck-zones-container">
           <div>
             <div class="deck-section-title">
@@ -284,7 +272,6 @@
           </div>
         </div>
 
-        <!-- Card Search & Database Filter Panel -->
         <div class="deck-search-panel">
           <h3 style="color:var(--primary); font-size:16px;">Card Search</h3>
           <input id="deck-search-input" class="form-input" type="text" placeholder="Search name, text, ID..." />
@@ -302,13 +289,57 @@
     </div>
 
     <!-- ============================================================== -->
-    <!-- 5. GLOBAL MODAL DIALOGS                                        -->
+    <!-- 5. REPLAY THEATER SCREEN                                       -->
+    <!-- ============================================================== -->
+    <div id="replay-screen" class="screen" style="flex-direction:column; padding:30px 60px;">
+      <div class="lobby-header">
+        <div class="lobby-title">Replay Theater</div>
+        <button id="replay-back-btn" class="btn btn-secondary">← Back to Menu</button>
+      </div>
+
+      <div style="display:flex; gap:24px; flex:1;">
+        <div style="flex:1; background:var(--bg-card); border:1px solid var(--border-cyan); border-radius:12px; padding:24px; display:flex; flex-direction:column; justify-content:space-between;">
+          <div>
+            <h3 style="color:var(--primary); margin-bottom:12px;">Match: World Championship Finals 2026</h3>
+            <p style="color:var(--text-muted); font-size:14px; line-height:1.6;">
+              Format: Master Rule 5 (MR5)<br />
+              Players: YugiMuto vs SetoKaiba<br />
+              Starting LP: 8000
+            </p>
+          </div>
+
+          <div style="background:rgba(0,0,0,0.4); padding:20px; border-radius:8px; border:1px solid var(--border-color);">
+            <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:8px;">
+              <span>Progress</span>
+              <span><span id="replay-current-step">0</span> / <span id="replay-total-steps">0</span> Actions</span>
+            </div>
+            <div style="width:100%; height:8px; background:#1e293b; border-radius:4px; overflow:hidden; margin-bottom:20px;">
+              <div id="replay-progress-fill" style="width:0%; height:100%; background:linear-gradient(90deg, #00d2ff, #f59e0b);"></div>
+            </div>
+
+            <div style="display:flex; justify-content:center; align-items:center; gap:16px;">
+              <button id="replay-step-back" class="btn btn-secondary">⏮ Step Back</button>
+              <button id="replay-play-btn" class="btn btn-primary" style="padding:10px 30px;">▶ Play</button>
+              <button id="replay-step-fwd" class="btn btn-secondary">Step Forward ⏭</button>
+              <select id="replay-speed-select" class="form-select" style="width:100px;">
+                <option value="0.5">0.5x</option>
+                <option value="1" selected>1.0x</option>
+                <option value="2">2.0x</option>
+                <option value="4">4.0x</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- 6. GLOBAL MODAL DIALOGS                                        -->
     <!-- ============================================================== -->
     <div id="modal-overlay" class="modal-overlay"></div>
 
   </div>
 
-  <!-- Entry Script -->
   <script type="module" src="src/main.js"></script>
 </body>
 </html>

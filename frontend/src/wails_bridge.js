@@ -158,9 +158,9 @@ class EventBus {
 export const eventBus = new EventBus();
 
 // Check if Wails runtime is injected
-const isWails = !!(window.go && window.go.main && window.go.main.App);
+const isWails = typeof window !== 'undefined' && !!(window.go && window.go.main && window.go.main.App);
 
-if (window.runtime && window.runtime.EventsOn) {
+if (typeof window !== 'undefined' && window.runtime && window.runtime.EventsOn) {
   // Bridge Wails events to internal eventBus
   const eventList = [
     "stoc:join_game", "stoc:type_change", "stoc:player_enter", "stoc:player_change",

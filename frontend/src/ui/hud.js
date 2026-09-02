@@ -1,10 +1,11 @@
 /**
  * HUD & 2D UI Overlay System
  * Manages player status, LP animations, Hand dock, Phase bar,
- * Card Inspector sidebar, Action popups, and Selection Modals.
+ * Card Inspector sidebar, Action popups, Sound integration, and Selection Modals.
  */
 
 import { WailsBridge } from '../wails_bridge.js';
+import { soundManager } from '../audio/sound_manager.js';
 
 export class DuelHUD {
   constructor(elements, onActionSelected) {
@@ -13,7 +14,7 @@ export class DuelHUD {
 
     this.playerLP = 8000;
     this.opponentLP = 8000;
-    this.handCards = []; // [{ code, info, elem }]
+    this.handCards = [];
     this.currentPhase = 'DP';
     this.selectedHandCard = null;
 
@@ -21,14 +22,12 @@ export class DuelHUD {
   }
 
   initEventListeners() {
-    // Close popup on click outside
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.action-popup') && !e.target.closest('.hand-card-item')) {
         this.hideActionPopup();
       }
     });
 
-    // Phase click buttons
     const phaseItems = document.querySelectorAll('.phase-item');
     phaseItems.forEach(item => {
       item.addEventListener('click', () => {
@@ -40,21 +39,17 @@ export class DuelHUD {
     });
   }
 
-  // ------------------------------------------------------------------
-  // LP & Player Status
-  // ------------------------------------------------------------------
-
   updateLP(player, newLP) {
     const isPlayer = player === 0;
     const targetElem = isPlayer ? this.elements.playerLP : this.elements.opponentLP;
     const fillElem = isPlayer ? this.elements.playerLPFill : this.elements.opponentLPFill;
     const currentVal = isPlayer ? this.playerLP : this.opponentLP;
 
-    // Number counting animation
     let start = currentVal;
     let end = Math.max(0, newLP);
     let duration = 600;
     let startTime = performance.now();
+    soundManager.playLPTick();
 
     const animateNumber = (time) => {
       let progress = Math.min((time - startTime) / duration, 1);
@@ -93,6 +88,7 @@ export class DuelHUD {
     };
     const name = phaseNames[phaseCode] || 'M1';
     this.currentPhase = name;
+    soundManager.playPhaseChange();
 
     document.querySelectorAll('.phase-item').forEach(item => {
       item.classList.remove('active');
@@ -114,10 +110,6 @@ export class DuelHUD {
     });
   }
 
-  // ------------------------------------------------------------------
-  // Card Inspector
-  // ------------------------------------------------------------------
-
   async inspectCard(cardCode, cardInfo = null) {
     if (!cardInfo) {
       cardInfo = await WailsBridge.getCard(cardCode);
@@ -127,7 +119,6 @@ export class DuelHUD {
     this.elements.inspectorName.innerText = cardInfo.name;
     this.elements.inspectorDesc.innerText = cardInfo.desc;
 
-    // Badges
     this.elements.inspectorBadges.innerHTML = '';
     if (cardInfo.type & 0x1) {
       this.elements.inspectorBadges.innerHTML += `<span class="badge badge-type">Monster</span>`;
@@ -137,7 +128,6 @@ export class DuelHUD {
       if (cardInfo.type & 0x800000) this.elements.inspectorBadges.innerHTML += `<span class="badge badge-type">Xyz</span>`;
       if (cardInfo.type & 0x4000000) this.elements.inspectorBadges.innerHTML += `<span class="badge badge-type">Link</span>`;
 
-      // Stats
       this.elements.inspectorStats.style.display = 'flex';
       this.elements.inspectorStats.innerHTML = `
         <span>LV ${cardInfo.level || 0}</span>
@@ -152,22 +142,17 @@ export class DuelHUD {
       this.elements.inspectorStats.style.display = 'none';
     }
 
-    // High res artwork rendering onto canvas
     const canvas = this.elements.inspectorPicCanvas;
     if (canvas) {
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = '#1e293b';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = '#00d2ff';
-      ctx.font = 'bold 16px sans-serif';
+      ctx.font = 'bold 15px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(cardInfo.name.substring(0, 20), canvas.width / 2, canvas.height / 2);
     }
   }
-
-  // ------------------------------------------------------------------
-  // Interactive Hand Dock
-  // ------------------------------------------------------------------
 
   addHandCard(cardCode, cardInfo = null) {
     const cardItem = document.createElement('div');
@@ -208,7 +193,6 @@ export class DuelHUD {
     elem.classList.add('selected');
     this.selectedHandCard = { code: cardCode, info: cardInfo, elem };
 
-    // Display action command popup
     const rect = elem.getBoundingClientRect();
     this.showActionPopup(rect.left + rect.width / 2, rect.top - 10, [
       { label: 'Normal Summon', action: 'summon', code: cardCode },
@@ -217,10 +201,6 @@ export class DuelHUD {
       { label: 'Activate Effect', action: 'activate', code: cardCode }
     ]);
   }
-
-  // ------------------------------------------------------------------
-  // Action Command Popup
-  // ------------------------------------------------------------------
 
   showActionPopup(x, y, actions) {
     const popup = this.elements.actionPopup;
@@ -247,10 +227,6 @@ export class DuelHUD {
   hideActionPopup() {
     this.elements.actionPopup.style.display = 'none';
   }
-
-  // ------------------------------------------------------------------
-  // Modals & Selection Dialogs
-  // ------------------------------------------------------------------
 
   showYesNoModal(title, message, onYes, onNo) {
     const overlay = this.elements.modalOverlay;
@@ -339,11 +315,11 @@ export class DuelHUD {
 
     document.getElementById('pos-atk-btn').onclick = () => {
       overlay.classList.remove('active');
-      if (onSelect) onSelect(0x1); // POS_FACEUP_ATTACK
+      if (onSelect) onSelect(0x1);
     };
     document.getElementById('pos-def-btn').onclick = () => {
       overlay.classList.remove('active');
-      if (onSelect) onSelect(0x4); // POS_FACEUP_DEFENSE
+      if (onSelect) onSelect(0x4);
     };
   }
 
@@ -376,9 +352,30 @@ export class DuelHUD {
     };
   }
 
-  // ------------------------------------------------------------------
-  // Combat Log
-  // ------------------------------------------------------------------
+  showVictoryModal(isWin) {
+    if (isWin) soundManager.playVictory();
+    else soundManager.playDefeat();
+
+    const overlay = this.elements.modalOverlay;
+    overlay.innerHTML = `
+      <div class="modal-box" style="text-align:center; min-width:400px; padding:36px 24px;">
+        <div style="font-size:64px; margin-bottom:12px;">${isWin ? '🏆' : '💀'}</div>
+        <div style="font-size:32px; font-weight:900; color:${isWin ? '#f59e0b' : '#ef4444'}; margin-bottom:8px;">
+          ${isWin ? 'VICTORY' : 'DEFEAT'}
+        </div>
+        <p style="color:var(--text-muted); margin-bottom:24px;">
+          ${isWin ? 'Congratulations! You emerged victorious!' : 'You fought valiantly. Try again!'}
+        </p>
+        <button id="modal-duel-exit" class="btn btn-primary" style="padding:12px 32px;">Return to Menu</button>
+      </div>
+    `;
+    overlay.classList.add('active');
+
+    document.getElementById('modal-duel-exit').onclick = () => {
+      overlay.classList.remove('active');
+      if (window.app) window.app.showScreen('main-menu-screen');
+    };
+  }
 
   appendLog(msg, typeClass = '') {
     const entry = document.createElement('div');

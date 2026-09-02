@@ -1,10 +1,12 @@
 /**
  * Three.js 3D Duel Field System
- * Complete 3D board rendering, card animations, raycasting, and particle FX.
+ * Complete 3D board rendering, card animations, raycasting, chain visualizer, and particle FX.
  */
 
-import * as THREE from '../libs/three.module.js';
-import * as TWEEN from '../libs/tween.esm.js';
+import * as THREE from '../../libs/three.module.js';
+import * as TWEEN from '../../libs/tween.esm.js';
+import { soundManager } from '../audio/sound_manager.js';
+import { ChainVisualizer } from './chain_visualizer.js';
 
 // Card dimensions in 3D world units
 export const CARD_WIDTH = 1.6;
@@ -12,8 +14,6 @@ export const CARD_HEIGHT = 2.3;
 export const CARD_DEPTH = 0.03;
 
 // Field Zone coordinate definitions
-// Player (0): South side (positive Z)
-// Opponent (1): North side (negative Z)
 export const ZONE_COORDS = {
   // Player 0 Zones
   0: {
@@ -79,16 +79,18 @@ export class DuelField3D {
       0: { mzone: [], szone: [], grave: [], banish: [], deck: [], extra: [] },
       1: { mzone: [], szone: [], grave: [], banish: [], deck: [], extra: [] }
     };
-    this.cardMeshes = []; // List of all interactive card meshes
+    this.cardMeshes = [];
     this.hoveredCard = null;
     this.textureLoader = new THREE.TextureLoader();
     this.cardBackTexture = null;
     this.cardTextureCache = new Map();
+    this.chainVisualizer = null;
 
     this.initScene();
     this.initLights();
     this.initField();
     this.initDeckStacks();
+    this.chainVisualizer = new ChainVisualizer(this.scene, this);
     this.initEvents();
     this.animate();
   }
@@ -102,7 +104,6 @@ export class DuelField3D {
     const height = this.container.clientHeight || window.innerHeight;
 
     this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    // Ideal duelist perspective angle
     this.camera.position.set(0, 13.5, 12.0);
     this.camera.lookAt(0, -0.5, 0.5);
 
@@ -113,31 +114,20 @@ export class DuelField3D {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.container.appendChild(this.renderer.domElement);
-
-    // Load default card back cover
     this.cardBackTexture = this.textureLoader.load('textures/cover.jpg');
   }
 
   initLights() {
-    // Ambient light
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
     this.scene.add(ambientLight);
 
-    // Main stadium directional light with soft shadows
     const dirLight = new THREE.DirectionalLight(0xe2e8f0, 1.2);
     dirLight.position.set(0, 20, 10);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 2048;
     dirLight.shadow.mapSize.height = 2048;
-    dirLight.shadow.camera.near = 0.5;
-    dirLight.shadow.camera.far = 40;
-    dirLight.shadow.camera.left = -12;
-    dirLight.shadow.camera.right = 12;
-    dirLight.shadow.camera.top = 12;
-    dirLight.shadow.camera.bottom = -12;
     this.scene.add(dirLight);
 
-    // Cyan & Blue accent point lights along the field boundary
     const cyanLight = new THREE.PointLight(0x00d2ff, 1.5, 25);
     cyanLight.position.set(-8, 3, 0);
     this.scene.add(cyanLight);
@@ -148,7 +138,6 @@ export class DuelField3D {
   }
 
   initField() {
-    // Ground arena plate
     const arenaGeo = new THREE.PlaneGeometry(24, 18);
     const arenaMat = new THREE.MeshStandardMaterial({
       color: 0x0d1527,
@@ -160,12 +149,10 @@ export class DuelField3D {
     arenaMesh.receiveShadow = true;
     this.scene.add(arenaMesh);
 
-    // Field line grid
     const gridHelper = new THREE.GridHelper(22, 22, 0x00d2ff, 0x1e293b);
     gridHelper.position.y = 0.01;
     this.scene.add(gridHelper);
 
-    // Build 3D glowing slot frames for each zone
     this.buildZoneSlots();
   }
 
@@ -181,7 +168,6 @@ export class DuelField3D {
       line.position.set(pos.x, pos.y, pos.z);
       this.scene.add(line);
 
-      // Inner subtle glow plane
       const glowMat = new THREE.MeshBasicMaterial({
         color,
         transparent: true,
@@ -194,7 +180,6 @@ export class DuelField3D {
       this.scene.add(glowMesh);
     };
 
-    // Build for Player 0
     ZONE_COORDS[0].mzone.forEach(p => createSlotMesh(p, 0x00d2ff));
     ZONE_COORDS[0].szone.forEach(p => createSlotMesh(p, 0x10b981));
     createSlotMesh(ZONE_COORDS[0].field, 0x8b5cf6);
@@ -205,7 +190,6 @@ export class DuelField3D {
     createSlotMesh(ZONE_COORDS[0].emz_left, 0x06b6d4);
     createSlotMesh(ZONE_COORDS[0].emz_right, 0x06b6d4);
 
-    // Build for Opponent 1
     ZONE_COORDS[1].mzone.forEach(p => createSlotMesh(p, 0xef4444));
     ZONE_COORDS[1].szone.forEach(p => createSlotMesh(p, 0xf97316));
     createSlotMesh(ZONE_COORDS[1].field, 0x8b5cf6);
@@ -216,7 +200,6 @@ export class DuelField3D {
   }
 
   initDeckStacks() {
-    // Visual 3D card deck stacks
     const createDeckStack = (pos) => {
       const stackGeo = new THREE.BoxGeometry(CARD_WIDTH, 0.4, CARD_HEIGHT);
       const stackMat = new THREE.MeshStandardMaterial({
@@ -237,14 +220,8 @@ export class DuelField3D {
     createDeckStack(ZONE_COORDS[1].extra);
   }
 
-  // ------------------------------------------------------------------
-  // Dynamic 3D Card Creation & Texturing
-  // ------------------------------------------------------------------
-
   createCardMesh(cardCode, cardInfo = null) {
     const geo = new THREE.BoxGeometry(CARD_WIDTH, CARD_DEPTH, CARD_HEIGHT);
-
-    // Materials: [Right, Left, Top, Bottom, Front, Back]
     const borderMat = new THREE.MeshStandardMaterial({ color: 0x111827 });
     const frontMat = new THREE.MeshStandardMaterial({
       map: this.generateCardTexture(cardCode, cardInfo),
@@ -257,15 +234,7 @@ export class DuelField3D {
       metalness: 0.1
     });
 
-    const materials = [
-      borderMat, // +X
-      borderMat, // -X
-      frontMat,  // +Y (Front face in top-down orientation)
-      backMat,   // -Y (Back face)
-      borderMat, // +Z
-      borderMat  // -Z
-    ];
-
+    const materials = [borderMat, borderMat, frontMat, backMat, borderMat, borderMat];
     const cardMesh = new THREE.Mesh(geo, materials);
     cardMesh.castShadow = true;
     cardMesh.receiveShadow = true;
@@ -273,7 +242,7 @@ export class DuelField3D {
       cardCode,
       cardInfo,
       originalY: 0.05,
-      positionState: 'ATK', // 'ATK', 'DEF', 'SET'
+      positionState: 'ATK',
       slot: null
     };
 
@@ -286,59 +255,51 @@ export class DuelField3D {
       return this.cardTextureCache.get(cardCode);
     }
 
-    // Generate high quality procedural Canvas texture
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 744;
     const ctx = canvas.getContext('2d');
 
-    // Card frame base color
-    let frameColor = '#c28544'; // Normal monster
+    let frameColor = '#c28544';
     if (cardInfo) {
-      if (cardInfo.type & 0x2) frameColor = '#1d9e74'; // Spell (Green)
-      else if (cardInfo.type & 0x4) frameColor = '#bc1c6c'; // Trap (Magenta)
-      else if (cardInfo.type & 0x20) frameColor = '#a05c28'; // Effect
-      else if (cardInfo.type & 0x40) frameColor = '#732c86'; // Fusion
-      else if (cardInfo.type & 0x2000) frameColor = '#e5e7eb'; // Synchro
-      else if (cardInfo.type & 0x800000) frameColor = '#1e1e1e'; // Xyz
-      else if (cardInfo.type & 0x4000000) frameColor = '#0284c7'; // Link
+      if (cardInfo.type & 0x2) frameColor = '#1d9e74';
+      else if (cardInfo.type & 0x4) frameColor = '#bc1c6c';
+      else if (cardInfo.type & 0x20) frameColor = '#a05c28';
+      else if (cardInfo.type & 0x40) frameColor = '#732c86';
+      else if (cardInfo.type & 0x2000) frameColor = '#e5e7eb';
+      else if (cardInfo.type & 0x800000) frameColor = '#1e1e1e';
+      else if (cardInfo.type & 0x4000000) frameColor = '#0284c7';
     }
 
     ctx.fillStyle = frameColor;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Card border
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 12;
     ctx.strokeRect(6, 6, canvas.width - 12, canvas.height - 12);
 
-    // Inner art box
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(40, 80, canvas.width - 80, 360);
     ctx.strokeStyle = '#334155';
     ctx.lineWidth = 4;
     ctx.strokeRect(40, 80, canvas.width - 80, 360);
 
-    // Holographic card icon placeholder inside art box
     ctx.fillStyle = '#38bdf8';
-    ctx.font = 'bold 36px sans-serif';
+    ctx.font = 'bold 32px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(cardInfo ? cardInfo.name.substring(0, 16) : `Card #${cardCode}`, 256, 260);
 
-    // Card Title Header
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 24px sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText(cardInfo ? cardInfo.name : `Card ${cardCode}`, 44, 52);
 
-    // Stats box at bottom
     if (cardInfo && (cardInfo.attack !== undefined || cardInfo.level)) {
       ctx.fillStyle = '#1e293b';
       ctx.fillRect(40, 480, canvas.width - 80, 220);
       ctx.strokeStyle = '#475569';
       ctx.strokeRect(40, 480, canvas.width - 80, 220);
 
-      // Level / Rank stars
       if (cardInfo.level) {
         ctx.fillStyle = '#f59e0b';
         ctx.font = 'bold 20px sans-serif';
@@ -346,12 +307,10 @@ export class DuelField3D {
         ctx.fillText(starStr, 50, 515);
       }
 
-      // ATK / DEF
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 24px sans-serif';
       ctx.fillText(`ATK / ${cardInfo.attack}  DEF / ${cardInfo.defense}`, 50, 680);
 
-      // Desc text snippet
       if (cardInfo.desc) {
         ctx.fillStyle = '#94a3b8';
         ctx.font = '16px sans-serif';
@@ -366,22 +325,15 @@ export class DuelField3D {
     return texture;
   }
 
-  // ------------------------------------------------------------------
-  // 3D Card Animation Actions (TWEEN)
-  // ------------------------------------------------------------------
-
-  /**
-   * Animated Card Draw: Arcs up smoothly from Deck stack into Player Hand
-   */
   animateDrawCard(player, cardCode, cardInfo = null, onComplete = null) {
+    soundManager.playDraw();
     const cardMesh = this.createCardMesh(cardCode, cardInfo);
     const startCoord = ZONE_COORDS[player].deck;
 
     cardMesh.position.set(startCoord.x, 0.4, startCoord.z);
-    cardMesh.rotation.set(Math.PI, 0, 0); // Face-down in deck
+    cardMesh.rotation.set(Math.PI, 0, 0);
     this.scene.add(cardMesh);
 
-    // Target hand position (south off-screen bottom for player 0)
     const targetPos = player === 0 ? { x: 0, y: 3, z: 8.5 } : { x: 0, y: 3, z: -8.5 };
 
     new TWEEN.Tween(cardMesh.position)
@@ -400,27 +352,25 @@ export class DuelField3D {
       )
       .start();
 
-    // Flip card towards player
     new TWEEN.Tween(cardMesh.rotation)
       .to({ x: player === 0 ? 0 : Math.PI, y: 0, z: 0 }, 650)
       .easing(TWEEN.Easing.Cubic.Out)
       .start();
   }
 
-  /**
-   * Summon Monster to Field Zone with ground impact effect
-   */
   animateSummon(player, cardCode, slotIndex, position = 0x1, cardInfo = null, isSpecial = false) {
+    if (isSpecial) soundManager.playSpecialSummon();
+    else soundManager.playSummon();
+
     const cardMesh = this.createCardMesh(cardCode, cardInfo);
     const targetCoord = ZONE_COORDS[player].mzone[slotIndex];
     if (!targetCoord) return;
 
-    // Start above zone
     cardMesh.position.set(targetCoord.x, 5.0, targetCoord.z + (player === 0 ? 2 : -2));
     cardMesh.scale.set(0.2, 0.2, 0.2);
     this.scene.add(cardMesh);
 
-    const isDef = (position & 0xa) !== 0; // POS_DEFENSE or POS_FACEDOWN_DEFENSE
+    const isDef = (position & 0xa) !== 0;
     const isFaceDown = (position & 0x8) !== 0;
 
     const targetRot = {
@@ -429,7 +379,6 @@ export class DuelField3D {
       z: isDef ? Math.PI / 2 : 0
     };
 
-    // Scale up & slam onto zone
     new TWEEN.Tween(cardMesh.scale)
       .to({ x: 1, y: 1, z: 1 }, 450)
       .easing(TWEEN.Easing.Back.Out)
@@ -453,10 +402,8 @@ export class DuelField3D {
     return cardMesh;
   }
 
-  /**
-   * Set Spell / Trap Card into SZone face down
-   */
   animateSetCard(player, cardCode, slotIndex, isMonster = false, cardInfo = null) {
+    soundManager.playDraw();
     const cardMesh = this.createCardMesh(cardCode, cardInfo);
     const targetCoord = isMonster
       ? ZONE_COORDS[player].mzone[slotIndex]
@@ -478,17 +425,14 @@ export class DuelField3D {
     return cardMesh;
   }
 
-  /**
-   * Change Position (ATK <-> DEF) with 90 degree spin
-   */
   animateReposition(player, slotIndex, newPos) {
+    soundManager.playDraw();
     const cardMesh = this.cardsOnField[player].mzone[slotIndex];
     if (!cardMesh) return;
 
     const isDef = (newPos & 0xa) !== 0;
     const isFaceDown = (newPos & 0x8) !== 0;
 
-    // Lift slightly, rotate, and place back down
     new TWEEN.Tween(cardMesh.position)
       .to({ y: 0.8 }, 150)
       .chain(
@@ -506,10 +450,8 @@ export class DuelField3D {
       .start();
   }
 
-  /**
-   * Attack Action: Attacking card rises, leaps towards target, strikes, and recoils
-   */
   animateAttack(attackerPlayer, attackerSlot, targetPlayer, targetSlot, isDirect = false) {
+    soundManager.playAttack();
     const attackerMesh = this.cardsOnField[attackerPlayer].mzone[attackerSlot];
     if (!attackerMesh) return;
 
@@ -517,29 +459,25 @@ export class DuelField3D {
     let targetPos;
 
     if (isDirect || targetSlot === undefined || targetSlot < 0) {
-      // Direct attack towards opposing duelist side
       targetPos = { x: 0, y: 1.5, z: targetPlayer === 1 ? -6.0 : 6.0 };
     } else {
       const targetCoord = ZONE_COORDS[targetPlayer].mzone[targetSlot];
       targetPos = { x: targetCoord.x, y: 0.5, z: targetCoord.z };
     }
 
-    // Phase 1: Elevate and charge
     new TWEEN.Tween(attackerMesh.position)
       .to({ y: 1.6 }, 200)
       .easing(TWEEN.Easing.Quadratic.Out)
       .chain(
-        // Phase 2: Dash towards target
         new TWEEN.Tween(attackerMesh.position)
           .to({ x: targetPos.x, y: targetPos.y + 0.3, z: targetPos.z }, 180)
           .easing(TWEEN.Easing.Exponential.In)
           .onComplete(() => {
-            // Hit effect
+            soundManager.playDamage();
             this.createHitSparks(targetPos.x, targetPos.z);
             this.cameraShake(0.2, 200);
           })
           .chain(
-            // Phase 3: Recoil back to original slot
             new TWEEN.Tween(attackerMesh.position)
               .to(startPos, 300)
               .easing(TWEEN.Easing.Cubic.Out)
@@ -548,17 +486,14 @@ export class DuelField3D {
       .start();
   }
 
-  /**
-   * Destroy Card: Dissolves into sparks and travels to Graveyard stack
-   */
   animateDestroy(player, loc, slotIndex) {
+    soundManager.playDamage();
     const cardMesh = this.cardsOnField[player][loc][slotIndex];
     if (!cardMesh) return;
 
     this.cardsOnField[player][loc][slotIndex] = null;
     const graveCoord = ZONE_COORDS[player].grave;
 
-    // Shake violently and fly to GY
     new TWEEN.Tween(cardMesh.position)
       .to({ y: 2.0 }, 150)
       .chain(
@@ -577,10 +512,6 @@ export class DuelField3D {
       .to({ x: 0, y: 0, z: Math.PI }, 350)
       .start();
   }
-
-  // ------------------------------------------------------------------
-  // Particle & Visual Effects
-  // ------------------------------------------------------------------
 
   createShockwave(x, z, colorHex = 0x00d2ff) {
     const ringGeo = new THREE.RingGeometry(0.1, 0.4, 32);
@@ -669,10 +600,6 @@ export class DuelField3D {
     }, 16);
   }
 
-  // ------------------------------------------------------------------
-  // Raycasting & User Interaction
-  // ------------------------------------------------------------------
-
   initEvents() {
     window.addEventListener('resize', () => this.onWindowResize());
 
@@ -698,13 +625,11 @@ export class DuelField3D {
       const mesh = intersects[0].object;
       if (this.hoveredCard !== mesh) {
         if (this.hoveredCard) {
-          // Reset previous card elevation
           new TWEEN.Tween(this.hoveredCard.position)
             .to({ y: this.hoveredCard.userData.originalY || 0.05 }, 120)
             .start();
         }
         this.hoveredCard = mesh;
-        // Elevate hovered card
         new TWEEN.Tween(mesh.position)
           .to({ y: (mesh.userData.originalY || 0.05) + 0.35 }, 120)
           .start();
