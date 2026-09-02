@@ -35,11 +35,16 @@ func (codec SimpleCodec) Decode(c gnet.Conn) ([]byte, bool, error) {
 	}
 	packetLen := int(binary.LittleEndian.Uint16(packetLenData))
 
-	if currentBufferLen < packetLen {
-		return nil, false, nil
+	if currentBufferLen < packetLen+2 {
+		return nil, true, nil
 	}
 
 	data, err := c.Next(packetLen + 2)
-	fmt.Println("req", hex.EncodeToString(data))
+	if err != nil {
+		return nil, false, err
+	}
+	if len(data) <= 2 {
+		return nil, false, nil
+	}
 	return data[2:], false, nil
 }

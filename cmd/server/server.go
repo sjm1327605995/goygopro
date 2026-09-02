@@ -9,15 +9,21 @@ import (
 
 func main() {
 	var (
-		port      int
-		multicore bool
+		port       int
+		multicore  bool
+		dbPath     string
+		scriptPath string
+		rootPath   string
 	)
-	// Example command: go run server.go --port 9000 --multicore=true
-	flag.IntVar(&port, "port", 9000, "--port 9000")
-	flag.BoolVar(&multicore, "multicore", false, "--multicore=true")
+	// Example command: go run server.go --port 9000 --multicore=true --db=cards.cdb --script=script --root=.
+	flag.IntVar(&port, "port", 9000, "server listening port")
+	flag.BoolVar(&multicore, "multicore", false, "enable gnet multi-core event loops")
+	flag.StringVar(&dbPath, "db", "cards.cdb", "path to cards.cdb SQLite database")
+	flag.StringVar(&scriptPath, "script", "script", "path to lua scripts directory")
+	flag.StringVar(&rootPath, "root", ".", "root directory containing ocgcore library")
 	flag.Parse()
 
-	err := duel.InitServerData("E:\\ygopro\\cards.cdb", "E:\\ygo", "E:\\Go\\gopath\\goygopro")
+	err := duel.InitServerData(dbPath, scriptPath, rootPath)
 	if err != nil {
 		panic(err)
 	}

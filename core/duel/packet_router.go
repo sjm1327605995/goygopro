@@ -211,6 +211,15 @@ func BindWithSize(sample interface{}, minLen int) PacketHandlerFunc {
 	}
 }
 
+// RoomLockMiddleware 保证进入该中间件后的操作在房间互斥锁保护下执行
+func RoomLockMiddleware(c *PacketContext) {
+	if c.Game() != nil && c.BaseMode() != nil {
+		c.BaseMode().Mu.Lock()
+		defer c.BaseMode().Mu.Unlock()
+	}
+	c.Next()
+}
+
 // --------------------------------------------------
 // 便捷组合中间件（常用搭配）
 // --------------------------------------------------

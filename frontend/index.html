@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GoYGOPro - 3D Duel Client</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ============================================================== -->
+    <!-- 1. MAIN MENU SCREEN                                            -->
+    <!-- ============================================================== -->
+    <div id="main-menu-screen" class="screen active">
+      <div class="menu-header">
+        <h1 class="game-title">YGOPro 3D</h1>
+        <p class="game-subtitle">NEXT-GEN DUEL INTERFACE & ENGINE</p>
+      </div>
+
+      <div class="menu-grid">
+        <div id="menu-duel-btn" class="menu-card-btn">
+          <div class="menu-card-icon">⚔️</div>
+          <div class="menu-card-title">Online Duel</div>
+          <div class="menu-card-desc">Connect to YGOPro servers & challenge global duelists.</div>
+        </div>
+        <div id="menu-practice-btn" class="menu-card-btn">
+          <div class="menu-card-icon">⚡</div>
+          <div class="menu-card-title">Practice Duel</div>
+          <div class="menu-card-desc">Interactive 3D board simulation with full animations.</div>
+        </div>
+        <div id="menu-deck-btn" class="menu-card-btn">
+          <div class="menu-card-icon">🎴</div>
+          <div class="menu-card-title">Deck Builder</div>
+          <div class="menu-card-desc">Construct, search, test opening hands, and save YDK decks.</div>
+        </div>
+        <div id="menu-replay-btn" class="menu-card-btn">
+          <div class="menu-card-icon">🎬</div>
+          <div class="menu-card-title">Replays</div>
+          <div class="menu-card-desc">Watch saved tournament matches and duel records.</div>
+        </div>
+      </div>
+
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">
+        Powered by Three.js & Go Backend Bridge
+      </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- 2. LOBBY & SERVER BROWSER SCREEN                               -->
+    <!-- ============================================================== -->
+    <div id="lobby-screen" class="screen">
+      <div class="lobby-header">
+        <div class="lobby-title">Duel Lobby & Server Connection</div>
+        <button id="lobby-back-btn" class="btn btn-secondary">← Back to Menu</button>
+      </div>
+
+      <div class="lobby-content">
+        <!-- Connect Panel -->
+        <div id="server-connect-panel" class="server-panel">
+          <h3 style="color:var(--primary); margin-bottom:16px;">Server Connection</h3>
+          <div class="form-group">
+            <label>Server Address (IP:Port)</label>
+            <input id="server-addr-input" class="form-input" type="text" value="127.0.0.1:7911" />
+          </div>
+          <div class="form-group">
+            <label>Duelist Name</label>
+            <input id="username-input" class="form-input" type="text" value="YugiMuto" />
+          </div>
+          <div class="form-group">
+            <label>Room / Password</label>
+            <input id="password-input" class="form-input" type="text" placeholder="Optional" />
+          </div>
+          <div style="display:flex; gap:12px; margin-top:8px;">
+            <button id="server-connect-btn" class="btn btn-primary" style="flex:1;">Connect Server</button>
+          </div>
+
+          <hr style="border:0; border-top:1px solid var(--border-color); margin:24px 0;" />
+
+          <h3 style="color:var(--accent-gold); margin-bottom:16px;">Host Local Server</h3>
+          <div class="form-group">
+            <label>Local Port</label>
+            <input id="local-port-input" class="form-input" type="number" value="7911" />
+          </div>
+          <button id="server-host-btn" class="btn btn-gold">Start Server & Host</button>
+        </div>
+
+        <!-- Room Lobby Waiting Panel (Shown after connect) -->
+        <div id="room-lobby-panel" class="room-lobby-panel" style="display:none;">
+          <h3 style="color:var(--primary); margin-bottom:16px;">Room Waiting Area</h3>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+            <div style="background:rgba(0,0,0,0.4); padding:16px; border-radius:8px; border:1px solid var(--border-color);">
+              <div style="font-size:12px; color:var(--text-muted);">HOST (PLAYER 1)</div>
+              <div id="lobby-p1-name" style="font-size:18px; font-weight:700; color:var(--primary); margin:6px 0;">YugiMuto</div>
+              <div id="lobby-p1-status" style="font-size:12px; color:#10b981;">Connected</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.4); padding:16px; border-radius:8px; border:1px solid var(--border-color);">
+              <div style="font-size:12px; color:var(--text-muted);">OPPONENT (PLAYER 2)</div>
+              <div id="lobby-p2-name" style="font-size:18px; font-weight:700; color:#ef4444; margin:6px 0;">SetoKaiba</div>
+              <div id="lobby-p2-status" style="font-size:12px; color:#9ca3af;">Waiting for player...</div>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:12px; margin-bottom:16px;">
+            <button id="lobby-ready-btn" class="btn btn-gold" style="flex:1;">Ready Up</button>
+            <button id="lobby-start-btn" class="btn btn-primary" style="flex:1;">Start Duel</button>
+          </div>
+
+          <div style="flex:1; display:flex; flex-direction:column; background:rgba(0,0,0,0.4); border-radius:8px; padding:12px;">
+            <div id="lobby-chat-box" style="flex:1; overflow-y:auto; font-size:12px; margin-bottom:8px;"></div>
+            <div style="display:flex; gap:8px;">
+              <input id="lobby-chat-input" class="form-input" type="text" placeholder="Type a message..." />
+              <button id="lobby-chat-send" class="btn btn-primary" style="padding:0 16px;">Send</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Room Create Form Sidebar -->
+        <div class="room-create-panel">
+          <h3 style="color:var(--text-main); margin-bottom:16px;">Room Options</h3>
+          <div class="form-group">
+            <label>Room Name</label>
+            <input id="room-name-input" class="form-input" type="text" value="Championship Match" />
+          </div>
+          <div class="form-group">
+            <label>Room Password</label>
+            <input id="room-pass-input" class="form-input" type="text" placeholder="Optional" />
+          </div>
+          <div class="form-group">
+            <label>Duel Rule</label>
+            <select class="form-select">
+              <option>Master Rule 2020 (MR5)</option>
+              <option>Speed Duel</option>
+              <option>Traditional / Classic</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Duel Mode</label>
+            <select class="form-select">
+              <option>Single Duel (1 Game)</option>
+              <option>Match Duel (Best of 3)</option>
+              <option>Tag Duel (2 vs 2)</option>
+            </select>
+          </div>
+          <button id="create-room-btn" class="btn btn-primary" style="margin-top:auto;">Create Room</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- 3. 3D DUEL SCREEN & HUD                                        -->
+    <!-- ============================================================== -->
+    <div id="duel-screen" class="screen">
+      <!-- Three.js 3D Canvas Target -->
+      <div id="duel-canvas-container"></div>
+
+      <!-- 2D HUD Overlays -->
+      <div id="duel-hud-layer">
+        <!-- Top Bar: Opponent Info & Phases -->
+        <div class="duel-top-bar">
+          <!-- Opponent Status -->
+          <div class="player-info-card">
+            <div class="player-avatar" style="border-color:#ef4444;">OP</div>
+            <div class="player-meta">
+              <div class="player-name">
+                <span id="opponent-name-val">SetoKaiba</span>
+                <span id="opponent-lp-val" class="lp-number">8000</span>
+              </div>
+              <div class="lp-bar-container">
+                <div id="opponent-lp-fill" class="lp-bar-fill"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Phase Navigation Ribbon -->
+          <div class="phase-bar">
+            <div class="phase-item active" data-phase="DP">DP</div>
+            <div class="phase-item" data-phase="SP">SP</div>
+            <div class="phase-item" data-phase="M1">M1</div>
+            <div class="phase-item" data-phase="BP">BP</div>
+            <div class="phase-item" data-phase="M2">M2</div>
+            <div class="phase-item" data-phase="EP">EP</div>
+          </div>
+
+          <!-- Player Status -->
+          <div class="player-info-card">
+            <div class="player-avatar">YOU</div>
+            <div class="player-meta">
+              <div class="player-name">
+                <span id="player-name-val">YugiMuto</span>
+                <span id="player-lp-val" class="lp-number">8000</span>
+              </div>
+              <div class="lp-bar-container">
+                <div id="player-lp-fill" class="lp-bar-fill"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Left Sidebar: Card Inspector -->
+        <div class="card-inspector">
+          <div class="inspector-pic-box">
+            <canvas id="inspector-pic-canvas" width="220" height="230"></canvas>
+          </div>
+          <div class="inspector-details">
+            <div id="inspector-card-name" class="inspector-name">Select a Card</div>
+            <div id="inspector-badges" class="inspector-badges"></div>
+            <div id="inspector-stats" class="inspector-stats" style="display:none;"></div>
+            <div id="inspector-card-desc" class="inspector-desc">Hover over any card on the field or in hand to view complete details, lore, and card effects.</div>
+          </div>
+        </div>
+
+        <!-- Right Sidebar: Duel Log & Surrender Button -->
+        <div class="duel-log-drawer">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <span style="font-weight:700; color:var(--primary); font-size:13px;">Duel Log</span>
+            <button id="duel-surrender-btn" class="btn btn-danger" style="padding:4px 10px; font-size:11px;">Surrender</button>
+          </div>
+          <div id="duel-log-list" class="log-messages"></div>
+        </div>
+
+        <!-- Bottom Hand Dock -->
+        <div class="hand-dock-container">
+          <div id="hand-cards-dock" class="hand-cards"></div>
+        </div>
+      </div>
+
+      <!-- Action Command Wheel / Menu -->
+      <div id="action-popup" class="action-popup" style="display:none;"></div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- 4. VISUAL DECK BUILDER SCREEN                                  -->
+    <!-- ============================================================== -->
+    <div id="deck-screen" class="screen">
+      <div class="deck-header">
+        <div style="display:flex; align-items:center; gap:16px;">
+          <h2 style="color:var(--primary);">Deck Construction</h2>
+          <select id="deck-select-dropdown" class="form-select" style="width:200px;"></select>
+          <input id="deck-name-input" class="form-input" style="width:180px;" value="Blue-Eyes Deck" />
+          <button id="save-deck-btn" class="btn btn-primary">Save Deck</button>
+          <button id="new-deck-btn" class="btn btn-secondary">New Deck</button>
+          <button id="sample-hand-btn" class="btn btn-gold">Test 5-Card Hand</button>
+        </div>
+        <button id="deck-back-btn" class="btn btn-secondary">← Back to Menu</button>
+      </div>
+
+      <div class="deck-main-layout">
+        <!-- Deck Inspector (Reuses Left Inspector Style) -->
+        <div class="card-inspector" style="position:static; width:100%; height:100%;">
+          <div class="inspector-pic-box">
+            <canvas id="deck-inspector-pic" width="220" height="230"></canvas>
+          </div>
+          <div class="inspector-details">
+            <div class="inspector-name">Card Details</div>
+            <div class="inspector-desc">Click any card to add/remove or hover to inspect.</div>
+          </div>
+        </div>
+
+        <!-- Deck Zones (Main, Extra, Side) -->
+        <div class="deck-zones-container">
+          <div>
+            <div class="deck-section-title">
+              <span>Main Deck (40 - 60)</span>
+              <span id="main-deck-count" class="badge badge-attr">0 / 60</span>
+            </div>
+            <div id="main-deck-grid" class="deck-grid" style="min-height:220px;"></div>
+          </div>
+
+          <div>
+            <div class="deck-section-title">
+              <span>Extra Deck (0 - 15)</span>
+              <span id="extra-deck-count" class="badge badge-type">0 / 15</span>
+            </div>
+            <div id="extra-deck-grid" class="deck-grid" style="min-height:80px;"></div>
+          </div>
+
+          <div>
+            <div class="deck-section-title">
+              <span>Side Deck (0 - 15)</span>
+              <span id="side-deck-count" class="badge badge-attr">0 / 15</span>
+            </div>
+            <div id="side-deck-grid" class="deck-grid" style="min-height:80px;"></div>
+          </div>
+        </div>
+
+        <!-- Card Search & Database Filter Panel -->
+        <div class="deck-search-panel">
+          <h3 style="color:var(--primary); font-size:16px;">Card Search</h3>
+          <input id="deck-search-input" class="form-input" type="text" placeholder="Search name, text, ID..." />
+          <select id="deck-type-filter" class="form-select">
+            <option value="0">All Card Types</option>
+            <option value="1">Monsters</option>
+            <option value="2">Spells</option>
+            <option value="4">Traps</option>
+          </select>
+
+          <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">Search Results (Click to Add):</div>
+          <div id="search-results-grid" class="search-results-grid"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- 5. GLOBAL MODAL DIALOGS                                        -->
+    <!-- ============================================================== -->
+    <div id="modal-overlay" class="modal-overlay"></div>
+
+  </div>
+
+  <!-- Entry Script -->
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

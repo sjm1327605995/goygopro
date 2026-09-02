@@ -1846,6 +1846,11 @@ func (s *SingleDuel) Surrender(dp *DuelPlayer) {
 	}
 }
 func (s *SingleDuel) SingleTimer() {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	if s.Duel == nil || s.DuelStage != network.DUEL_STAGE_DUELING {
+		return
+	}
 	s.timeElapsed++
 	if s.timeElapsed >= s.timeLimit[s.lastResponse] || s.timeLimit[s.lastResponse] <= 0 {
 		wbuf := make([]byte, 3)

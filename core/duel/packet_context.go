@@ -120,12 +120,18 @@ func (c *PacketContext) BaseMode() *DuelMode {
 // 响应方法
 // --------------------------------------------------
 
-// Reply 发送 STOC 消息给当前玩家
+// Reply 发送 STOC 消息给当前玩家（包含 2 字节包长前缀）
 func (c *PacketContext) Reply(pktType uint8, data []byte) error {
 	if c.Player == nil || c.Player.Conn == nil {
 		return fmt.Errorf("player or connection is nil")
 	}
-	buf := append([]byte{pktType}, data...)
+	packetLen := uint16(1 + len(data))
+	buf := make([]byte, 2+int(packetLen))
+	binary.LittleEndian.PutUint16(buf[0:2], packetLen)
+	buf[2] = pktType
+	if len(data) > 0 {
+		copy(buf[3:], data)
+	}
 	_, err := c.Player.Conn.Write(buf)
 	return err
 }
