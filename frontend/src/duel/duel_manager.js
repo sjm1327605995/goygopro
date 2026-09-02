@@ -1,6 +1,6 @@
 /**
  * Duel Manager & Controller
- * Coordinates duel flow, bridges network packets to 3D Field animations and 2D HUD.
+ * Coordinates duel flow, bridges network packets to 3D Field animations, Chain Visualizer, and 2D HUD.
  */
 
 import { WailsBridge, eventBus } from '../wails_bridge.js';
@@ -103,6 +103,26 @@ export class DuelManager {
       this.hud.appendLog(`Player ${data.player} gained ${data.amount} LP!`, 'log-action');
     });
 
+    // Chain Events
+    eventBus.on('duel:chaining', async (data) => {
+      const cardInfo = await WailsBridge.getCard(data.code);
+      const locName = data.cl === 0x4 ? 'mzone' : 'szone';
+      this.field3D.chainVisualizer.addChainLink(data.code, { player: data.cc, loc: locName, seq: data.cs }, cardInfo);
+      this.hud.appendLog(`Chain Link: ${cardInfo ? cardInfo.name : data.code} activated!`, 'log-action');
+    });
+
+    eventBus.on('duel:chain_solving', (data) => {
+      this.field3D.chainVisualizer.highlightSolvingLink(data.count);
+    });
+
+    eventBus.on('duel:chain_solved', (data) => {
+      this.field3D.chainVisualizer.removeSolvingLink(data.count);
+    });
+
+    eventBus.on('duel:chain_end', () => {
+      this.field3D.chainVisualizer.clearChain();
+    });
+
     eventBus.on('duel:select_idlecmd', (data) => {
       this.idleCmd = data;
       this.hud.setPhaseButtonsActionable(data.toBP, false, data.toEP);
@@ -131,7 +151,6 @@ export class DuelManager {
       }));
 
       this.hud.showCardSelectModal('Select Card(s)', cardsWithInfo, data.min, data.max, (selectedIndices) => {
-        // Encode selection response
         const resp = new Uint8Array(1 + selectedIndices.length);
         resp[0] = selectedIndices.length;
         for (let i = 0; i < selectedIndices.length; i++) {
@@ -149,11 +168,10 @@ export class DuelManager {
 
     eventBus.on('duel:win', (data) => {
       const isWinner = data.winner === this.playerSlot;
-      alert(isWinner ? '🏆 VICTORY! You won the duel!' : 'DEFEAT! Better luck next duel!');
+      this.hud.showVictoryModal(isWinner);
     });
   }
 
-  // Handle player clicking an action from HUD
   handlePlayerAction(actionType, data) {
     if (actionType === 'phase_change') {
       if (data === 'BP') WailsBridge.sendResponseI(6);
@@ -167,7 +185,6 @@ export class DuelManager {
       if (match) {
         WailsBridge.sendResponseI((match.idx << 16) | 0);
       } else {
-        // Fallback or preview simulation
         this.field3D.animateSummon(0, data.code, 2, 0x1, null, false);
       }
     } else if (actionType === 'set') {
