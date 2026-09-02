@@ -49,16 +49,14 @@ func (d *DataManager) LoadDB(file string) error {
 		}
 		if setCode != 0 {
 			it, exist := extraSetCode[cd.Code]
-			if exist {
+			if exist && len(it) != 0 {
 				var setCodeLen = len(it)
 				if setCodeLen > ocgcore.SIZE_SETCODE {
 					setCodeLen = ocgcore.SIZE_SETCODE
 				}
-				if setCodeLen != 0 {
-					copy(cd.Setcode[:], it[:setCodeLen])
-				} else {
-					cd.SetSetCode(setCode)
-				}
+				copy(cd.Setcode[:], it[:setCodeLen])
+			} else {
+				cd.SetSetCode(setCode)
 			}
 		}
 		if cd.Type&ocgcore.TYPE_LINK != 0 {

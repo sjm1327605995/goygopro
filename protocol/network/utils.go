@@ -32,14 +32,17 @@ func (b *BufferIO) Read(p []byte) (n int, err error) {
 	return n, nil
 }
 func (b *BufferIO) Write(p []byte) (n int, err error) {
-	currentLen := len(b.buf[b.off:])
+	currentLen := len(b.buf) - b.off
 	writeLen := len(p)
 	if currentLen >= writeLen {
 		copy(b.buf[b.off:], p)
 	} else {
-		splitIndex := writeLen - currentLen
-		copy(b.buf[b.off:], p[:splitIndex])
-		b.buf = append(b.buf, p[splitIndex:]...)
+		if currentLen > 0 {
+			copy(b.buf[b.off:], p[:currentLen])
+			b.buf = append(b.buf, p[currentLen:]...)
+		} else {
+			b.buf = append(b.buf, p...)
+		}
 	}
 	b.off += writeLen
 	return writeLen, nil

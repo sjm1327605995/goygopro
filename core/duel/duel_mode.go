@@ -5,11 +5,13 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"sync"
+	"unsafe"
+
 	"github.com/antlabs/timer"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol"
-	"io"
-	"unsafe"
 )
 
 type IDuelMode interface {
@@ -35,6 +37,7 @@ type IDuelMode interface {
 }
 
 type DuelMode struct {
+	Mu          sync.Mutex
 	HostPlayer  *DuelPlayer
 	HostInfo    protocol.HostInfo
 	DuelStage   int

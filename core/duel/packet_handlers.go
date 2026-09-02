@@ -302,16 +302,16 @@ func BuildPacketRouter() *PacketRouter {
 	)
 
 	// 离开房间
-	router.Handle(network.CTOS_LEAVE_GAME, RequireGame, HandleLeaveGame)
+	router.Handle(network.CTOS_LEAVE_GAME, RequireGame, RoomLockMiddleware, HandleLeaveGame)
 
 	// 投降（特殊：不检查 State）
-	router.Handle(network.CTOS_SURRENDER, RequireGame, HandleSurrender)
+	router.Handle(network.CTOS_SURRENDER, RequireGame, RoomLockMiddleware, HandleSurrender)
 
 	// 聊天（特殊：不检查 State）
-	router.Handle(network.CTOS_CHAT, RequireGame, HandleChat)
+	router.Handle(network.CTOS_CHAT, RequireGame, RoomLockMiddleware, HandleChat)
 
 	// 以下操作需要游戏已经开始（决斗中）
-	gameGroup := router.Group("game", RequireGame)
+	gameGroup := router.Group("game", RequireGame, RoomLockMiddleware)
 	{
 		gameGroup.Handle(network.CTOS_RESPONSE, HandleResponse)
 		gameGroup.Handle(network.CTOS_TIME_CONFIRM, RequireDuel, HandleTimeConfirm)
@@ -329,7 +329,7 @@ func BuildPacketRouter() *PacketRouter {
 	}
 
 	// 以下操作需要在大厅阶段（游戏未开始）
-	lobbyGroup := router.Group("lobby", RequireGame, RequireGameNotStarted)
+	lobbyGroup := router.Group("lobby", RequireGame, RoomLockMiddleware, RequireGameNotStarted)
 	{
 		lobbyGroup.Handle(network.CTOS_HS_TODUELIST, HandleHsToDuelist)
 		lobbyGroup.Handle(network.CTOS_HS_TOOBSERVER, HandleHsToObserver)

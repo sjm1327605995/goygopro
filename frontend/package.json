@@ -1,0 +1,14 @@
+{
+  "name": "goygopro-frontend",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "YGOPro 3D Client with Three.js and Wails Bridge",
+  "scripts": {
+    "dev": "python3 -m http.server 3000 --directory .",
+    "build": "echo 'Frontend build ready'"
+  },
+  "dependencies": {
+    "@tweenjs/tween.js": "^25.0.0",
+    "three": "^0.174.0"
+  }
+}

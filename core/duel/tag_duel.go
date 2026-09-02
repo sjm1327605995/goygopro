@@ -1918,6 +1918,11 @@ func (s *TagDuel) RefreshSingle(player uint8, location uint8, sequence uint8, fl
 }
 
 func (s *TagDuel) TagTimer() {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	if s.Duel == nil || s.DuelStage != network.DUEL_STAGE_DUELING {
+		return
+	}
 	s.timeElapsed++
 	if int(s.timeElapsed) >= int(s.timeLimit[s.lastResponse]) || s.timeLimit[s.lastResponse] <= 0 {
 		var wbuf [3]byte
