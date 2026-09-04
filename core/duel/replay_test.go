@@ -31,16 +31,16 @@ func TestReplayLZMACompression(t *testing.T) {
 		t.Fatal("LZMA props not set")
 	}
 
-	// compData format: 5 bytes props + compressed data
-	// To verify, construct a fake LZMA file header and decompress
+	// compData holds only the raw LZMA1 stream; the 5-byte props live in the
+	// header (Props[0:4]). Reconstruct the 13-byte .lzma header to decompress.
 	var fakeHeader [13]byte
-	copy(fakeHeader[0:5], r.compData[0:5])
+	copy(fakeHeader[0:5], r.pheader.Base.Props[:5])
 	// uncompressed size = unknown (0xFFFFFFFFFFFFFFFF)
 	for i := 5; i < 13; i++ {
 		fakeHeader[i] = 0xFF
 	}
 
-	fullData := append(fakeHeader[:], r.compData[5:r.compSize]...)
+	fullData := append(fakeHeader[:], r.compData[:r.compSize]...)
 
 	reader, err := lzma.NewReader(bytes.NewReader(fullData))
 	if err != nil {
@@ -135,11 +135,11 @@ func TestReplaySaveAndOpen(t *testing.T) {
 	// Manually decompress and verify
 	compOffset := binary.Size(ExtendedReplayHeader{})
 	var fakeHeader [13]byte
-	copy(fakeHeader[0:5], data[compOffset:compOffset+5])
+	copy(fakeHeader[0:5], data[24:29]) // Base.Props lives at offset 24 in the header
 	for i := 5; i < 13; i++ {
 		fakeHeader[i] = 0xFF
 	}
-	fullData := append(fakeHeader[:], data[compOffset+5:compOffset+r.compSize]...)
+	fullData := append(fakeHeader[:], data[compOffset:compOffset+r.compSize]...)
 	reader, err := lzma.NewReader(bytes.NewReader(fullData))
 	if err != nil {
 		t.Fatalf("Failed to create LZMA reader: %v", err)

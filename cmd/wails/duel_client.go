@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -22,14 +21,14 @@ import (
 // WailsDuelClient manages the TCP connection to YGOPro duel server
 // and translates network packets to frontend events.
 type WailsDuelClient struct {
-	mu         sync.Mutex
-	conn       net.Conn
-	ctx        context.Context
-	emitFunc   func(eventName string, optionalData ...interface{})
+	mu          sync.Mutex
+	conn        net.Conn
+	ctx         context.Context
+	emitFunc    func(eventName string, optionalData ...interface{})
 	isConnected bool
-	playerType uint8
-	running    bool
-	stopChan   chan struct{}
+	playerType  uint8
+	running     bool
+	stopChan    chan struct{}
 }
 
 func NewWailsDuelClient(emitFunc func(eventName string, optionalData ...interface{})) *WailsDuelClient {
@@ -412,9 +411,9 @@ func (c *WailsDuelClient) handleGameMessage(msgBuffer []byte) {
 		switch engType {
 		case ocgcore.MSG_START:
 			var (
-				playertype uint8
-				duelrule   uint8
-				lp0, lp1   int32
+				playertype                   uint8
+				duelrule                     uint8
+				lp0, lp1                     int32
 				deck0, extra0, deck1, extra1 uint16
 			)
 			_ = pbuf.Read(&playertype, &duelrule, &lp0, &lp1, &deck0, &extra0, &deck1, &extra1)
@@ -477,7 +476,7 @@ func (c *WailsDuelClient) handleGameMessage(msgBuffer []byte) {
 
 		case ocgcore.MSG_POS_CHANGE:
 			var (
-				code uint32
+				code               uint32
 				cc, cl, cs, pp, cp uint8
 			)
 			_ = pbuf.Read(&code, &cc, &cl, &cs, &pp, &cp)
@@ -492,7 +491,7 @@ func (c *WailsDuelClient) handleGameMessage(msgBuffer []byte) {
 
 		case ocgcore.MSG_SET:
 			var (
-				code uint32
+				code           uint32
 				cc, cl, cs, cp uint8
 			)
 			_ = pbuf.Read(&code, &cc, &cl, &cs, &cp)
@@ -506,7 +505,7 @@ func (c *WailsDuelClient) handleGameMessage(msgBuffer []byte) {
 
 		case ocgcore.MSG_SUMMONING:
 			var (
-				code uint32
+				code           uint32
 				cc, cl, cs, cp uint8
 			)
 			_ = pbuf.Read(&code, &cc, &cl, &cs, &cp)
@@ -523,7 +522,7 @@ func (c *WailsDuelClient) handleGameMessage(msgBuffer []byte) {
 
 		case ocgcore.MSG_SPSUMMONING:
 			var (
-				code uint32
+				code           uint32
 				cc, cl, cs, cp uint8
 			)
 			_ = pbuf.Read(&code, &cc, &cl, &cs, &cp)
@@ -540,7 +539,7 @@ func (c *WailsDuelClient) handleGameMessage(msgBuffer []byte) {
 
 		case ocgcore.MSG_FLIPSUMMONING:
 			var (
-				code uint32
+				code           uint32
 				cc, cl, cs, cp uint8
 			)
 			_ = pbuf.Read(&code, &cc, &cl, &cs, &cp)
@@ -557,7 +556,7 @@ func (c *WailsDuelClient) handleGameMessage(msgBuffer []byte) {
 
 		case ocgcore.MSG_CHAINING:
 			var (
-				code uint32
+				code                       uint32
 				p1, p2, p3, cc, cl, cs, cp uint8
 			)
 			_ = pbuf.Read(&code, &p1, &p2, &p3, &cc, &cl, &cs, &cp)
@@ -697,10 +696,10 @@ func (c *WailsDuelClient) handleGameMessage(msgBuffer []byte) {
 
 		case ocgcore.MSG_SELECT_CARD, ocgcore.MSG_SELECT_TRIBUTE:
 			var (
-				player uint8
+				player     uint8
 				cancelable uint8
-				min, max uint8
-				count uint8
+				min, max   uint8
+				count      uint8
 			)
 			_ = pbuf.Read(&player, &cancelable, &min, &max, &count)
 			cards := make([]map[string]interface{}, count)
@@ -752,10 +751,10 @@ func (c *WailsDuelClient) handleGameMessage(msgBuffer []byte) {
 
 		case ocgcore.MSG_SELECT_CHAIN:
 			var (
-				player uint8
-				count  uint8
-				spec   uint8
-				forced uint8
+				player       uint8
+				count        uint8
+				spec         uint8
+				forced       uint8
 				hint0, hint1 uint32
 			)
 			_ = pbuf.Read(&player, &count, &spec, &forced, &hint0, &hint1)
@@ -779,6 +778,7 @@ func (c *WailsDuelClient) handleGameMessage(msgBuffer []byte) {
 			c.emit("duel:select_chain", map[string]interface{}{
 				"player": player,
 				"count":  count,
+				"forced": forced != 0,
 				"chains": chains,
 			})
 
@@ -788,31 +788,41 @@ func (c *WailsDuelClient) handleGameMessage(msgBuffer []byte) {
 				location uint8
 			)
 			_ = pbuf.Read(&player, &location)
-			// Read the rest of buffer as raw update data
-			raw := pbuf.Bytes()
+			if err := skipQueryBlobList(pbuf, 0); err != nil {
+				return
+			}
+			// The body carries no visuals the 3D field renders from (positions
+			// already arrive via MSG_MOVE/MSG_*SUMMONING); emit a marker only so
+			// the batch keeps parsing instead of aborting at the first update.
 			c.emit("duel:update_data", map[string]interface{}{
 				"player":   player,
 				"location": location,
-				"data":     raw,
 			})
-			return
 
 		case ocgcore.MSG_UPDATE_CARD:
 			var (
 				player, location, sequence uint8
 			)
 			_ = pbuf.Read(&player, &location, &sequence)
-			raw := pbuf.Bytes()
+			if err := skipQueryBlobList(pbuf, 1); err != nil {
+				return
+			}
 			c.emit("duel:update_card", map[string]interface{}{
 				"player":   player,
 				"location": location,
 				"sequence": sequence,
-				"data":     raw,
 			})
-			return
 
 		case ocgcore.MSG_WAITING:
 			c.emit("duel:waiting", map[string]interface{}{})
+
+		default:
+			// Messages the UI does not decode still occupy bytes in the stream.
+			// Skip their bodies so the parser keeps message alignment; on an
+			// unknown layout, stop parsing this batch rather than desync.
+			if err := skipEngineMessageBody(pbuf, engType); err != nil {
+				return
+			}
 		}
 	}
 }

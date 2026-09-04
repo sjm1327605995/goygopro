@@ -2,13 +2,20 @@
   "name": "goygopro-frontend",
   "version": "1.0.0",
   "type": "module",
-  "description": "YGOPro 3D Client with Three.js and Wails Bridge",
+  "description": "YGOPro 3D Client with React, Three.js and Wails Bridge",
   "scripts": {
-    "dev": "python3 -m http.server 3000 --directory .",
-    "build": "echo 'Frontend build ready'"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@tweenjs/tween.js": "^25.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "three": "^0.174.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11"
   }
 }

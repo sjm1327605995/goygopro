@@ -2,11 +2,10 @@ package duel
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
-	"fmt"
-	"github.com/panjf2000/gnet/v2"
 	"io"
+
+	"github.com/panjf2000/gnet/v2"
 )
 
 var ErrIncompletePacket = errors.New("incomplete packet")

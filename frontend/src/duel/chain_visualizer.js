@@ -29,7 +29,7 @@ export class ChainVisualizer {
     this.chainGroup.add(badge);
 
     // Pop-in animation
-    new TWEEN.Tween(badge.scale)
+    this.field3D.makeTween(badge.scale)
       .to({ x: 1, y: 1, z: 1 }, 250)
       .easing(TWEEN.Easing.Back.Out)
       .start();
@@ -83,7 +83,7 @@ export class ChainVisualizer {
     soundManager.playSpellActivate();
 
     // Pulsing highlight
-    new TWEEN.Tween(item.badgeMesh.scale)
+    this.field3D.makeTween(item.badgeMesh.scale)
       .to({ x: 1.5, y: 1.35, z: 1.5 }, 200)
       .yoyo(true)
       .repeat(1)
@@ -95,7 +95,7 @@ export class ChainVisualizer {
     if (idx !== -1) {
       const item = this.chainStack[idx];
       if (item.badgeMesh) {
-        new TWEEN.Tween(item.badgeMesh.scale)
+        this.field3D.makeTween(item.badgeMesh.scale)
           .to({ x: 0.01, y: 0.01, z: 0.01 }, 200)
           .onComplete(() => {
             this.chainGroup.remove(item.badgeMesh);
@@ -115,36 +115,10 @@ export class ChainVisualizer {
 
   getSlotPosition(slot) {
     if (!slot) return { x: 0, y: 0, z: 0 };
-    const p = slot.player || 0;
-    const loc = slot.loc || 'mzone';
-    const seq = slot.seq || 0;
-
-    const coords = {
-      0: {
-        mzone: [
-          { x: -3.8, y: 0, z: 1.6 }, { x: -1.9, y: 0, z: 1.6 }, { x: 0, y: 0, z: 1.6 },
-          { x: 1.9, y: 0, z: 1.6 }, { x: 3.8, y: 0, z: 1.6 }
-        ],
-        szone: [
-          { x: -3.8, y: 0, z: 4.2 }, { x: -1.9, y: 0, z: 4.2 }, { x: 0, y: 0, z: 4.2 },
-          { x: 1.9, y: 0, z: 4.2 }, { x: 3.8, y: 0, z: 4.2 }
-        ]
-      },
-      1: {
-        mzone: [
-          { x: 3.8, y: 0, z: -1.6 }, { x: 1.9, y: 0, z: -1.6 }, { x: 0, y: 0, z: -1.6 },
-          { x: -1.9, y: 0, z: -1.6 }, { x: -3.8, y: 0, z: -1.6 }
-        ],
-        szone: [
-          { x: 3.8, y: 0, z: -4.2 }, { x: 1.9, y: 0, z: -4.2 }, { x: 0, y: 0, z: -4.2 },
-          { x: -1.9, y: 0, z: -4.2 }, { x: -3.8, y: 0, z: -4.2 }
-        ]
-      }
-    };
-
-    if (coords[p] && coords[p][loc] && coords[p][loc][seq]) {
-      return coords[p][loc][seq];
-    }
-    return { x: 0, y: 0, z: 0 };
+    return this.field3D.getZonePosition(
+      slot.player || 0,
+      slot.loc || 'mzone',
+      slot.seq || 0
+    );
   }
 }
