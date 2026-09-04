@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"strings"
 	"os"
 	"path/filepath"
 
 	"github.com/sjm1327605995/goygopro/core/duel"
 	"github.com/sjm1327605995/goygopro/protocol"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // App struct manages Wails application state
@@ -35,7 +38,7 @@ func NewApp() *App {
 
 // Startup is called when the app starts. The context is saved
 // so we can call the runtime methods
-func (a *App) Startup(ctx context.Context) {
+func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	a.ctx = ctx
 	a.client = NewWailsDuelClient(func(eventName string, optionalData ...interface{}) {
 		// In Wails runtime: runtime.EventsEmit(a.ctx, eventName, optionalData...)
@@ -56,13 +59,15 @@ func (a *App) Startup(ctx context.Context) {
 	// Initialize deck & replay dirs
 	_ = os.MkdirAll(a.deckDir, 0755)
 	_ = os.MkdirAll(a.replayDir, 0755)
+	return nil
 }
 
-// Shutdown is called when the app terminates
-func (a *App) Shutdown(ctx context.Context) {
+// ServiceShutdown is called when the app terminates
+func (a *App) ServiceShutdown() error {
 	if a.client != nil {
 		a.client.Disconnect()
 	}
+	return nil
 }
 
 // ------------------------------------------------------------------
@@ -225,6 +230,39 @@ func (a *App) GetCard(code uint32) *CardInfo {
 	return a.cardDB.GetCard(code)
 }
 
+// GetCardImage returns card art as a data URL for the frontend. It looks in
+// the YGOPro-standard pics/ directory (pics/<code>.jpg / .png / .webp, plus
+// expansions/pics when present) and returns "" when no art is installed.
+func (a *App) GetCardImage(code uint32) string {
+	bases := []string{"pics", filepath.Join("expansions", "pics")}
+	var exts []string
+	codeStr := fmt.Sprintf("%d", code)
+	// Alias/alternate art convention: %d-1, %d-2, ...
+	for _, s := range []string{codeStr, codeStr + "-1", codeStr + "-2"} {
+		exts = append(exts, filepath.Join(bases[0], s+".jpg"),
+			filepath.Join(bases[0], s+".png"),
+			filepath.Join(bases[0], s+".webp"),
+			filepath.Join(bases[1], s+".jpg"),
+			filepath.Join(bases[1], s+".png"),
+			filepath.Join(bases[1], s+".webp"))
+	}
+	for _, p := range exts {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		mime := "image/jpeg"
+		switch {
+		case strings.HasSuffix(p, ".png"):
+			mime = "image/png"
+		case strings.HasSuffix(p, ".webp"):
+			mime = "image/webp"
+		}
+		return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
+	}
+	return ""
+}
+
 func (a *App) SearchCards(filter CardFilter) []CardInfo {
 	return a.cardDB.SearchCards(filter)
 }
@@ -262,7 +300,98 @@ func (a *App) ListReplays() []string {
 	return names
 }
 
-// EmitWailsEvent dispatches event to Wails frontend or logs
+// PlayReplay loads a recorded .yrp duel and replays it against the ocgcore
+// engine, returning every engine message as a {type, data} event for the
+// step-based Replay Theater. The engine regenerates messages deterministically
+// from the replay's seed; only player responses are read back from disk.
+//
+// The engine never emits MSG_START (the server layer synthesizes it), so the
+// start event is built here from the replay metadata. Without the card scripts
+// installed the engine may diverge mid-replay; the events collected up to that
+// point are still returned so the viewer remains usable.
+func (a *App) PlayReplay(name string) map[string]interface{} {
+	// ocgcore needs the card database/script root initialized before a duel.
+	if err := duel.InitServerData(a.dbPath, a.scriptPath, "."); err != nil {
+		return map[string]interface{}{"success": false, "error": fmt.Sprintf("init error: %v", err)}
+	}
+
+	rm := duel.NewReplayMode()
+	replayPath := filepath.Join(a.replayDir, name)
+	if err := rm.Load(replayPath); err != nil {
+		return map[string]interface{}{"success": false, "error": err.Error()}
+	}
+
+	// Synthesize the opening duel:start event from the replay metadata.
+	deckCount := func(i int) int {
+		if i >= len(rm.Decks) {
+			return 0
+		}
+		return len(rm.Decks[i].Main)
+	}
+	extraCount := func(i int) int {
+		if i >= len(rm.Decks) {
+			return 0
+		}
+		return len(rm.Decks[i].Extra)
+	}
+
+	events := []map[string]interface{}{
+		{
+			"type": "duel:start",
+			"data": map[string]interface{}{
+				"playerType": uint8(0),
+				"duelRule":   uint8(rm.Params.DuelFlag >> 16),
+				"lp0":        rm.Params.StartLP,
+				"lp1":        rm.Params.StartLP,
+				"deck0":      deckCount(0),
+				"extra0":     extraCount(0),
+				"deck1":      deckCount(1),
+				"extra1":     extraCount(1),
+			},
+		},
+	}
+
+	// Collect engine events through the existing parser instead of emitting
+	// them live; the Replay Theater steps through them on demand. Interaction
+	// prompts (select_*/waiting) are questions the engine asks a duelist — in
+	// replay the answers are fed back from disk, so they would only pop
+	// modals. update_data/update_card are raw query refreshes with no visuals
+	// the field renders from, so they are filtered out too.
+	collector := NewWailsDuelClient(func(eventName string, optionalData ...interface{}) {
+		if strings.HasPrefix(eventName, "duel:select_") ||
+			eventName == "duel:waiting" ||
+			eventName == "duel:update_data" ||
+			eventName == "duel:update_card" {
+			return
+		}
+		var data interface{}
+		if len(optionalData) > 0 {
+			data = optionalData[0]
+		}
+		events = append(events, map[string]interface{}{"type": eventName, "data": data})
+	})
+
+	err := rm.Run(func(msg []byte) {
+		collector.handleGameMessage(msg)
+	})
+	if err != nil && err != duel.ErrReplayResponseUnderflow && err != duel.ErrReplayDesynchronized {
+		return map[string]interface{}{"success": false, "error": err.Error()}
+	}
+
+	return map[string]interface{}{
+		"success":   true,
+		"name":      name,
+		"players":   rm.Players,
+		"startLp":   rm.Params.StartLP,
+		"duelRule":  uint8(rm.Params.DuelFlag >> 16),
+		"truncated": err != nil,
+		"events":    events,
+	}
+}
+
+// EmitWailsEvent dispatches a Wails v3 custom event to the frontend.
 var EmitWailsEvent = func(ctx context.Context, name string, data interface{}) {
-	// Standard Wails event dispatch placeholder
+	if app := application.Get(); app != nil && app.Event != nil {
+		app.Event.Emit(name, data)
+	}
 }

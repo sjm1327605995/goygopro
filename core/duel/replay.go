@@ -192,15 +192,14 @@ func (r *Replay) EndRecord() {
 		return
 	}
 
-	// output format: 13-byte LZMA file header + compressed data
-	// header: 1 byte props + 4 bytes dict size + 8 bytes uncompressed size
-	// YGOPro expects: 5 bytes props (props[0] + dict size) + raw compressed data
+	// output is a full .lzma file: 13-byte header (5 bytes props + 8 bytes
+	// uncompressed size) followed by the raw LZMA1 stream. YGOPro stores the
+	// 5-byte props inline in the header and writes only the raw stream.
 	r.pheader.Base.Flag |= REPLAY_COMPRESSED
 	copy(r.pheader.Base.Props[:], output[0:5])
 	compLen := len(output) - 13
-	copy(r.compData, output[0:5])
-	copy(r.compData[5:], output[13:])
-	r.compSize = 5 + compLen
+	copy(r.compData, output[13:])
+	r.compSize = compLen
 	r.isRecording = false
 }
 
@@ -283,15 +282,13 @@ func (r *Replay) OpenReplay(name string) bool {
 		r.compSize, _ = rfp.Read(r.compData)
 		r.replaySize = int(r.pheader.Base.DataSize)
 
-		// LZMA decompression
-		// compData format: 5 bytes props + compressed data
-		// Construct fake LZMA file header for ulikunitz/xz/lzma.Reader
-		var fakeHeader [13]byte
-		copy(fakeHeader[0:5], r.pheader.Base.Props[:5])
-		for i := 5; i < 13; i++ {
-			fakeHeader[i] = 0xFF
-		}
-		fullData := append(fakeHeader[:], r.compData[5:r.compSize]...)
+		// YGOPro stores the raw LZMA1 stream directly after the header; the
+		// 5-byte LZMA properties live inline in the header (Props[0:4]).
+		// Build the 13-byte .lzma header that ulikunitz/xz/lzma expects.
+		var hdr [13]byte
+		copy(hdr[0:5], r.pheader.Base.Props[:5])
+		binary.LittleEndian.PutUint64(hdr[5:13], uint64(r.replaySize))
+		fullData := append(hdr[:], r.compData[:r.compSize]...)
 		reader, err := lzma.NewReader(bytes.NewReader(fullData))
 		if err != nil {
 			r.Reset()
@@ -389,6 +386,10 @@ func (r *Replay) ReadData(data interface{}, length int) bool {
 		case []uint16:
 			for i := 0; i < length/2 && i < len(d); i++ {
 				d[i] = binary.LittleEndian.Uint16(r.replayData[r.dataPosition+i*2:])
+			}
+		case []uint32:
+			for i := 0; i < length/4 && i < len(d); i++ {
+				d[i] = binary.LittleEndian.Uint32(r.replayData[r.dataPosition+i*4:])
 			}
 		}
 	}
@@ -497,8 +498,15 @@ func (r *Replay) ReadInfo() bool {
 		r.players = append(r.players, name)
 	}
 	
-	if !r.ReadData(&r.params, 16) {
+	var paramBuf [16]byte
+	if !r.ReadData(paramBuf[:], 16) {
 		return false
+	}
+	r.params = DuelParameters{
+		StartLP:   int32(binary.LittleEndian.Uint32(paramBuf[0:4])),
+		StartHand: int32(binary.LittleEndian.Uint32(paramBuf[4:8])),
+		DrawCount: int32(binary.LittleEndian.Uint32(paramBuf[8:12])),
+		DuelFlag:  binary.LittleEndian.Uint32(paramBuf[12:16]),
 	}
 	
 	isTag1 := r.pheader.Base.Flag&REPLAY_TAG != 0
@@ -529,7 +537,7 @@ func (r *Replay) ReadInfo() bool {
 		for p := 0; p < playerCount; p++ {
 			var deck DeckArray
 			main := r.ReadInt32()
-			if main > protocol.MAINC_MAX {
+			if main < 0 || main > protocol.MAINC_MAX {
 				return false
 			}
 			if main > 0 {
@@ -539,7 +547,7 @@ func (r *Replay) ReadInfo() bool {
 				}
 			}
 			extra := r.ReadInt32()
-			if extra > protocol.MAINC_MAX {
+			if extra < 0 || extra > protocol.MAINC_MAX {
 				return false
 			}
 			if extra > 0 {

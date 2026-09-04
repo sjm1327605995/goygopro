@@ -148,6 +148,12 @@ class EventBus {
     if (!this.listeners[event]) this.listeners[event] = [];
     this.listeners[event].push(callback);
   }
+  off(event, callback) {
+    const list = this.listeners[event];
+    if (!list) return;
+    const idx = list.indexOf(callback);
+    if (idx > -1) list.splice(idx, 1);
+  }
   emit(event, data) {
     if (this.listeners[event]) {
       this.listeners[event].forEach(cb => cb(data));
@@ -157,10 +163,16 @@ class EventBus {
 
 export const eventBus = new EventBus();
 
-// Check if Wails runtime is injected
-const isWails = typeof window !== 'undefined' && !!(window.go && window.go.main && window.go.main.App);
+// Check if Wails v3 runtime is injected (window._wails)
+const wailsRuntime = typeof window !== 'undefined' && window._wails ? window._wails : null;
+const isWails = !!(wailsRuntime && wailsRuntime.Call && wailsRuntime.Call.ByName);
 
-if (typeof window !== 'undefined' && window.runtime && window.runtime.EventsOn) {
+// Call a bound Go service method (v3 uses fully-qualified names "App.Method")
+function callWails(method, ...args) {
+  return wailsRuntime.Call.ByName("App." + method, ...args);
+}
+
+if (wailsRuntime && wailsRuntime.Events && wailsRuntime.Events.On) {
   // Bridge Wails events to internal eventBus
   const eventList = [
     "stoc:join_game", "stoc:type_change", "stoc:player_enter", "stoc:player_change",
@@ -178,16 +190,17 @@ if (typeof window !== 'undefined' && window.runtime && window.runtime.EventsOn) 
     "duel:select_place", "duel:select_chain", "duel:waiting"
   ];
   eventList.forEach(name => {
-    window.runtime.EventsOn(name, (data) => eventBus.emit(name, data));
+    wailsRuntime.Events.On(name, (ev) => eventBus.emit(name, ev && ev.data !== undefined ? ev.data : ev));
   });
 }
 
 export const WailsBridge = {
   isWails,
+  _cardCache: new Map(),
 
   async connectServer(addr, username, pass) {
     if (isWails) {
-      return await window.go.main.App.ConnectServer(addr, username, pass);
+      return await callWails("ConnectServer", addr, username, pass);
     }
     console.log("[MockBridge] ConnectServer:", addr, username);
     setTimeout(() => {
@@ -199,89 +212,129 @@ export const WailsBridge = {
 
   async startLocalServer(port) {
     if (isWails) {
-      return await window.go.main.App.StartLocalServer(port);
+      return await callWails("StartLocalServer", port);
     }
     return { success: true, port: port || 7911 };
   },
 
   async createGame(req, roomName, pass) {
     if (isWails) {
-      return await window.go.main.App.CreateGame(req, roomName, pass);
+      return await callWails("CreateGame", req, roomName, pass);
     }
     return { success: true };
   },
 
   async joinGame(pass) {
     if (isWails) {
-      return await window.go.main.App.JoinGame(pass);
+      return await callWails("JoinGame", pass);
     }
     return { success: true };
   },
 
   leaveGame() {
-    if (isWails) window.go.main.App.LeaveGame();
+    if (isWails) callWails("LeaveGame");
   },
 
   surrender() {
-    if (isWails) window.go.main.App.Surrender();
+    if (isWails) callWails("Surrender");
   },
 
   setReady(ready) {
-    if (isWails) window.go.main.App.SetReady(ready);
+    if (isWails) callWails("SetReady", ready);
     else {
       eventBus.emit("stoc:player_change", { pos: 0, ready, status: ready ? 9 : 0 });
     }
   },
 
   startDuel() {
-    if (isWails) window.go.main.App.StartDuel();
+    if (isWails) callWails("StartDuel");
   },
 
   sendChat(msg) {
-    if (isWails) window.go.main.App.SendChat(msg);
+    if (isWails) callWails("SendChat", msg);
     else {
       eventBus.emit("stoc:chat", { player: 0, msg });
     }
   },
 
   sendHandResult(res) {
-    if (isWails) window.go.main.App.SendHandResult(res);
+    if (isWails) callWails("SendHandResult", res);
   },
 
   sendTPResult(res) {
-    if (isWails) window.go.main.App.SendTPResult(res);
+    if (isWails) callWails("SendTPResult", res);
   },
 
   sendResponseI(val) {
-    if (isWails) window.go.main.App.SendResponseI(val);
+    if (isWails) callWails("SendResponseI", val);
     else console.log("[MockBridge] SendResponseI:", val);
   },
 
   sendResponseB(bytes) {
-    if (isWails) window.go.main.App.SendResponseB(bytes);
+    if (isWails) callWails("SendResponseB", bytes);
     else console.log("[MockBridge] SendResponseB:", bytes);
   },
 
+  // Memoized card lookups: replay preload fetches every card code once, so
+  // the per-event awaits during playback resolve from cache instantly.
   async getCard(code) {
+    if (!code) return null;
+    if (WailsBridge._cardCache.has(code)) return WailsBridge._cardCache.get(code);
+    let info;
     if (isWails) {
-      return await window.go.main.App.GetCard(code);
+      info = await callWails("GetCard", code);
+    } else {
+      info = MOCK_CARD_DB.find(c => c.code === code) || {
+        code,
+        name: "Card #" + code,
+        type: 0x11,
+        attack: 1500,
+        defense: 1200,
+        level: 4,
+        race: 0x1,
+        attribute: 0x10,
+        desc: "Card details."
+      };
     }
-    return MOCK_CARD_DB.find(c => c.code === code) || {
-      code,
-      name: "Card #" + code,
-      type: 0x11,
-      attack: 1500,
-      defense: 1200,
-      level: 4,
-      race: 0x1,
-      attribute: 0x10,
-      desc: "Card details."
-    };
+    WailsBridge._cardCache.set(code, info);
+    return info;
+  },
+
+  // Card picture lookup. In the desktop app the Go side reads pics/<code>.jpg
+  // (YGOPro layout) and returns a data URL; in the browser preview we lazily
+  // pull from the YGOProDeck CDN. Returns null when no picture is available,
+  // so callers fall back to procedural card art.
+  async getCardImage(code) {
+    if (!code) return null;
+    if (!WailsBridge._picCache) WailsBridge._picCache = new Map();
+    if (WailsBridge._picCache.has(code)) return WailsBridge._picCache.get(code);
+    let url = null;
+    if (isWails) {
+      const data = await callWails("GetCardImage", code);
+      url = data || null;
+    } else {
+      try {
+        const res = await fetch(`https://images.ygoprodeck.com/images/cards_small/${code}.jpg`);
+        if (res.ok) {
+          const blob = await res.blob();
+          url = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        }
+      } catch {
+        url = null;
+      }
+    }
+    WailsBridge._picCache.set(code, url);
+    return url;
   },
 
   async searchCards(filter) {
     if (isWails) {
-      return await window.go.main.App.SearchCards(filter);
+      return await callWails("SearchCards", filter);
     }
     let res = MOCK_CARD_DB;
     if (filter.keyword) {
@@ -293,14 +346,14 @@ export const WailsBridge = {
 
   async listDecks() {
     if (isWails) {
-      return await window.go.main.App.ListDecks();
+      return await callWails("ListDecks");
     }
     return ["Blue-Eyes Beatdown", "Dark Magician Control", "Cyber Dragon OTK"];
   },
 
   async loadDeck(name) {
     if (isWails) {
-      return await window.go.main.App.LoadDeck(name);
+      return await callWails("LoadDeck", name);
     }
     return {
       name,
@@ -314,9 +367,44 @@ export const WailsBridge = {
     };
   },
 
+  async listReplays() {
+    if (isWails) {
+      return await callWails("ListReplays");
+    }
+    return ["World Championship Finals 2026.yrp"];
+  },
+
+  async playReplay(name) {
+    if (isWails) {
+      return await callWails("PlayReplay", name);
+    }
+    return {
+      success: true,
+      name,
+      players: ["YugiMuto", "SetoKaiba"],
+      startLp: 8000,
+      duelRule: 5,
+      events: [
+        { type: 'duel:start', data: { lp0: 8000, lp1: 8000 } },
+        { type: 'duel:draw', data: { player: 0, count: 5, cards: [89631139, 46986414, 83764718, 55144522, 44095762] } },
+        { type: 'duel:draw', data: { player: 1, count: 5, cards: [0, 0, 0, 0, 0] } },
+        { type: 'duel:new_phase', data: { phase: 0x04 } },
+        { type: 'duel:summoning', data: { code: 89631139, cc: 0, cl: 4, cs: 2, cp: 0x1 } },
+        { type: 'duel:chaining', data: { code: 44095762, cc: 1, cl: 5, cs: 2 } },
+        { type: 'duel:chain_solving', data: { count: 1 } },
+        { type: 'duel:chain_solved', data: { count: 1 } },
+        { type: 'duel:chain_end', data: {} },
+        { type: 'duel:attack', data: { attacker: { c: 0, l: 4, s: 2 }, target: { c: 1, l: 0, s: 0 } } },
+        { type: 'duel:damage', data: { player: 1, amount: 3000 } },
+        { type: 'duel:move', data: { code: 44095762, pc: 1, pl: 0x08, ps: 2, pp: 0xa, cc: 1, cl: 0x10, cs: 0, cp: 0x1, reason: 0x40 } },
+        { type: 'duel:win', data: { winner: 0, type: 0 } }
+      ]
+    };
+  },
+
   async saveDeck(deck) {
     if (isWails) {
-      return await window.go.main.App.SaveDeck(deck);
+      return await callWails("SaveDeck", deck);
     }
     console.log("[MockBridge] Saved deck:", deck.name);
     return true;
