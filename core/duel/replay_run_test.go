@@ -54,7 +54,18 @@ func TestReplayModeRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ocgcore.Init(ocgcore.WithRootPath(root)); err != nil {
+	// Real card data + scripts so the engine can evaluate recorded effects
+	// instead of bailing out at the first response request.
+	if err := DefaultDataManager.LoadDB(filepath.Join(root, "cards.cdb")); err != nil {
+		t.Fatalf("load cards.cdb: %v", err)
+	}
+	if err := ocgcore.Init(
+		ocgcore.WithRootPath(root),
+		ocgcore.WithScriptDirectory(filepath.Join(root, "script")),
+		ocgcore.WithCardReader(func(cardId uint32) *ocgcore.CardData {
+			return DefaultDataManager.GetData(cardId)
+		}),
+	); err != nil {
 		t.Skipf("ocgcore library not available: %v", err)
 	}
 
