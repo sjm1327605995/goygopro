@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 )
 
@@ -71,7 +71,7 @@ func (m *CardDBManager) OpenDB(dbPath string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	db, err := sqlx.Open("sqlite3", dbPath)
+	db, err := sqlx.Open("sqlite", dbPath)
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"unsafe"
 )
 
@@ -210,13 +211,24 @@ func messageHandlerCallback(pduel uintptr, size uint32) uintptr {
 
 func (o *OCGApi) defaultScriptReader(scriptName string) []byte {
 	fmt.Println("Loading script:", scriptName)
-	scriptPath := filepath.Join(API.scriptDirectory, scriptName)
-	data, err := os.ReadFile(scriptPath)
-	if err != nil {
-		fmt.Println("Error reading script file:", err)
-		return nil
+	// The engine hardcodes the "./script/" prefix into every script name it
+	// requests (constant.lua, utility.lua, procedure.lua, c<code>.lua). Strip
+	// it before joining with the configured script directory, and fall back to
+	// the raw name for readers that already pass bare file names.
+	rel := strings.TrimPrefix(scriptName, "./script/")
+	candidates := []string{
+		filepath.Join(o.scriptDirectory, rel),
+		filepath.Join(o.scriptDirectory, scriptName),
+		scriptName,
 	}
-	return data
+	for _, scriptPath := range candidates {
+		data, err := os.ReadFile(scriptPath)
+		if err == nil {
+			return data
+		}
+	}
+	fmt.Println("Error reading script file: not found in", o.scriptDirectory, "for", scriptName)
+	return nil
 }
 
 func (o *OCGApi) defaultCardReader(code uint32) *CardData {

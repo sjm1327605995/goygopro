@@ -2,7 +2,7 @@ package duel
 
 import (
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 )
 
@@ -21,7 +21,7 @@ type DataManager struct {
 }
 
 func (d *DataManager) LoadDB(file string) error {
-	db, err := sqlx.Open("sqlite3", file)
+	db, err := sqlx.Open("sqlite", file)
 	if err != nil {
 		panic(err)
 	}
