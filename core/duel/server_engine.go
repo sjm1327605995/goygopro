@@ -51,6 +51,11 @@ func (s *Server) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 	}
 	atomic.AddInt32(&s.disconnected, 1)
 	atomic.AddInt32(&s.connected, -1)
+	// TCP 断线（未发送 CTOS_LEAVE_GAME）也要把玩家移出房间，
+	// 否则房间会一直等待一个永远不会再响应的玩家。
+	if codec, ok := c.Context().(*SimpleCodec); ok && codec != nil && codec.Player != nil {
+		codec.Player.leaveGameOnce()
+	}
 	// Note: we do NOT shut down the server when all connections close,
 	// because this is an embedded server that should stay alive until
 	// explicitly stopped (e.g. when the client application exits).

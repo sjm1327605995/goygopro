@@ -3,7 +3,7 @@ package duel
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
+	"log"
 	"math/rand"
 	"slices"
 	"time"
@@ -360,7 +360,7 @@ func (s *TagDuel) UpdateDeck(dp *DuelPlayer, pData []byte) {
 	var deckBuf protocol.CTOSDeckData
 	err := restruct.Unpack(pData, binary.LittleEndian, &deckBuf)
 	if err != nil {
-		fmt.Println(err)
+		log.Printf("[duel] unpack CTOS_UPDATE_DECK: %v", err)
 		return
 	}
 	if deckBuf.MainC < 0 || deckBuf.MainC > protocol.MAINC_MAX {
@@ -941,11 +941,11 @@ func (s *TagDuel) Analyze(msgBuffer []byte) int {
 			if err := pbuf.Unpack(&msg); err != nil {
 				panic(err)
 			}
-			// 当前玩家只收到 player+count（不含 codes）
-			header := append([]byte{engType}, utils.PackGameMsg(&msg)[:2]...)
-			s.SendPacketDataToPlayer(s.curPlayer[msg.Player], network.STOC_GAME_MSG, header)
-			msg.HideAllCodes()
+			// 当前玩家收到完整消息（含打乱后的 codes，客户端据此重排手牌）
 			data := append([]byte{engType}, utils.PackGameMsg(&msg)...)
+			s.SendPacketDataToPlayer(s.curPlayer[msg.Player], network.STOC_GAME_MSG, data)
+			msg.HideAllCodes()
+			data = append([]byte{engType}, utils.PackGameMsg(&msg)...)
 			for i := 0; i < 4; i++ {
 				if s.players[i] != s.curPlayer[msg.Player] {
 					s.SendPacketDataToPlayer(s.players[i], network.STOC_GAME_MSG, data)
@@ -960,11 +960,11 @@ func (s *TagDuel) Analyze(msgBuffer []byte) int {
 			if err := pbuf.Unpack(&msg); err != nil {
 				panic(err)
 			}
-			// 当前玩家只收到 player+count（不含 codes）
-			header := append([]byte{engType}, utils.PackGameMsg(&msg)[:2]...)
-			s.SendPacketDataToPlayer(s.curPlayer[msg.Player], network.STOC_GAME_MSG, header)
-			msg.HideAllCodes()
+			// 当前玩家收到完整消息（含打乱后的 codes）
 			data := append([]byte{engType}, utils.PackGameMsg(&msg)...)
+			s.SendPacketDataToPlayer(s.curPlayer[msg.Player], network.STOC_GAME_MSG, data)
+			msg.HideAllCodes()
+			data = append([]byte{engType}, utils.PackGameMsg(&msg)...)
 			for i := 0; i < 4; i++ {
 				if s.players[i] != s.curPlayer[msg.Player] {
 					s.SendPacketDataToPlayer(s.players[i], network.STOC_GAME_MSG, data)
@@ -1576,7 +1576,7 @@ func (s *TagDuel) Analyze(msgBuffer []byte) int {
 			pbuf.Next(1) // skip main_size
 			var ecount uint8
 			_ = pbuf.Read(&ecount) // extra_size
-			pbuf.Next(1) // skip extra_p_count
+			pbuf.Next(1)           // skip extra_p_count
 			var hcount uint8
 			_ = pbuf.Read(&hcount) // hand_size
 			pbufw = pbuf.Clone()

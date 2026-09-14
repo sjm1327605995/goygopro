@@ -43,5 +43,18 @@ func (d *DuelPlayer) HandleCTOSPacket(data []byte) {
 	packetRouter.Dispatch(d, data)
 }
 
+// leaveGameOnce 把玩家移出所在房间（若在），并保证只执行一次。
+// LeaveGame 不幂等（host 路径会重复 EndDuel/RemoveRoom），主动离开
+// （CTOS_LEAVE_GAME）与 TCP 断线（OnClose）两条路径都必须经由这里，
+// 通过清空 Game 引用来防止二次触发。
+func (d *DuelPlayer) leaveGameOnce() {
+	game := d.Game
+	if game == nil {
+		return
+	}
+	d.Game = nil
+	game.LeaveGame(d)
+}
+
 // packetRouter 是全局路由器实例
 var packetRouter = BuildPacketRouter()

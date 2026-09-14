@@ -2,8 +2,8 @@
 // DuelField3D (same source the production bundle compiles) against the built
 // assets, places cards on the board, and flags when the card-back texture has
 // decoded so the caller can screenshot and assert on it.
-import { DuelField3D } from '../src/duel/field3d.js';
-import { soundManager } from '../src/audio/sound_manager.js';
+import { DuelField3D } from '../src/duel/field3d.ts';
+import { soundManager } from '../src/audio/sound_manager.ts';
 
 // Keep the headless run silent; every play*() method short-circuits on muted.
 soundManager.muted = true;

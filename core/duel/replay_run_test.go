@@ -1,6 +1,7 @@
 package duel
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -103,7 +104,7 @@ func TestReplayModeRun(t *testing.T) {
 		// Without card scripts the engine cannot reproduce recorded effect
 		// decisions, so the replay diverges; that is a data availability issue
 		// rather than a driver bug. Any other error is a real failure.
-		if err != ErrReplayResponseUnderflow && err != ErrReplayDesynchronized {
+		if !errors.Is(err, ErrReplayResponseUnderflow) && !errors.Is(err, ErrReplayDesynchronized) {
 			t.Fatalf("unexpected run error: %v", err)
 		}
 		t.Logf("Run stopped early (card scripts unavailable): %v", err)

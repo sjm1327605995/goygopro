@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
-	"strings"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/sjm1327605995/goygopro/core/duel"
 	"github.com/sjm1327605995/goygopro/protocol"
@@ -22,6 +25,11 @@ type App struct {
 	scriptPath string
 	deckDir    string
 	replayDir  string
+	singleDir  string
+
+	// 单人谜题（single_mode.go）：nil = 没有进行中的谜题
+	singleMu sync.Mutex
+	single   *singleRun
 }
 
 // NewApp creates a new App application struct
@@ -31,6 +39,7 @@ func NewApp() *App {
 		scriptPath: "script",
 		deckDir:    "deck",
 		replayDir:  "replay",
+		singleDir:  "single",
 		cardDB:     NewCardDBManager(),
 	}
 	return app
@@ -55,6 +64,8 @@ func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOpt
 	if _, err := os.Stat(a.dbPath); err == nil {
 		_ = a.cardDB.OpenDB(a.dbPath)
 	}
+	// 系列名表（strings.conf !setname 行；可选数据，缺文件静默降级）
+	_ = a.cardDB.LoadSetNames("strings.conf")
 
 	// Initialize deck & replay dirs
 	_ = os.MkdirAll(a.deckDir, 0755)
@@ -64,6 +75,7 @@ func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOpt
 
 // ServiceShutdown is called when the app terminates
 func (a *App) ServiceShutdown() error {
+	a.StopSingle()
 	if a.client != nil {
 		a.client.Disconnect()
 	}
@@ -124,6 +136,34 @@ type HostInfoReq struct {
 	StartHand     uint8  `json:"startHand"`
 	DrawCount     uint8  `json:"drawCount"`
 	TimeLimit     uint16 `json:"timeLimit"`
+}
+
+// LFListEntry 是禁限卡表下拉的一项。gframe 的 HostInfo.LFList 存的是
+// 卡表哈希（deck_manager.cpp 逐条异或折叠），不是序号。
+type LFListEntry struct {
+	Hash uint32 `json:"hash"`
+	Name string `json:"name"`
+}
+
+// Quit 对应主菜单「退出」按钮（gframe BUTTON_MODE_EXIT → device->closeDevice()）。
+func (a *App) Quit() {
+	if app := application.Get(); app != nil {
+		app.Quit()
+	}
+}
+
+// ListLFLists 列出已加载的禁限卡表（duelclient 建房窗 cbLFlist 的数据源）。
+// LoadLFList 会把「N/A」（哈希 0）追加在末尾；仓库目前没有 lflist.conf，
+// 因此通常只有 N/A，缺数据时下拉照常工作。
+func (a *App) ListLFLists() []LFListEntry {
+	if len(duel.DeckManger.LFList) == 0 {
+		duel.DeckManger.LoadLFList()
+	}
+	entries := make([]LFListEntry, 0, len(duel.DeckManger.LFList))
+	for _, l := range duel.DeckManger.LFList {
+		entries = append(entries, LFListEntry{Hash: l.Hash, Name: l.ListName})
+	}
+	return entries
 }
 
 func (a *App) CreateGame(req HostInfoReq, roomName string, pass string) map[string]interface{} {
@@ -194,6 +234,10 @@ func (a *App) ToDuelist() {
 	_ = a.client.ToDuelist()
 }
 
+func (a *App) KickPlayer(pos byte) {
+	_ = a.client.SendKick(pos)
+}
+
 func (a *App) SendChat(msg string) {
 	_ = a.client.SendChat(msg)
 }
@@ -207,11 +251,11 @@ func (a *App) SendTPResult(res byte) {
 }
 
 func (a *App) SendResponseI(val int32) {
-	_ = a.client.SendResponseI(val)
+	_ = a.routeResponseI(val)
 }
 
 func (a *App) SendResponseB(data []byte) {
-	_ = a.client.SendResponseB(data)
+	_ = a.routeResponseB(data)
 }
 
 func (a *App) SendTimeConfirm() {
@@ -230,35 +274,60 @@ func (a *App) GetCard(code uint32) *CardInfo {
 	return a.cardDB.GetCard(code)
 }
 
-// GetCardImage returns card art as a data URL for the frontend. It looks in
-// the YGOPro-standard pics/ directory (pics/<code>.jpg / .png / .webp, plus
-// expansions/pics when present) and returns "" when no art is installed.
+// GetCardImage returns card art as a data URL for the frontend. It follows the
+// YGOPro layout: pics/<code>.jpg / .png / .webp (plus expansions/pics and the
+// %d-1, %d-2 alternate-art suffixes). Search roots are the executable's
+// directory and the working directory, with YGOPRO_PICS_DIR overriding both —
+// so the app finds art whether it was launched from the install dir or a
+// shortcut with a different working directory. Returns "" when no art exists,
+// letting the frontend fall back to its procedural/CDN picture.
 func (a *App) GetCardImage(code uint32) string {
-	bases := []string{"pics", filepath.Join("expansions", "pics")}
-	var exts []string
+	var roots []string
+	if dir := strings.TrimSpace(os.Getenv("YGOPRO_PICS_DIR")); dir != "" {
+		roots = append(roots, dir)
+	}
+	if exe, err := os.Executable(); err == nil {
+		roots = append(roots, filepath.Dir(exe))
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		roots = append(roots, cwd)
+	}
+
+	type base struct {
+		root string
+		rel  string
+	}
+	var bases []base
+	for _, root := range roots {
+		bases = append(bases,
+			base{root, "pics"},
+			base{root, filepath.Join("expansions", "pics")},
+			// YGOPro2 layout keeps pictures in a versioned subdirectory.
+			base{root, filepath.Join("YGOPro", "pics")},
+		)
+	}
+
 	codeStr := fmt.Sprintf("%d", code)
 	// Alias/alternate art convention: %d-1, %d-2, ...
-	for _, s := range []string{codeStr, codeStr + "-1", codeStr + "-2"} {
-		exts = append(exts, filepath.Join(bases[0], s+".jpg"),
-			filepath.Join(bases[0], s+".png"),
-			filepath.Join(bases[0], s+".webp"),
-			filepath.Join(bases[1], s+".jpg"),
-			filepath.Join(bases[1], s+".png"),
-			filepath.Join(bases[1], s+".webp"))
-	}
-	for _, p := range exts {
-		data, err := os.ReadFile(p)
-		if err != nil {
-			continue
+	names := []string{codeStr, codeStr + "-1", codeStr + "-2"}
+	exts := []string{".jpg", ".png", ".webp"}
+	for _, b := range bases {
+		for _, name := range names {
+			for _, ext := range exts {
+				data, err := os.ReadFile(filepath.Join(b.root, b.rel, name+ext))
+				if err != nil {
+					continue
+				}
+				mime := "image/jpeg"
+				switch ext {
+				case ".png":
+					mime = "image/png"
+				case ".webp":
+					mime = "image/webp"
+				}
+				return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
+			}
 		}
-		mime := "image/jpeg"
-		switch {
-		case strings.HasSuffix(p, ".png"):
-			mime = "image/png"
-		case strings.HasSuffix(p, ".webp"):
-			mime = "image/webp"
-		}
-		return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
 	}
 	return ""
 }
@@ -272,17 +341,26 @@ func (a *App) ListDecks() []string {
 }
 
 func (a *App) LoadDeck(name string) (*DeckData, error) {
-	deckPath := filepath.Join(a.deckDir, name+".ydk")
+	deckPath, err := safeDeckPath(a.deckDir, name)
+	if err != nil {
+		return nil, err
+	}
 	return a.cardDB.LoadDeck(deckPath)
 }
 
 func (a *App) SaveDeck(deck DeckData) error {
-	deckPath := filepath.Join(a.deckDir, deck.Name+".ydk")
+	deckPath, err := safeDeckPath(a.deckDir, deck.Name)
+	if err != nil {
+		return err
+	}
 	return a.cardDB.SaveDeck(deckPath, deck)
 }
 
 func (a *App) DeleteDeck(name string) error {
-	deckPath := filepath.Join(a.deckDir, name+".ydk")
+	deckPath, err := safeDeckPath(a.deckDir, name)
+	if err != nil {
+		return err
+	}
 	return os.Remove(deckPath)
 }
 
@@ -298,6 +376,113 @@ func (a *App) ListReplays() []string {
 		}
 	}
 	return names
+}
+
+// ReplayInfo 返回录像头部元信息，对应原版 LISTBOX_REPLAY_LIST 选中时填充
+// stReplayInfo 的逻辑（menu_handler.cpp:519-559）：时间取 REPLAY_UNIFORM 的
+// start_time，否则取 seed 兼作时间戳；再加玩家名 ===VS=== 布局所需的数据。
+func (a *App) ReplayInfo(name string) map[string]interface{} {
+	name = filepath.Base(name)
+	rm := duel.NewReplayMode()
+	if err := rm.Load(filepath.Join(a.replayDir, name)); err != nil {
+		return map[string]interface{}{"success": false, "error": err.Error()}
+	}
+	hdr := rm.Replay.ReadHeader()
+	// 原版：UNIFORM 录像时间在 start_time，其余用 seed 字段兼作记录时间
+	uniform := hdr.Base.Flag&duel.REPLAY_UNIFORM != 0
+	rawTime := hdr.Base.Seed
+	if uniform {
+		rawTime = hdr.Base.StartTime
+	}
+	date := time.Unix(int64(rawTime), 0).Format("2006/01/02 15:04:05")
+	return map[string]interface{}{
+		"success":  true,
+		"version":  hdr.Base.Version,
+		"date":     date,
+		"players":  rm.Players,
+		"isTag":    rm.IsTag,
+		"isSingle": rm.IsSingleMode,
+		"script":   rm.ScriptName,
+		"startLp":  rm.Params.StartLP,
+		"duelRule": uint8(rm.Params.DuelFlag >> 16),
+	}
+}
+
+// ExportReplayDeck 把录像里双方（组队赛为四人）的卡组导出成 .ydk 到 deckDir，
+// 对应原版 BUTTON_EXPORT_DECK（menu_handler.cpp:293-319）：文件名
+// <录像文件名>-<序号> <玩家名>.ydk（玩家名经 SafeFileName 清洗），单机录像
+// 无卡组信息直接拒绝。卡组序号→玩家映射与原版 Replay::GetDeckPlayer 一致。
+func (a *App) ExportReplayDeck(name string) map[string]interface{} {
+	name = filepath.Base(name)
+	rm := duel.NewReplayMode()
+	if err := rm.Load(filepath.Join(a.replayDir, name)); err != nil {
+		return map[string]interface{}{"success": false, "error": err.Error()}
+	}
+	if rm.IsSingleMode {
+		return map[string]interface{}{"success": false, "error": "单人模式录像没有卡组信息"}
+	}
+	safeName := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			if strings.ContainsRune(`<>:"/\|?*`, r) {
+				return '_'
+			}
+			return r
+		}, s)
+	}
+	var saved []string
+	for i := range rm.Decks {
+		playerIdx := duel.GetDeckPlayer(i)
+		player := ""
+		if playerIdx < len(rm.Players) {
+			player = rm.Players[playerIdx]
+		}
+		deckName := fmt.Sprintf("%s-%d %s", name, i+1, safeName(player))
+		deckPath, err := safeDeckPath(a.deckDir, deckName)
+		if err != nil {
+			return map[string]interface{}{"success": false, "error": err.Error()}
+		}
+		if !rm.Replay.SaveDeck(i, deckPath) {
+			return map[string]interface{}{"success": false, "error": "写卡组文件失败：" + deckName}
+		}
+		saved = append(saved, deckName+".ydk")
+	}
+	return map[string]interface{}{"success": true, "files": saved}
+}
+
+// SaveLastReplay 落盘最近一次对局录像（STOC_REPLAY → 缓存 → 前端确认后
+// 调用；auto_save_replay=1 时前端直接调用）。返回实际保存的文件名。
+func (a *App) SaveLastReplay(name string) map[string]interface{} {
+	if a.client == nil {
+		return map[string]interface{}{"success": false, "error": "not connected"}
+	}
+	a.client.replayDir = a.replayDir
+	saved, err := a.client.SaveReplay(name)
+	if err != nil {
+		return map[string]interface{}{"success": false, "error": err.Error()}
+	}
+	return map[string]interface{}{"success": true, "name": saved + ".yrp"}
+}
+
+func (a *App) DeleteReplay(name string) error {
+	name = filepath.Base(name)
+	return os.Remove(filepath.Join(a.replayDir, name))
+}
+
+func (a *App) RenameReplay(oldName string, newName string) error {
+	oldName = filepath.Base(oldName)
+	if !strings.HasSuffix(oldName, ".yrp") {
+		oldName += ".yrp"
+	}
+	newName = strings.TrimSpace(filepath.Base(newName))
+	newName = strings.ReplaceAll(newName, "/", "_")
+	newName = strings.ReplaceAll(newName, "\\", "_")
+	if newName == "" {
+		return errors.New("empty replay name")
+	}
+	if !strings.HasSuffix(newName, ".yrp") {
+		newName += ".yrp"
+	}
+	return os.Rename(filepath.Join(a.replayDir, oldName), filepath.Join(a.replayDir, newName))
 }
 
 // PlayReplay loads a recorded .yrp duel and replays it against the ocgcore
@@ -374,7 +559,9 @@ func (a *App) PlayReplay(name string) map[string]interface{} {
 	err := rm.Run(func(msg []byte) {
 		collector.handleGameMessage(msg)
 	})
-	if err != nil && err != duel.ErrReplayResponseUnderflow && err != duel.ErrReplayDesynchronized {
+	// 中途截断的录像（underflow / desync）不视为致命：已收集的事件照常返回，
+	// truncated 标记给前端。desync 错误经过 %w 包装，必须用 errors.Is 判断。
+	if err != nil && !errors.Is(err, duel.ErrReplayResponseUnderflow) && !errors.Is(err, duel.ErrReplayDesynchronized) {
 		return map[string]interface{}{"success": false, "error": err.Error()}
 	}
 

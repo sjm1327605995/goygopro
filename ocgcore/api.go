@@ -220,6 +220,9 @@ func (o *OCGApi) defaultScriptReader(scriptName string) []byte {
 		filepath.Join(o.scriptDirectory, rel),
 		filepath.Join(o.scriptDirectory, scriptName),
 		scriptName,
+		// 单机残局脚本经 preload_script 以 "./single/x.lua" 传入，相对于
+		// 程序根目录（SinglePlayThread 的 ./single/ 布局）。
+		filepath.Join(o.rootPath, scriptName),
 	}
 	for _, scriptPath := range candidates {
 		data, err := os.ReadFile(scriptPath)

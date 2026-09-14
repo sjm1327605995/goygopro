@@ -1,0 +1,169 @@
+/* ==================================================================
+   gframe 窗口皮肤 — 波 H：菜单界面 1:1 对齐原版
+   对照 vendored gframe（Irrlicht 默认皮肤 + YGOPro 灰蓝配色）：
+   菜单界面不再是全屏大面板，而是 bg_menu.jpg 背景上叠加的
+   固定尺寸窗口（game.cpp:199-330, 831-847 的 rect 逐一对齐）。
+   ------------------------------------------------------------------
+   皮肤近似说明：无 Irrlicht 贴图素材，以布局/尺寸/文案精确为准，
+   配色取 Irrlicht 默认灰 + 深灰蓝标题栏。
+   ================================================================== */
+
+/* ---- 窗口外壳 ---- */
+.gfw-window {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: #d6d3ce;
+  border: 1px solid #4a4a52;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.65);
+  color: #16161e;
+  font-size: 13px;
+  z-index: 20;
+}
+
+.gfw-title {
+  height: 22px;
+  line-height: 22px;
+  padding: 0 8px;
+  background: linear-gradient(#77839b, #4c5a74);
+  color: #fff;
+  font-weight: bold;
+  font-size: 13px;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.gfw-body {
+  padding: 8px 10px;
+  position: relative;
+}
+
+/* ---- 控件 ---- */
+.gfw-btn {
+  background: linear-gradient(#f6f4f0, #d6d3ce);
+  border: 1px solid #8a8a8a;
+  border-top-color: #ffffff;
+  border-left-color: #ffffff;
+  border-radius: 0;
+  color: #1c1c26;
+  font-size: 13px;
+  font-weight: normal;
+  letter-spacing: normal;
+  cursor: pointer;
+  padding: 0 10px;
+  height: 30px;
+  user-select: none;
+}
+.gfw-btn:hover {
+  background: linear-gradient(#ffffff, #e9e6e0);
+}
+.gfw-btn:active {
+  border-color: #8a8a8a #ffffff #ffffff #8a8a8a;
+  background: #cbc8c2;
+}
+.gfw-btn:disabled {
+  color: #8a8a8a;
+  cursor: default;
+}
+
+.gfw-input,
+.gfw-select {
+  background: #ffffff;
+  border: 1px solid #8a8a8a;
+  border-top-color: #3c3c44;
+  border-left-color: #3c3c44;
+  padding: 4px 6px;
+  font-size: 13px;
+  color: #101018;
+  box-sizing: border-box;
+}
+.gfw-input:focus,
+.gfw-select:focus {
+  outline: 1px solid #4c5a74;
+}
+
+.gfw-check {
+  accent-color: #4c5a74;
+  cursor: pointer;
+}
+
+.gfw-label {
+  font-size: 13px;
+  color: #20202a;
+  line-height: 20px;
+}
+
+/* listbox（房间列表/卡组列表等） */
+.gfw-list {
+  background: #ffffff;
+  border: 1px solid #8a8a8a;
+  border-top-color: #3c3c44;
+  border-left-color: #3c3c44;
+  overflow-y: auto;
+}
+.gfw-list-item {
+  padding: 2px 6px;
+  height: 18px;
+  line-height: 18px;
+  font-size: 13px;
+  color: #101018;
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gfw-list-item:hover {
+  background: #b8c4dc;
+}
+.gfw-list-item.gfw-selected {
+  background: #7c8cad;
+  color: #fff;
+}
+
+/* ---- 各原版窗口的固定尺寸（game.cpp rect） ---- */
+.gfw-mainmenu { width: 280px; height: 215px; }   /* 370,200→650,415 */
+.gfw-lan      { width: 580px; height: 420px; }   /* 220,100→800,520 */
+.gfw-create   { width: 380px; height: 420px; }   /* 320,100→700,520 */
+.gfw-prepare  { width: 480px; height: 320px; }   /* 270,120→750,440 */
+.gfw-replay   { width: 580px; height: 420px; }   /* 220,100→800,520 */
+
+/* 窗口内按钮纵排（主菜单 5 键：260×30、5px 间距） */
+.gfw-col {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* ---- 老类名在窗口内的原版化（冒烟契约依赖 .form-input/.form-select/.btn 类名，保留类名、覆写皮肤） ---- */
+.gfw-window .form-input,
+.gfw-window .form-select {
+  background: #ffffff;
+  border: 1px solid #8a8a8a;
+  border-top-color: #3c3c44;
+  border-left-color: #3c3c44;
+  border-radius: 0;
+  color: #101018;
+  padding: 4px 6px;
+  font-size: 13px;
+  box-shadow: none;
+}
+.gfw-window .form-input:focus,
+.gfw-window .form-select:focus {
+  border-color: #4c5a74;
+  box-shadow: none;
+}
+.gfw-window .btn {
+  border-radius: 0;
+  padding: 0 10px;
+  letter-spacing: normal;
+}
+
+/* modal-box 与 gfw-window 叠用时归零圆角/内距（设置面板） */
+.gfw-window.modal-box {
+  border-radius: 0;
+  padding: 0;
+  min-width: 0;
+  animation: none;
+}

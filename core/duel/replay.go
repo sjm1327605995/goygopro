@@ -34,29 +34,29 @@ const (
 )
 
 type ReplayHeader struct {
-	ID         uint32
-	Version    uint32
-	Flag       uint32
-	Seed       uint32
-	DataSize   uint32
-	StartTime  uint32
-	Props      [8]uint8
+	ID        uint32
+	Version   uint32
+	Flag      uint32
+	Seed      uint32
+	DataSize  uint32
+	StartTime uint32
+	Props     [8]uint8
 }
 
 type ExtendedReplayHeader struct {
-	Base         ReplayHeader
-	SeedSequence [SEED_COUNT]uint32
+	Base          ReplayHeader
+	SeedSequence  [SEED_COUNT]uint32
 	HeaderVersion uint32
-	Value1       uint32
-	Value2       uint32
-	Value3       uint32
+	Value1        uint32
+	Value2        uint32
+	Value3        uint32
 }
 
 type DuelParameters struct {
-	StartLP    int32
-	StartHand  int32
-	DrawCount  int32
-	DuelFlag   uint32
+	StartLP   int32
+	StartHand int32
+	DrawCount int32
+	DuelFlag  uint32
 }
 
 type DeckArray struct {
@@ -65,15 +65,15 @@ type DeckArray struct {
 }
 
 type Replay struct {
-	fp           *os.File
-	pheader      ExtendedReplayHeader
-	compData     []byte
-	compSize     int
-	players      []string
-	params       DuelParameters
-	decks        []DeckArray
-	scriptName   string
-	
+	fp         *os.File
+	pheader    ExtendedReplayHeader
+	compData   []byte
+	compSize   int
+	players    []string
+	params     DuelParameters
+	decks      []DeckArray
+	scriptName string
+
 	replayData   []byte
 	replaySize   int
 	dataPosition int
@@ -212,13 +212,13 @@ func (r *Replay) SaveReplay(baseName string) bool {
 	filename := strings.ReplaceAll(baseName, "/", "_")
 	filename = strings.ReplaceAll(filename, "\\", "_")
 	path := filepath.Join("./replay", filename+".yrp")
-	
+
 	rfp, err := os.Create(path)
 	if err != nil {
 		return false
 	}
 	defer rfp.Close()
-	
+
 	// Write header: YRP1 writes only Base, YRP2 writes full ExtendedReplayHeader
 	if r.pheader.Base.ID == REPLAY_ID_YRP2 {
 		binary.Write(rfp, binary.LittleEndian, r.pheader)
@@ -240,15 +240,15 @@ func (r *Replay) OpenReplay(name string) bool {
 		}
 	}
 	defer rfp.Close()
-	
+
 	r.Reset()
-	
+
 	var correctHeader bool
 	_ = correctHeader
 	if err := binary.Read(rfp, binary.LittleEndian, &r.pheader.Base); err != nil {
 		return false
 	}
-	
+
 	if r.pheader.Base.ID != REPLAY_ID_YRP1 && r.pheader.Base.ID != REPLAY_ID_YRP2 {
 		return false
 	}
@@ -258,7 +258,7 @@ func (r *Replay) OpenReplay(name string) bool {
 	if r.pheader.Base.Version >= 0x1353 && (r.pheader.Base.Flag&REPLAY_UNIFORM) == 0 {
 		return false
 	}
-	
+
 	if r.pheader.Base.ID == REPLAY_ID_YRP2 {
 		// Read only the extended fields (after Base)
 		var extra struct {
@@ -277,7 +277,7 @@ func (r *Replay) OpenReplay(name string) bool {
 		r.pheader.Value2 = extra.Value2
 		r.pheader.Value3 = extra.Value3
 	}
-	
+
 	if r.pheader.Base.Flag&REPLAY_COMPRESSED != 0 {
 		r.compSize, _ = rfp.Read(r.compData)
 		r.replaySize = int(r.pheader.Base.DataSize)
@@ -308,7 +308,7 @@ func (r *Replay) OpenReplay(name string) bool {
 		r.replaySize, _ = rfp.Read(r.replayData)
 		r.compSize = 0
 	}
-	
+
 	r.isReplaying = true
 	r.canRead = true
 	if !r.ReadInfo() {
@@ -489,7 +489,7 @@ func (r *Replay) ReadInfo() bool {
 	if r.pheader.Base.Flag&REPLAY_TAG != 0 {
 		playerCount = 4
 	}
-	
+
 	for i := 0; i < playerCount; i++ {
 		name := r.ReadName()
 		if name == "" {
@@ -497,7 +497,7 @@ func (r *Replay) ReadInfo() bool {
 		}
 		r.players = append(r.players, name)
 	}
-	
+
 	var paramBuf [16]byte
 	if !r.ReadData(paramBuf[:], 16) {
 		return false
@@ -508,15 +508,20 @@ func (r *Replay) ReadInfo() bool {
 		DrawCount: int32(binary.LittleEndian.Uint32(paramBuf[8:12])),
 		DuelFlag:  binary.LittleEndian.Uint32(paramBuf[12:16]),
 	}
-	
+
 	isTag1 := r.pheader.Base.Flag&REPLAY_TAG != 0
 	isTag2 := r.params.DuelFlag&0x20 != 0 // DUEL_TAG_MODE
 	if isTag1 != isTag2 {
 		return false
 	}
-	
+
 	if r.pheader.Base.Flag&REPLAY_SINGLE_MODE != 0 {
-		slen := r.ReadInt32()
+		// C++ 写的是 uint16 长度前缀（replay.cpp:248 Read<uint16_t>）
+		var slenBuf [2]byte
+		if !r.ReadData(slenBuf[:], 2) {
+			return false
+		}
+		slen := int(binary.LittleEndian.Uint16(slenBuf[:]))
 		if slen == 0 || slen > 255 {
 			return false
 		}

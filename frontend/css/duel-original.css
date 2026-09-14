@@ -1,0 +1,1044 @@
+/**
+ * 原版风格决斗面板样式（P2 波 1-2）。
+ *
+ * 对照 vendored gframe/drawing.cpp / game.cpp：
+ *   - 左侧预览面板 ≈ wCardImg(177×254 卡图) + wInfos 页签
+ *   - LP 血条 ≈ lpf.png 框内 lp.png 拉伸条，满条 292px
+ * 贴图路径相对 frontend/textures/（vite 构建时原样拷贝）。
+ */
+
+/* ---- 左侧卡牌预览面板 ----
+   原版几何（game.cpp:335/356）：wCardImg (1,1)-(198,273)，wInfos 页签
+   (1,275)-(301,639)。这里合并为一列固定在左上到左下。 */
+.card-preview-panel {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  bottom: 1px;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  background: rgba(13, 17, 32, 0.97);
+  border: 1px solid #6a7a9a;
+  border-radius: 2px;
+  color: #e8e8d0;
+  font-size: 12px;
+  z-index: 30;
+  pointer-events: auto;
+}
+
+.preview-image-box {
+  width: 177px;
+  height: 254px;
+  margin: 0 auto;
+  background: #000;
+  border: 1px solid #5a6a8a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.preview-image {
+  width: 177px;
+  height: 254px;
+  object-fit: cover;
+}
+
+.preview-image-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6a7a9a;
+  font-size: 12px;
+}
+
+.preview-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.preview-tab {
+  flex: 1;
+  padding: 3px 0;
+  background: #1a2233;
+  border: 1px solid #3a4a6a;
+  color: #a8b4cc;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.preview-tab.active {
+  background: #2a3a5a;
+  color: #ffe66a;
+}
+
+.preview-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preview-name {
+  font-weight: 700;
+  color: #ffe66a;
+  font-size: 13px;
+}
+
+.preview-type,
+.preview-attr {
+  color: #a8b4cc;
+}
+
+.preview-stats {
+  color: #ffd0a0;
+  font-weight: 600;
+}
+
+.preview-desc {
+  max-height: 130px;
+  overflow-y: auto;
+  line-height: 1.5;
+  color: #c8d0e0;
+  white-space: pre-wrap;
+}
+
+.preview-log {
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.preview-log-line {
+  line-height: 1.4;
+  color: #c8d0e0;
+}
+
+.preview-log-line.log-damage {
+  color: #ff9080;
+}
+
+/* ---- 玩家状态面板（原版 LP 血条，两条都在屏幕顶部：
+   drawing.cpp DrawMisc — lp 条 0: (329,10)-(629,30)、lp 条 1: (691,10)-(991,30)，
+   名字在条下方 (334,31)-(624,50) / 右对齐。回合数菱形块 (632,10)-(688,50)。 ---- */
+.player-state-panel {
+  position: absolute;
+  width: 302px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: #e8e8d0;
+  font-size: 12px;
+  z-index: 30;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+}
+
+#player-panel {
+  left: 32%;
+  top: 8px;
+}
+
+#opponent-panel {
+  right: 3.1%;
+  top: 8px;
+}
+
+.player-state-panel.is-turn {
+  filter: drop-shadow(0 0 4px rgba(255, 230, 106, 0.55));
+}
+
+/* 原版名字画在 LP 条下方；DOM 顺序不变，用 flex order 调整 */
+.player-state-head {
+  order: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+  line-height: 18px;
+}
+
+#opponent-panel .player-state-head {
+  flex-direction: row-reverse;
+}
+
+.player-state-name {
+  font-weight: 700;
+  color: #ffffff;
+  font-size: 13px;
+  text-shadow: 1px 1px 2px #000;
+}
+
+.player-turn-chip {
+  color: #ffd0a0;
+  font-size: 11px;
+}
+
+.lp-frame {
+  order: 1;
+  position: relative;
+  height: 20px;
+  background: url('/textures/lpf.png') no-repeat center / 100% 100%;
+  display: flex;
+  align-items: center;
+}
+
+.lp-track {
+  position: absolute;
+  inset: 3px 5px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  display: flex;
+}
+
+.lp-fill {
+  height: 100%;
+  background: url('/textures/lp.png') repeat-x center / auto 100%;
+  transition: width 0.4s ease;
+}
+
+/* 原版对手的条从右往左收缩 */
+#opponent-panel .lp-fill {
+  margin-left: auto;
+}
+
+.lp-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffe000;
+  font-weight: 700;
+  font-size: 15px;
+  text-shadow: 1px 1px 2px #000;
+  z-index: 1;
+}
+
+.player-state-row {
+  order: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  line-height: 16px;
+}
+
+.player-timer {
+  color: #a8b4cc;
+  font-variant-numeric: tabular-nums;
+}
+
+.pile-counter {
+  color: #a8b4cc;
+}
+
+.pile-counter b {
+  color: #ffe66a;
+  font-weight: 700;
+}
+
+/* 窄屏时预览面板让位于 3D 场地（原版 1024 宽度下完整显示） */
+@media (max-width: 820px) {
+  .card-preview-panel {
+    display: none;
+  }
+}
+
+/* ---- 回合数菱形块（原版 drawing.cpp (632,10)-(688,50) 顶部居中） ----
+   fixed：它挂在 .phase-strip 里，但要相对窗口顶居中 */
+.turn-block {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 56px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  font-weight: 900;
+  color: #ffe000;
+  text-shadow: 1px 1px 2px #000;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.05) 55%, rgba(255, 255, 255, 0.3));
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  pointer-events: none;
+  z-index: 29;
+}
+
+/* ---- 阶段条（原版 wPhase (480,310)-(855,330)：场中右侧横向条，
+     折叠钮 50×20 + BP/M2/EP 间隔排布） ---- */
+.phase-strip {
+  position: absolute;
+  right: 16.5%;
+  top: 48.5%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.phase-strip.folded {
+  top: 50%;
+}
+
+.phase-fold {
+  pointer-events: auto;
+  width: 50px;
+  height: 20px;
+  background: rgba(16, 22, 38, 0.92);
+  border: 1px solid #6a7a9a;
+  border-radius: 2px;
+  color: #cfd6e6;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+
+.phase-buttons {
+  display: flex;
+  gap: 44px;
+  pointer-events: auto;
+}
+
+.phase-btn {
+  width: 50px;
+  height: 20px;
+  padding: 0;
+  background: rgba(16, 22, 38, 0.92);
+  border: 1px solid #6a7a9a;
+  border-radius: 2px;
+  color: #6a7a96;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: not-allowed;
+  box-sizing: border-box;
+}
+
+.phase-btn.actionable {
+  color: #ffe66a;
+  border-color: #ffe66a;
+  background: #2a3a1a;
+  cursor: pointer;
+  animation: phase-flash 1s ease-in-out infinite alternate;
+}
+
+.phase-btn.actionable:hover {
+  background: #3a4a2a;
+}
+
+@keyframes phase-flash {
+  from { box-shadow: 0 0 2px rgba(255, 230, 106, 0.4); }
+  to { box-shadow: 0 0 10px rgba(255, 230, 106, 0.8); }
+}
+
+/* 48pt 阶段/胜负横幅（原版 showcard 大字动画） */
+.phase-banner {
+  position: absolute;
+  right: 0;
+  bottom: 60px;
+  font-size: 48px;
+  font-weight: 900;
+  color: #ffe66a;
+  text-shadow: 2px 2px 4px #000, 0 0 18px rgba(255, 230, 106, 0.6);
+  white-space: nowrap;
+  animation: banner-pop 1.4s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes banner-pop {
+  0% { opacity: 0; transform: scale(1.6); }
+  20% { opacity: 1; transform: scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-14px); }
+}
+
+/* ==================================================================
+   P3 波 4：弹窗原版化（对照 gframe game.cpp 的窗口几何）
+   ================================================================== */
+
+/* ---- stHintMsg 提示条（game.cpp:636 (500,60)-(820,90)，中心约 64% 处） ---- */
+.hint-bar {
+  position: absolute;
+  top: 60px;
+  left: 64%;
+  transform: translateX(-50%);
+  min-width: 320px;
+  max-width: 60vw;
+  padding: 6px 18px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #202020;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+  border: 1px solid #888;
+  border-radius: 3px;
+  z-index: 150;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* ---- 弹窗整体：原版深蓝窗体 + 金边 ---- */
+.modal-box {
+  border: 1px solid #b89a5a;
+  box-shadow: 0 0 0 2px rgba(20, 26, 44, 0.9), 0 16px 48px rgba(0, 0, 0, 0.9);
+  background: rgba(16, 22, 38, 0.97);
+  border-radius: 4px;
+}
+
+.modal-title {
+  color: #ffe66a;
+  text-shadow: 1px 1px 2px #000;
+}
+
+/* ---- 卡牌图块（wCardSelect / wCardDisplay 的卡图按钮） ---- */
+.card-tile {
+  background: url('/textures/cover.jpg') center / cover no-repeat;
+  position: relative;
+}
+
+.card-tile-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 3px 5px;
+  background: rgba(8, 10, 18, 0.82);
+  color: #cfe4ff;
+  font-size: 10px;
+  line-height: 1.3;
+  max-height: 3.9em;
+  overflow: hidden;
+}
+
+.card-tile .sum-param {
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  padding: 1px 6px;
+  background: rgba(8, 10, 18, 0.85);
+  color: #ffe66a;
+  font-size: 12px;
+  font-weight: 900;
+  border-radius: 3px;
+}
+
+.card-tile .sort-badge {
+  display: none;
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  font-size: 18px;
+  font-weight: 900;
+  color: #ffe66a;
+  text-shadow: 1px 1px 3px #000;
+}
+
+/* ---- 表示形式选择（wPosSelect：137×137 方按钮，守备表示旋转 90°） ---- */
+.modal-pos { align-items: center; }
+
+.pos-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin: 10px 0 4px;
+}
+
+.pos-opt {
+  width: 137px;
+  height: 137px;
+  padding: 0;
+  background: #0b1120;
+  border: 1px solid #5a6a8a;
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.pos-opt:hover { border-color: #ffe66a; }
+
+.pos-opt-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: url('/textures/cover.jpg') center / cover no-repeat;
+}
+
+.pos-opt-facedown {
+  background: url('/textures/cover.jpg') center / cover no-repeat !important;
+}
+
+.pos-opt-rot { transform: rotate(90deg) scale(0.72); }
+
+/* ---- 猜拳（wHand：三张 95×134 手牌图按钮） ---- */
+.modal-rps { align-items: center; }
+
+.rps-row {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin: 10px 0 4px;
+}
+
+.rps-hand-btn {
+  width: 95px;
+  height: 134px;
+  padding: 0;
+  border: 1px solid #5a6a8a;
+  border-radius: 4px;
+  cursor: pointer;
+  background-size: cover;
+  background-position: center;
+}
+
+.rps-hand-btn:hover { border-color: #ffe66a; box-shadow: 0 0 10px rgba(255, 230, 106, 0.6); }
+
+.rps-hand-rock    { background-image: url('/textures/f1.jpg'); }
+.rps-hand-scissors{ background-image: url('/textures/f2.jpg'); }
+.rps-hand-paper   { background-image: url('/textures/f3.jpg'); }
+
+/* ---- 选项列表（wOptions：一页 5 项 + <<< / >>> 翻页） ---- */
+.opt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.opt-list .num-opt {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  text-align: left;
+  background: #1c2540;
+  color: #e8e8d0;
+  border: 1px solid #3a4a6a;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.opt-list .num-opt:hover { border-color: #ffe66a; }
+
+.opt-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.opt-pager .btn { min-width: 64px; }
+
+#opt-page-label { color: #9fb0d0; font-size: 13px; }
+
+/* ---- 宣言卡牌（wANCard：卡图候选 + 密码输入行） ---- */
+.announce-card-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.announce-card-row input {
+  flex: 1;
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: #e8e8d0;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+/* ==================== P4：右控组 / 聊天浮层 / 换副卡组 ==================== */
+
+/* ---- 决斗日志抽屉（原版无此浮层；收窄贴边、去毛玻璃贴近原版面板） ---- */
+.duel-log-drawer {
+  backdrop-filter: none;
+  border-radius: 2px;
+  background: rgba(13, 17, 32, 0.92);
+  border-color: #3a4a6a;
+  width: 250px;
+  height: 300px;
+  top: 72px; /* 挪到对手 LP 条与计数行下方，不再压住顶栏 */
+}
+
+/* ---- 手牌：原版手牌就是纯卡图（名字/信息看左栏预览或悬浮提示） ---- */
+.hand-card-img > div {
+  display: none;
+}
+
+/* ---- 右侧控制组（gframe game.cpp:916-923 连锁三键 + wSurrender） ---- */
+.right-controls {
+  position: absolute;
+  right: 12px;
+  bottom: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 60;
+}
+
+.chain-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chain-btn {
+  width: 88px;
+  padding: 7px 0;
+  background: #1c2540;
+  color: #9fb0d0;
+  border: 1px solid #3a4a6a;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.chain-btn:hover { border-color: #ffe66a; color: #e8e8d0; }
+
+/* 单选按下态（原版 isPushButton：同键再点取消） */
+.chain-btn.pressed {
+  background: #2a3a60;
+  color: #ffe66a;
+  border-color: #ffe66a;
+  box-shadow: 0 0 8px rgba(255, 230, 106, 0.4) inset;
+}
+
+.surrender-btn {
+  width: 88px;
+  padding: 7px 0;
+  background: #3a1c1c;
+  color: #e8a0a0;
+  border: 1px solid #6a3a3a;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.surrender-btn:hover { border-color: #ff6a6a; color: #ffd0d0; }
+
+/* 投降两步确认（原版 wSurrender 弹窗） */
+.surrender-confirm {
+  position: absolute;
+  right: 96px;
+  bottom: 0;
+  background: rgba(10, 14, 28, 0.96);
+  border: 1px solid #ffe66a;
+  border-radius: 6px;
+  padding: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
+  z-index: 70;
+}
+
+.surrender-confirm-title {
+  font-size: 14px;
+  color: #e8e8d0;
+  margin-bottom: 10px;
+  white-space: nowrap;
+}
+
+.surrender-confirm-row { display: flex; gap: 8px; }
+.surrender-confirm-row .btn { min-width: 64px; }
+
+/* ---- 选满闪黄（原版确认按钮 selected==max 的 gold 提示动画） ---- */
+@keyframes btnFlashGold {
+  0%, 100% { box-shadow: none; }
+  50% { box-shadow: 0 0 12px rgba(255, 230, 106, 0.9); }
+}
+
+.btn-flash-gold {
+  animation: btnFlashGold 0.8s ease-in-out infinite;
+  border-color: #ffe66a !important;
+  color: #ffe66a;
+}
+
+/* ---- 聊天（原版 wChat (307,615)-(1024,640)：底部全宽输入条，
+     消息条目浮在输入条上方，最近 8 条按身份着色） ---- */
+.chat-overlay {
+  position: absolute;
+  left: 32%;
+  right: 4px;
+  bottom: 4px;
+  z-index: 55;
+  pointer-events: none; /* 消息区不挡场地点击 */
+}
+
+.chat-overlay .chat-messages {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  margin-bottom: 4px;
+}
+
+.chat-line {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #e8e8d0;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 2px 8px;
+  border-radius: 2px;
+  width: fit-content;
+  max-width: 100%;
+  word-break: break-word;
+}
+
+/* 决斗者着色（gframe：主玩家蓝/对手红/观战灰） */
+.chat-line.chat-p0 .chat-name { color: #5eb2ff; }
+.chat-line.chat-p1 .chat-name { color: #ff6a6a; }
+.chat-line.chat-p2 .chat-name,
+.chat-line.chat-p3 .chat-name { color: #b0b0b0; }
+
+.chat-input-row { pointer-events: auto; }
+
+.chat-overlay input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 26px;
+  background: rgba(10, 14, 28, 0.9);
+  border: 1px solid #6a7a9a;
+  border-radius: 2px;
+  color: #e8e8d0;
+  padding: 3px 10px;
+  font-size: 13px;
+}
+
+.chat-overlay input:focus { border-color: #ffe66a; outline: none; }
+
+/* ---- 换副卡组（STOC_CHANGE_SIDE 后，三局两胜局间） ---- */
+.side-decking {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.side-decking-box {
+  min-width: 340px;
+  background: #10182e;
+  border: 2px solid #ffe66a;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.side-decking-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffe66a;
+  text-align: center;
+}
+
+.side-decking-hint { font-size: 13px; color: #9fb0d0; text-align: center; }
+
+.side-decking-error { font-size: 13px; color: #ff6a6a; text-align: center; }
+
+.side-decking-box .form-select { width: 100%; }
+
+/* ------------------------------------------------------------------
+   DrawSpec 特效（原版 drawing.cpp:851）+ stTip 悬浮提示
+   ------------------------------------------------------------------ */
+.spec-card {
+  position: absolute;
+  inset: 0;
+  border: 1px solid #94a3b8;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+/* showcard=7：翻卡（召唤/反转召唤，水平翻转半周） */
+.spec-flip { animation: spec-flip-anim 0.8s ease-in-out; }
+@keyframes spec-flip-anim {
+  0%   { transform: perspective(700px) rotateY(0deg); }
+  50%  { transform: perspective(700px) rotateY(90deg); }
+  100% { transform: perspective(700px) rotateY(180deg); }
+}
+
+/* showcard=5：特殊召唤（中心放大淡入） */
+.spec-zoom { animation: spec-zoom-anim 0.5s ease-out; }
+@keyframes spec-zoom-anim {
+  0%   { transform: scale(0.1); opacity: 0; }
+  100% { transform: scale(1);   opacity: 1; }
+}
+
+/* showcard=1+2：连锁发动（mask.png 从右往左遮入再从右往左揭出） */
+.spec-mask {
+  position: absolute;
+  inset: 0;
+  background-size: 100% 100%;
+  animation: spec-mask-anim 0.9s linear;
+}
+@keyframes spec-mask-anim {
+  0%   { clip-path: inset(0 100% 0 0); }
+  50%  { clip-path: inset(0 0 0 0); }
+  100% { clip-path: inset(0 0 0 100%); }
+}
+
+/* showcard=3：无效化（negated.png 收缩罩盖到卡图上） */
+.spec-negated {
+  position: absolute;
+  inset: 0;
+  background-size: 100% 100%;
+  animation: spec-negated-anim 0.6s ease-out;
+}
+@keyframes spec-negated-anim {
+  0%   { transform: scale(1.8); opacity: 0; }
+  40%  { opacity: 1; }
+  100% { transform: scale(1);   opacity: 1; }
+}
+
+/* ==================================================================
+   波 9：布局观感打磨（只动质感/排版，不改冒烟断言依赖的几何锚点：
+   预览列 300px、LP 条顶 8px、hint top 60、chat 底 4px 等全部保持）
+   ================================================================== */
+
+/* ---- 弹窗：深蓝毛玻璃 + 金边内高光，标题金线下划 ---- */
+.modal-dialog-content { outline: none; }
+
+.modal-box {
+  backdrop-filter: blur(14px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 230, 106, 0.18),
+    0 0 0 2px rgba(20, 26, 44, 0.9),
+    0 24px 64px rgba(0, 0, 0, 0.85);
+}
+
+.modal-title {
+  font-size: 18px;
+  letter-spacing: 2px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(184, 154, 90, 0.45);
+}
+
+.modal-box > p {
+  margin: 0;
+  line-height: 1.7;
+}
+
+/* 弹窗底部动作行：主按钮右对齐 + 状态文案的呼吸空间 */
+.modal-box button:focus-visible,
+.preview-tab:focus-visible,
+.chain-btn:focus-visible,
+.phase-btn:focus-visible {
+  outline: 2px solid rgba(255, 230, 106, 0.7);
+  outline-offset: 2px;
+}
+
+/* ---- 深色面板统一滚动条（预览/日志/卡格） ---- */
+.preview-desc::-webkit-scrollbar,
+.preview-log::-webkit-scrollbar,
+.modal-cards-grid::-webkit-scrollbar,
+#duel-log-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.preview-desc::-webkit-scrollbar-thumb,
+.preview-log::-webkit-scrollbar-thumb,
+.modal-cards-grid::-webkit-scrollbar-thumb,
+#duel-log-list::-webkit-scrollbar-thumb {
+  background: #2a3a5a;
+  border-radius: 4px;
+}
+
+.preview-desc::-webkit-scrollbar-thumb:hover,
+.preview-log::-webkit-scrollbar-thumb:hover,
+.modal-cards-grid::-webkit-scrollbar-thumb:hover,
+#duel-log-list::-webkit-scrollbar-thumb:hover {
+  background: #3a4a6a;
+}
+
+.preview-desc::-webkit-scrollbar-track,
+.preview-log::-webkit-scrollbar-track,
+.modal-cards-grid::-webkit-scrollbar-track,
+#duel-log-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---- 左侧预览面板：信息层级 ---- */
+.preview-name {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.preview-type,
+.preview-attr {
+  line-height: 1.5;
+}
+
+.preview-stats {
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-tab {
+  padding: 5px 0;
+  letter-spacing: 6px;
+  text-indent: 6px; /* 抵消 letter-spacing 造成的偏移，保持文字居中 */
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.preview-tab.active {
+  background: linear-gradient(180deg, #2e4066, #22304e);
+  box-shadow: inset 0 -2px 0 #ffe66a;
+}
+
+/* ---- LP：数字等宽避免跳动；名字行加一点呼吸 ---- */
+.lp-value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 1px;
+}
+
+.player-state-name {
+  letter-spacing: 1px;
+}
+
+/* ---- 卡牌图块：悬浮轻抬、选中金晕 ---- */
+.card-tile {
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.card-tile:hover {
+  transform: translateY(-3px) scale(1.03);
+  border-color: var(--primary);
+  z-index: 1;
+}
+
+.card-tile.selected {
+  box-shadow: 0 0 0 2px rgba(255, 230, 106, 0.35), 0 0 18px rgba(255, 230, 106, 0.5);
+}
+
+.card-tile-name {
+  background: linear-gradient(180deg, rgba(8, 10, 18, 0) 0%, rgba(8, 10, 18, 0.88) 38%);
+  padding-top: 10px;
+}
+
+/* ---- 提示条：柔和投影 ---- */
+.hint-bar {
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  border-radius: 4px;
+}
+
+/* ---- 阶段按钮：可点击态加过渡，折叠钮悬浮态 ---- */
+.phase-fold { transition: color 0.15s ease, border-color 0.15s ease; }
+.phase-fold:hover { color: #ffe66a; border-color: #ffe66a; }
+
+.phase-btn { transition: box-shadow 0.2s ease; }
+
+/* ---- 选项列表：悬浮左移 2px 的方向感 ---- */
+.opt-list .num-opt {
+  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+
+.opt-list .num-opt:hover {
+  transform: translateX(2px);
+  background: #223052;
+}
+
+/* ---- 聊天输入：占位符颜色与面板协调 ---- */
+.chat-overlay input::placeholder { color: #5a6a8a; }
+
+/* ---- 手牌图块阴影（浮在 3D 场地上，加投影提高层次） ---- */
+.hand-card-item .hand-card-img {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+}
+
+/* ==================================================================
+   波 A：环境设置面板（原版 wInfos tabSystem/tabHelper 两页签的
+   Web 化；复用 modal-box 深蓝毛玻璃 + 金线主题）
+   ================================================================== */
+.settings-panel {
+  min-width: 360px;
+  max-width: 420px;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 12px 0 4px;
+  border-bottom: 1px solid rgba(184, 154, 90, 0.45);
+}
+
+.settings-tab {
+  padding: 8px 18px;
+  font-size: 14px;
+  color: #9db2d8;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  user-select: none;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.settings-tab:hover { color: #ffe66a; }
+
+.settings-tab.active {
+  color: #ffe66a;
+  background: rgba(0, 0, 0, 0.35);
+  border-color: rgba(184, 154, 90, 0.45);
+}
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 2px 4px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #cfd9ee;
+  user-select: none;
+}
+
+.settings-row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: #b89a5a;
+  cursor: pointer;
+  flex: none;
+}
+
+.settings-row-label { flex: 1; }
+
+.settings-row input[type='range'] {
+  flex: 1;
+  accent-color: #b89a5a;
+  cursor: pointer;
+}
+
+.settings-row-value {
+  min-width: 34px;
+  text-align: right;
+  color: #ffe66a;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(184, 154, 90, 0.45);
+}
