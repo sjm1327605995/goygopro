@@ -7,13 +7,16 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf16"
 
 	"github.com/go-restruct/restruct"
+	"github.com/sjm1327605995/goygopro/core/duel"
 	"github.com/sjm1327605995/goygopro/core/utils"
-	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
@@ -29,12 +32,20 @@ type WailsDuelClient struct {
 	playerType  uint8
 	running     bool
 	stopChan    chan struct{}
+
+	// STOC_REPLAY 落盘：服务器在决斗结束时推送完整录像
+	// （ExtendedReplayHeader/ReplayHeader + 压缩数据，single_duel.go:1801），
+	// 先缓存到内存，前端确认（或 auto_save_replay=1 自动）后经 SaveReplay 写入。
+	// replayDir 可注入以便测试，默认 "replay"。
+	lastReplay []byte
+	replayDir  string
 }
 
 func NewWailsDuelClient(emitFunc func(eventName string, optionalData ...interface{})) *WailsDuelClient {
 	return &WailsDuelClient{
-		emitFunc: emitFunc,
-		stopChan: make(chan struct{}),
+		emitFunc:  emitFunc,
+		stopChan:  make(chan struct{}),
+		replayDir: "replay",
 	}
 }
 
@@ -43,29 +54,29 @@ func (c *WailsDuelClient) SetContext(ctx context.Context) {
 }
 
 func (c *WailsDuelClient) Connect(addr string, username string, pass string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.isConnected && c.conn != nil {
-		c.conn.Close()
-	}
-
+	// 不要在持有 c.mu 的状态下发送 PlayerInfo：sendPacket 也需要 c.mu
+	// （sync.Mutex 不可重入，嵌套加锁会自死锁）。先完成拨号和状态更新，
+	// 释放锁后再发送。
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("connect failed: %w", err)
 	}
 
+	c.mu.Lock()
+	if c.isConnected && c.conn != nil {
+		c.conn.Close()
+	}
 	c.conn = conn
 	c.isConnected = true
 	c.running = true
 	c.stopChan = make(chan struct{})
+	c.mu.Unlock()
 
 	// Start background read loop
 	go c.readLoop()
 
 	// Send PlayerInfo packet
-	c.sendPlayerInfo(username)
-	return nil
+	return c.sendPlayerInfo(username)
 }
 
 func (c *WailsDuelClient) Disconnect() {
@@ -119,15 +130,18 @@ func (c *WailsDuelClient) sendPacket(proto byte, payload []byte) error {
 	return err
 }
 
-func (c *WailsDuelClient) sendPlayerInfo(name string) {
+func (c *WailsDuelClient) sendPlayerInfo(name string) error {
 	var pkt protocol.CTOSPlayerInfo
 	encoded := utf16.Encode([]rune(name))
 	for i := 0; i < len(encoded) && i < 19; i++ {
 		pkt.Name[i] = encoded[i]
 	}
 	pkt.Name[19] = 0
-	data, _ := restruct.Pack(binary.LittleEndian, &pkt)
-	_ = c.sendPacket(network.CTOS_PLAYER_INFO, data)
+	data, err := restruct.Pack(binary.LittleEndian, &pkt)
+	if err != nil {
+		return err
+	}
+	return c.sendPacket(network.CTOS_PLAYER_INFO, data)
 }
 
 func (c *WailsDuelClient) CreateGame(hostInfo protocol.HostInfo, roomName string, pass string) error {
@@ -231,6 +245,12 @@ func (c *WailsDuelClient) SendTimeConfirm() error {
 	return c.sendPacket(network.CTOS_TIME_CONFIRM, nil)
 }
 
+func (c *WailsDuelClient) SendKick(pos byte) error {
+	// CTOS_HS_KICK 携带一个字节：被踢的座位号（netserver.cpp:355-365 仅
+	// 准备阶段允许，宿主专用）。
+	return c.sendPacket(network.CTOS_HS_KICK, []byte{pos})
+}
+
 func (c *WailsDuelClient) UpdateDeck(mainList []uint32, sideList []uint32) error {
 	var deckData protocol.CTOSDeckData
 	deckData.MainC = int32(len(mainList))
@@ -245,15 +265,53 @@ func (c *WailsDuelClient) UpdateDeck(mainList []uint32, sideList []uint32) error
 	return c.sendPacket(network.CTOS_UPDATE_DECK, data)
 }
 
+// SaveReplay 把最近一次 STOC_REPLAY 的包体原样写入 replayDir/name.yrp
+// （gframe Replay::SaveReplay 的语义：包体本身就是 header+compData 的完整
+// 文件格式）。name 为空时按 gframe 的兜底名 _LastReplay 保存。路径分隔符
+// 一律替换为 _，防止越出 replay 目录。返回实际写入的文件名（不含 .yrp）。
+func (c *WailsDuelClient) SaveReplay(name string) (string, error) {
+	c.mu.Lock()
+	data := c.lastReplay
+	c.mu.Unlock()
+	if len(data) == 0 {
+		return "", fmt.Errorf("no replay received from server")
+	}
+	base := strings.TrimSpace(name)
+	if base == "" {
+		base = "_LastReplay"
+	}
+	base = strings.ReplaceAll(base, "/", "_")
+	base = strings.ReplaceAll(base, "\\", "_")
+	base = strings.TrimSuffix(base, ".yrp")
+	if err := os.MkdirAll(c.replayDir, 0755); err != nil {
+		return "", err
+	}
+	path := filepath.Join(c.replayDir, base+".yrp")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return "", err
+	}
+	return base, nil
+}
+
 // ------------------------------------------------------------------
 // Incoming STOC Packet Processing Loop
 // ------------------------------------------------------------------
 
 func (c *WailsDuelClient) readLoop() {
+	// 在循环外固定连接引用：Disconnect 会把 c.conn 置 nil，
+	// 循环内若再读 c.conn，可能对 nil 接口调用 Read 而 panic。
+	// 连接被关闭时 ReadFull 会自行报错退出。
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+	if conn == nil {
+		return
+	}
+
 	header := make([]byte, 2)
 	for c.running {
 		// 1. Read 2-byte packet length
-		if _, err := io.ReadFull(c.conn, header); err != nil {
+		if _, err := io.ReadFull(conn, header); err != nil {
 			if c.running {
 				log.Printf("[WailsDuelClient] Read header error: %v", err)
 			}
@@ -267,7 +325,7 @@ func (c *WailsDuelClient) readLoop() {
 
 		// 2. Read packet body (1 byte proto + payload)
 		body := make([]byte, packetLen)
-		if _, err := io.ReadFull(c.conn, body); err != nil {
+		if _, err := io.ReadFull(conn, body); err != nil {
 			if c.running {
 				log.Printf("[WailsDuelClient] Read body error: %v", err)
 			}
@@ -329,16 +387,11 @@ func (c *WailsDuelClient) handleSTOCPacket(proto byte, payload []byte) {
 		c.emit("stoc:duel_start", map[string]interface{}{})
 
 	case network.STOC_DECK_COUNT:
-		if len(payload) >= 12 {
-			c.emit("stoc:deck_count", map[string]interface{}{
-				"deck0":  int16(binary.LittleEndian.Uint16(payload[0:2])),
-				"extra0": int16(binary.LittleEndian.Uint16(payload[2:4])),
-				"side0":  int16(binary.LittleEndian.Uint16(payload[4:6])),
-				"deck1":  int16(binary.LittleEndian.Uint16(payload[6:8])),
-				"extra1": int16(binary.LittleEndian.Uint16(payload[8:10])),
-				"side1":  int16(binary.LittleEndian.Uint16(payload[10:12])),
-			})
-		}
+		// payload = int16_t[6]，且服务器已按接收方玩家交换过前后半
+		// （single_duel.cpp:340-345），直接按相对序透传。
+		var pkt protocol.STOCDeckCount
+		_ = restruct.Unpack(payload, binary.LittleEndian, &pkt)
+		c.emit("stoc:deck_count", pkt)
 
 	case network.STOC_SELECT_HAND:
 		c.emit("stoc:select_hand", map[string]interface{}{})
@@ -363,6 +416,9 @@ func (c *WailsDuelClient) handleSTOCPacket(proto byte, payload []byte) {
 		})
 
 	case network.STOC_CHAT:
+		// 布局 = player_type(2) + NUL 结尾的 UTF-16 变长串
+		// （netserver.cpp:380-385：只写入 player + 原始消息字节，非定长 256），
+		// restruct 的定长数组表达不了 NUL 结尾，保留手写解码。
 		if len(payload) >= 2 {
 			player := binary.LittleEndian.Uint16(payload[0:2])
 			msgRunes := make([]uint16, (len(payload)-2)/2)
@@ -393,557 +449,90 @@ func (c *WailsDuelClient) handleSTOCPacket(proto byte, payload []byte) {
 	case network.STOC_WAITING_SIDE:
 		c.emit("stoc:waiting_side", map[string]interface{}{})
 
+	case network.STOC_TEAMMATE_SURRENDER:
+		// 组队赛队友请求投降（duelclient.cpp:947-952）：无包体；原版把
+		// btnLeaveGame 文案换成 SysString 1355「投降(1/2)」，这里交给
+		// 右侧控制组同语义处理。
+		c.emit("stoc:teammate_surrender", map[string]interface{}{})
+
+	case network.STOC_REPLAY:
+		// 决斗结束的完整录像（duelclient.cpp:727-774）：header + 压缩数据。
+		// gframe 把 Base.StartTime（REPLAY_UNIFORM）或 Seed 当 time_t 格式化成
+		// 文件名；这里同样推导建议文件名，落盘时机交给前端（auto_save_replay
+		// 或确认弹窗）调 SaveReplay。
+		if len(payload) < 32 {
+			return
+		}
+		c.mu.Lock()
+		c.lastReplay = append([]byte(nil), payload...)
+		c.mu.Unlock()
+		flag := binary.LittleEndian.Uint32(payload[8:12])
+		startTime := binary.LittleEndian.Uint32(payload[12:16]) // Seed
+		if flag&duel.REPLAY_UNIFORM != 0 {
+			startTime = binary.LittleEndian.Uint32(payload[20:24]) // StartTime
+		}
+		suggested := time.Unix(int64(startTime), 0).Format("2006-01-02 15-04-05")
+		c.emit("stoc:replay", map[string]interface{}{
+			"name": suggested,
+			"size": len(payload),
+		})
+
 	case network.STOC_GAME_MSG:
-		c.handleGameMessage(payload)
+		if err := c.handleGameMessage(payload); err != nil {
+			log.Printf("[WailsDuelClient] game message parse error: %v", err)
+		}
 	}
 }
 
-// handleGameMessage parses YGOPRO engine MSG_* stream into structured 3D client events
-func (c *WailsDuelClient) handleGameMessage(msgBuffer []byte) {
+// handleGameMessage parses YGOPRO engine MSG_* stream into structured 3D client
+// events. It returns an error when the stream cannot be fully parsed to byte
+// alignment (unknown message layout or truncated body); the caller decides
+// whether to log, drop the batch, or surface the failure.
+//
+// 每种消息的解析与转发行为由 engineBindings 声明（engine_bindings.go）：
+// 查表 → pbuf.Unpack(消息结构体) → decorate 派生字段 → emit。
+// 表内没有的消息走 skipEngineMessageBody 的残余分支保持对齐。
+func (c *WailsDuelClient) handleGameMessage(msgBuffer []byte) error {
 	pbuf := utils.NewYGOBuffer(msgBuffer, binary.LittleEndian)
 
 	for pbuf.Len() > 0 {
 		var engType uint8
 		if err := pbuf.Read(&engType); err != nil {
-			break
+			return fmt.Errorf("read opcode at offset %d: %w", pbuf.Offset(), err)
 		}
 
-		switch engType {
-		case ocgcore.MSG_START:
-			var (
-				playertype                   uint8
-				duelrule                     uint8
-				lp0, lp1                     int32
-				deck0, extra0, deck1, extra1 uint16
-			)
-			_ = pbuf.Read(&playertype, &duelrule, &lp0, &lp1, &deck0, &extra0, &deck1, &extra1)
-			c.emit("duel:start", map[string]interface{}{
-				"playerType": playertype,
-				"duelRule":   duelrule,
-				"lp0":        lp0,
-				"lp1":        lp1,
-				"deck0":      deck0,
-				"extra0":     extra0,
-				"deck1":      deck1,
-				"extra1":     extra1,
-			})
-
-		case ocgcore.MSG_DRAW:
-			var (
-				player uint8
-				count  uint8
-			)
-			_ = pbuf.Read(&player, &count)
-			cards := make([]int32, count)
-			for i := 0; i < int(count); i++ {
-				_ = pbuf.Read(&cards[i])
-			}
-			c.emit("duel:draw", map[string]interface{}{
-				"player": player,
-				"count":  count,
-				"cards":  cards,
-			})
-
-		case ocgcore.MSG_NEW_TURN:
-			var player uint8
-			_ = pbuf.Read(&player)
-			c.emit("duel:new_turn", map[string]interface{}{
-				"player": player,
-			})
-
-		case ocgcore.MSG_NEW_PHASE:
-			var phase uint16
-			_ = pbuf.Read(&phase)
-			c.emit("duel:new_phase", map[string]interface{}{
-				"phase": phase,
-			})
-
-		case ocgcore.MSG_MOVE:
-			var msg protocol.MoveMsg
-			_ = pbuf.Unpack(&msg)
-			c.emit("duel:move", map[string]interface{}{
-				"code":   msg.Code,
-				"pc":     msg.PC,
-				"pl":     msg.PL,
-				"ps":     msg.PS,
-				"pp":     msg.PP,
-				"cc":     msg.CC,
-				"cl":     msg.CL,
-				"cs":     msg.CS,
-				"cp":     msg.CP,
-				"reason": msg.Reason,
-			})
-
-		case ocgcore.MSG_POS_CHANGE:
-			var (
-				code               uint32
-				cc, cl, cs, pp, cp uint8
-			)
-			_ = pbuf.Read(&code, &cc, &cl, &cs, &pp, &cp)
-			c.emit("duel:pos_change", map[string]interface{}{
-				"code": code,
-				"cc":   cc,
-				"cl":   cl,
-				"cs":   cs,
-				"pp":   pp,
-				"cp":   cp,
-			})
-
-		case ocgcore.MSG_SET:
-			var (
-				code           uint32
-				cc, cl, cs, cp uint8
-			)
-			_ = pbuf.Read(&code, &cc, &cl, &cs, &cp)
-			c.emit("duel:set", map[string]interface{}{
-				"code": code,
-				"cc":   cc,
-				"cl":   cl,
-				"cs":   cs,
-				"cp":   cp,
-			})
-
-		case ocgcore.MSG_SUMMONING:
-			var (
-				code           uint32
-				cc, cl, cs, cp uint8
-			)
-			_ = pbuf.Read(&code, &cc, &cl, &cs, &cp)
-			c.emit("duel:summoning", map[string]interface{}{
-				"code": code,
-				"cc":   cc,
-				"cl":   cl,
-				"cs":   cs,
-				"cp":   cp,
-			})
-
-		case ocgcore.MSG_SUMMONED:
-			c.emit("duel:summoned", map[string]interface{}{})
-
-		case ocgcore.MSG_SPSUMMONING:
-			var (
-				code           uint32
-				cc, cl, cs, cp uint8
-			)
-			_ = pbuf.Read(&code, &cc, &cl, &cs, &cp)
-			c.emit("duel:spsummoning", map[string]interface{}{
-				"code": code,
-				"cc":   cc,
-				"cl":   cl,
-				"cs":   cs,
-				"cp":   cp,
-			})
-
-		case ocgcore.MSG_SPSUMMONED:
-			c.emit("duel:spsummoned", map[string]interface{}{})
-
-		case ocgcore.MSG_FLIPSUMMONING:
-			var (
-				code           uint32
-				cc, cl, cs, cp uint8
-			)
-			_ = pbuf.Read(&code, &cc, &cl, &cs, &cp)
-			c.emit("duel:flipsummoning", map[string]interface{}{
-				"code": code,
-				"cc":   cc,
-				"cl":   cl,
-				"cs":   cs,
-				"cp":   cp,
-			})
-
-		case ocgcore.MSG_FLIPSUMMONED:
-			c.emit("duel:flipsummoned", map[string]interface{}{})
-
-		case ocgcore.MSG_CHAINING:
-			var (
-				code                       uint32
-				p1, p2, p3, cc, cl, cs, cp uint8
-			)
-			_ = pbuf.Read(&code, &p1, &p2, &p3, &cc, &cl, &cs, &cp)
-			_ = pbuf.Next(5)
-			c.emit("duel:chaining", map[string]interface{}{
-				"code": code,
-				"cc":   cc,
-				"cl":   cl,
-				"cs":   cs,
-				"cp":   cp,
-			})
-
-		case ocgcore.MSG_CHAINED:
-			var count uint8
-			_ = pbuf.Read(&count)
-			c.emit("duel:chained", map[string]interface{}{"count": count})
-
-		case ocgcore.MSG_CHAIN_SOLVING:
-			var count uint8
-			_ = pbuf.Read(&count)
-			c.emit("duel:chain_solving", map[string]interface{}{"count": count})
-
-		case ocgcore.MSG_CHAIN_SOLVED:
-			var count uint8
-			_ = pbuf.Read(&count)
-			c.emit("duel:chain_solved", map[string]interface{}{"count": count})
-
-		case ocgcore.MSG_CHAIN_END:
-			c.emit("duel:chain_end", map[string]interface{}{})
-
-		case ocgcore.MSG_DAMAGE:
-			var (
-				player uint8
-				amount int32
-			)
-			_ = pbuf.Read(&player, &amount)
-			c.emit("duel:damage", map[string]interface{}{
-				"player": player,
-				"amount": amount,
-			})
-
-		case ocgcore.MSG_RECOVER:
-			var (
-				player uint8
-				amount int32
-			)
-			_ = pbuf.Read(&player, &amount)
-			c.emit("duel:recover", map[string]interface{}{
-				"player": player,
-				"amount": amount,
-			})
-
-		case ocgcore.MSG_LPUPDATE:
-			var (
-				player uint8
-				lp     int32
-			)
-			_ = pbuf.Read(&player, &lp)
-			c.emit("duel:lp_update", map[string]interface{}{
-				"player": player,
-				"lp":     lp,
-			})
-
-		case ocgcore.MSG_ATTACK:
-			var (
-				attackerCC, attackerCL, attackerCS, attackerCP uint8
-				targetCC, targetCL, targetCS, targetCP         uint8
-			)
-			_ = pbuf.Read(&attackerCC, &attackerCL, &attackerCS, &attackerCP,
-				&targetCC, &targetCL, &targetCS, &targetCP)
-			c.emit("duel:attack", map[string]interface{}{
-				"attacker": map[string]interface{}{"c": attackerCC, "l": attackerCL, "s": attackerCS},
-				"target":   map[string]interface{}{"c": targetCC, "l": targetCL, "s": targetCS},
-			})
-
-		case ocgcore.MSG_BATTLE:
-			_ = pbuf.Next(26)
-			c.emit("duel:battle", map[string]interface{}{})
-
-		case ocgcore.MSG_WIN:
-			var (
-				player uint8
-				typ    uint8
-			)
-			_ = pbuf.Read(&player, &typ)
-			c.emit("duel:win", map[string]interface{}{
-				"winner": player,
-				"type":   typ,
-			})
-
-		case ocgcore.MSG_SELECT_IDLECMD:
-			c.parseSelectIdleCmd(pbuf)
-
-		case ocgcore.MSG_SELECT_BATTLECMD:
-			c.parseSelectBattleCmd(pbuf)
-
-		case ocgcore.MSG_SELECT_EFFECTYN:
-			var (
-				player uint8
-				code   uint32
-				loc    uint32
-				desc   uint32
-			)
-			_ = pbuf.Read(&player, &code, &loc, &desc)
-			c.emit("duel:select_effectyn", map[string]interface{}{
-				"player": player,
-				"code":   code,
-				"loc":    loc,
-				"desc":   desc,
-			})
-
-		case ocgcore.MSG_SELECT_YESNO:
-			var (
-				player uint8
-				desc   uint32
-			)
-			_ = pbuf.Read(&player, &desc)
-			c.emit("duel:select_yesno", map[string]interface{}{
-				"player": player,
-				"desc":   desc,
-			})
-
-		case ocgcore.MSG_SELECT_OPTION:
-			var (
-				player uint8
-				count  uint8
-			)
-			_ = pbuf.Read(&player, &count)
-			opts := make([]int32, count)
-			for i := 0; i < int(count); i++ {
-				_ = pbuf.Read(&opts[i])
-			}
-			c.emit("duel:select_option", map[string]interface{}{
-				"player":  player,
-				"options": opts,
-			})
-
-		case ocgcore.MSG_SELECT_CARD, ocgcore.MSG_SELECT_TRIBUTE:
-			var (
-				player     uint8
-				cancelable uint8
-				min, max   uint8
-				count      uint8
-			)
-			_ = pbuf.Read(&player, &cancelable, &min, &max, &count)
-			cards := make([]map[string]interface{}, count)
-			for i := 0; i < int(count); i++ {
-				var code int32
-				var c, l, s, p uint8
-				_ = pbuf.Read(&code, &c, &l, &s, &p)
-				cards[i] = map[string]interface{}{
-					"code": code,
-					"c":    c,
-					"l":    l,
-					"s":    s,
-					"p":    p,
-				}
-			}
-			c.emit("duel:select_card", map[string]interface{}{
-				"player":     player,
-				"cancelable": cancelable != 0,
-				"min":        min,
-				"max":        max,
-				"cards":      cards,
-			})
-
-		case ocgcore.MSG_SELECT_POSITION:
-			var (
-				player    uint8
-				code      uint32
-				positions uint8
-			)
-			_ = pbuf.Read(&player, &code, &positions)
-			c.emit("duel:select_position", map[string]interface{}{
-				"player":    player,
-				"code":      code,
-				"positions": positions,
-			})
-
-		case ocgcore.MSG_SELECT_PLACE, ocgcore.MSG_SELECT_DISFIELD:
-			var (
-				player uint8
-				count  uint8
-				flag   uint32
-			)
-			_ = pbuf.Read(&player, &count, &flag)
-			c.emit("duel:select_place", map[string]interface{}{
-				"player": player,
-				"count":  count,
-				"flag":   flag,
-			})
-
-		case ocgcore.MSG_SELECT_CHAIN:
-			var (
-				player       uint8
-				count        uint8
-				spec         uint8
-				forced       uint8
-				hint0, hint1 uint32
-			)
-			_ = pbuf.Read(&player, &count, &spec, &forced, &hint0, &hint1)
-			chains := make([]map[string]interface{}, count)
-			for i := 0; i < int(count); i++ {
-				var flag uint8
-				var code uint32
-				var cc, cl, cs, cp uint8
-				var desc uint32
-				_ = pbuf.Read(&flag, &code, &cc, &cl, &cs, &cp, &desc)
-				chains[i] = map[string]interface{}{
-					"flag": flag,
-					"code": code,
-					"cc":   cc,
-					"cl":   cl,
-					"cs":   cs,
-					"cp":   cp,
-					"desc": desc,
-				}
-			}
-			c.emit("duel:select_chain", map[string]interface{}{
-				"player": player,
-				"count":  count,
-				"forced": forced != 0,
-				"chains": chains,
-			})
-
-		case ocgcore.MSG_UPDATE_DATA:
-			var (
-				player   uint8
-				location uint8
-			)
-			_ = pbuf.Read(&player, &location)
-			if err := skipQueryBlobList(pbuf, 0); err != nil {
-				return
-			}
-			// The body carries no visuals the 3D field renders from (positions
-			// already arrive via MSG_MOVE/MSG_*SUMMONING); emit a marker only so
-			// the batch keeps parsing instead of aborting at the first update.
-			c.emit("duel:update_data", map[string]interface{}{
-				"player":   player,
-				"location": location,
-			})
-
-		case ocgcore.MSG_UPDATE_CARD:
-			var (
-				player, location, sequence uint8
-			)
-			_ = pbuf.Read(&player, &location, &sequence)
-			if err := skipQueryBlobList(pbuf, 1); err != nil {
-				return
-			}
-			c.emit("duel:update_card", map[string]interface{}{
-				"player":   player,
-				"location": location,
-				"sequence": sequence,
-			})
-
-		case ocgcore.MSG_WAITING:
-			c.emit("duel:waiting", map[string]interface{}{})
-
-		default:
+		binding, ok := engineBindings[engType]
+		if !ok {
 			// Messages the UI does not decode still occupy bytes in the stream.
 			// Skip their bodies so the parser keeps message alignment; on an
 			// unknown layout, stop parsing this batch rather than desync.
 			if err := skipEngineMessageBody(pbuf, engType); err != nil {
-				return
+				return fmt.Errorf("opcode 0x%02x at offset %d: %w", engType, pbuf.Offset(), err)
 			}
+			continue
+		}
+
+		if binding.newMsg == nil {
+			// 无消息体：只发空事件
+			if binding.event != "" {
+				c.emit(binding.event, map[string]interface{}{})
+			}
+			continue
+		}
+
+		msg := binding.newMsg()
+		if err := pbuf.Unpack(msg); err != nil {
+			return fmt.Errorf("%s at offset %d: %w", binding.name, pbuf.Offset(), err)
+		}
+		if binding.decorate != nil {
+			if err := binding.decorate(c, engType, pbuf, msg); err != nil {
+				return fmt.Errorf("%s at offset %d: %w", binding.name, pbuf.Offset(), err)
+			}
+			continue
+		}
+		if binding.event != "" {
+			c.emit(binding.event, msg)
 		}
 	}
-}
-
-func (c *WailsDuelClient) parseSelectIdleCmd(pbuf *utils.YGOBuffer) {
-	var player uint8
-	var count uint8
-	_ = pbuf.Read(&player)
-
-	// Summonable
-	_ = pbuf.Read(&count)
-	summon := make([]map[string]interface{}, count)
-	for i := 0; i < int(count); i++ {
-		var code uint32
-		var c, l, s uint8
-		_ = pbuf.Read(&code, &c, &l, &s)
-		summon[i] = map[string]interface{}{"code": code, "c": c, "l": l, "s": s, "idx": i}
-	}
-
-	// Special summonable
-	_ = pbuf.Read(&count)
-	spsummon := make([]map[string]interface{}, count)
-	for i := 0; i < int(count); i++ {
-		var code uint32
-		var c, l, s uint8
-		_ = pbuf.Read(&code, &c, &l, &s)
-		spsummon[i] = map[string]interface{}{"code": code, "c": c, "l": l, "s": s, "idx": i}
-	}
-
-	// Reposable
-	_ = pbuf.Read(&count)
-	repos := make([]map[string]interface{}, count)
-	for i := 0; i < int(count); i++ {
-		var code uint32
-		var c, l, s uint8
-		_ = pbuf.Read(&code, &c, &l, &s)
-		repos[i] = map[string]interface{}{"code": code, "c": c, "l": l, "s": s, "idx": i}
-	}
-
-	// Monster setable
-	_ = pbuf.Read(&count)
-	mset := make([]map[string]interface{}, count)
-	for i := 0; i < int(count); i++ {
-		var code uint32
-		var c, l, s uint8
-		_ = pbuf.Read(&code, &c, &l, &s)
-		mset[i] = map[string]interface{}{"code": code, "c": c, "l": l, "s": s, "idx": i}
-	}
-
-	// Spell/trap setable
-	_ = pbuf.Read(&count)
-	sset := make([]map[string]interface{}, count)
-	for i := 0; i < int(count); i++ {
-		var code uint32
-		var c, l, s uint8
-		_ = pbuf.Read(&code, &c, &l, &s)
-		sset[i] = map[string]interface{}{"code": code, "c": c, "l": l, "s": s, "idx": i}
-	}
-
-	// Activatable
-	_ = pbuf.Read(&count)
-	activate := make([]map[string]interface{}, count)
-	for i := 0; i < int(count); i++ {
-		var code uint32
-		var c, l, s uint8
-		var desc uint32
-		_ = pbuf.Read(&code, &c, &l, &s, &desc)
-		activate[i] = map[string]interface{}{"code": code, "c": c, "l": l, "s": s, "desc": desc, "idx": i}
-	}
-
-	var toBP, toEP, shuffle uint8
-	_ = pbuf.Read(&toBP, &toEP, &shuffle)
-
-	c.emit("duel:select_idlecmd", map[string]interface{}{
-		"player":   player,
-		"summon":   summon,
-		"spsummon": spsummon,
-		"repos":    repos,
-		"mset":     mset,
-		"sset":     sset,
-		"activate": activate,
-		"toBP":     toBP != 0,
-		"toEP":     toEP != 0,
-		"shuffle":  shuffle != 0,
-	})
-}
-
-func (c *WailsDuelClient) parseSelectBattleCmd(pbuf *utils.YGOBuffer) {
-	var player uint8
-	var count uint8
-	_ = pbuf.Read(&player)
-
-	// Activatable
-	_ = pbuf.Read(&count)
-	activate := make([]map[string]interface{}, count)
-	for i := 0; i < int(count); i++ {
-		var code uint32
-		var c, l, s uint8
-		var desc uint32
-		_ = pbuf.Read(&code, &c, &l, &s, &desc)
-		activate[i] = map[string]interface{}{"code": code, "c": c, "l": l, "s": s, "desc": desc, "idx": i}
-	}
-
-	// Attackable
-	_ = pbuf.Read(&count)
-	attack := make([]map[string]interface{}, count)
-	for i := 0; i < int(count); i++ {
-		var code uint32
-		var c, l, s, diratt uint8
-		_ = pbuf.Read(&code, &c, &l, &s, &diratt)
-		attack[i] = map[string]interface{}{"code": code, "c": c, "l": l, "s": s, "diratt": diratt != 0, "idx": i}
-	}
-
-	var toM2, toEP uint8
-	_ = pbuf.Read(&toM2, &toEP)
-
-	c.emit("duel:select_battlecmd", map[string]interface{}{
-		"player":   player,
-		"activate": activate,
-		"attack":   attack,
-		"toM2":     toM2 != 0,
-		"toEP":     toEP != 0,
-	})
+	return nil
 }

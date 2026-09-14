@@ -59,147 +59,26 @@ body, html {
 }
 
 /* ------------------------------------------------------------------
-   MAIN MENU SCREEN
+   MAIN MENU SCREEN — 波 H：原版形态 = bg_menu.jpg 纯背景 + 居中小窗
+   （窗口结构与皮肤见 css/gframe-window.css）
    ------------------------------------------------------------------ */
 #main-menu-screen {
-  background: radial-gradient(circle at center, rgba(14, 28, 54, 0.9) 0%, rgba(5, 10, 20, 0.98) 100%),
-              url('../textures/bg_menu.jpg') center/cover no-repeat;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  padding: 40px 60px;
-}
-
-.menu-header {
-  text-align: center;
-  margin-top: 20px;
-}
-
-.game-title {
-  font-size: 52px;
-  font-weight: 900;
-  letter-spacing: 4px;
-  text-transform: uppercase;
-  background: linear-gradient(135deg, #00d2ff 0%, #3b82f6 50%, #f59e0b 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 30px rgba(0, 210, 255, 0.3);
-}
-
-.game-subtitle {
-  font-size: 16px;
-  color: var(--text-muted);
-  letter-spacing: 3px;
-  margin-top: 5px;
-}
-
-.menu-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 220px);
-  gap: 24px;
-  margin-bottom: 50px;
-}
-
-.menu-card-btn {
-  height: 280px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-cyan);
-  border-radius: 12px;
-  display: flex;
+  background: url('../textures/bg_menu.jpg') center/cover no-repeat;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  position: relative;
-  overflow: hidden;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-}
-
-.menu-card-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-  transition: left 0.5s ease;
-}
-
-.menu-card-btn:hover {
-  transform: translateY(-8px) scale(1.02);
-  border-color: var(--primary);
-  box-shadow: 0 12px 40px var(--primary-glow);
-  background: var(--bg-card-hover);
-}
-
-.menu-card-btn:hover::before {
-  left: 100%;
-}
-
-.menu-card-icon {
-  font-size: 48px;
-  color: var(--primary);
-  filter: drop-shadow(0 0 12px var(--primary-glow));
-}
-
-.menu-card-title {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 1px;
-}
-
-.menu-card-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  text-align: center;
-  padding: 0 16px;
 }
 
 /* ------------------------------------------------------------------
-   LOBBY SCREEN
+   LOBBY SCREEN — 波 H：原版形态 = bg_menu.jpg 背景上叠加
+   wLanWindow / wCreateHost / wHostPrepare 三个显隐窗口
+   （结构与皮肤见 css/gframe-window.css）
    ------------------------------------------------------------------ */
 #lobby-screen {
-  background: radial-gradient(circle at center, rgba(14, 28, 54, 0.95) 0%, rgba(5, 10, 20, 0.98) 100%),
-              url('../textures/bg.jpg') center/cover no-repeat;
+  background: url('../textures/bg_menu.jpg') center/cover no-repeat;
   flex-direction: column;
-  padding: 30px 50px;
-}
-
-.lobby-header {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.lobby-title {
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--primary);
-}
-
-.lobby-content {
-  display: grid;
-  grid-template-columns: 1fr 340px;
-  gap: 24px;
-  flex: 1;
-  overflow: hidden;
-}
-
-.server-panel, .room-create-panel, .room-lobby-panel {
-  background: var(--bg-card);
-  border: 1px solid var(--border-cyan);
-  border-radius: 12px;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  backdrop-filter: blur(12px);
+  justify-content: center;
 }
 
 .form-group {
@@ -518,16 +397,20 @@ body, html {
   color: #000;
 }
 
-/* Bottom Hand Dock */
+/* Bottom Hand Dock — 原版手牌画在场地底部中央（浮在场地/聊天条之上） */
 .hand-dock-container {
-  pointer-events: auto;
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 30px;
   width: 100%;
   display: flex;
   justify-content: center;
   align-items: flex-end;
-  padding-bottom: 12px;
-  position: relative;
-  height: 160px;
+  padding-bottom: 0;
+  height: 132px;
+  z-index: 40;
 }
 
 .hand-cards {
@@ -538,6 +421,7 @@ body, html {
 }
 
 .hand-card-item {
+  pointer-events: auto;
   width: 90px;
   height: 130px;
   margin: 0 -18px;
@@ -549,6 +433,17 @@ body, html {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
   overflow: hidden;
   position: relative;
+  /* 扇形持牌：旋转/升降由 HandDock 按牌位写入 CSS 变量（原版持牌观感） */
+  transform: rotate(var(--fan-rot, 0deg)) translateY(var(--fan-lift, 0px));
+  transform-origin: 50% 130%;
+  z-index: var(--fan-z, 1);
+}
+
+/* 悬停：抬到扇形之上、转正放大，看清整张卡 */
+.hand-card-item:hover {
+  transform: translateY(-26px) rotate(0deg) scale(1.1);
+  z-index: 50;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.8);
 }
 
 .hand-card-item:hover {
@@ -775,6 +670,41 @@ body, html {
   border-radius: 8px;
 }
 
+/* 卡图缩略格子（deck-grid 与 search-results-grid 共用）：59x86 与原版
+   CARD_IMG 177x254 同比例缩放 */
+.deck-card-chip {
+  aspect-ratio: 59 / 86;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  padding: 0;
+}
+.deck-card-chip:hover {
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 10px var(--accent-gold-glow);
+}
+
+/* 同铭张数角标（×N，alias 归并后 >1 才显示） */
+.deck-count-badge {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  background: rgba(8, 12, 24, 0.85);
+  color: var(--accent-gold);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--accent-gold);
+  pointer-events: none;
+}
+
+/* 攻守/等级区间小输入框 */
+.deck-filter-num {
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
 .deck-search-panel {
   background: var(--bg-card);
   border: 1px solid var(--border-cyan);
@@ -809,4 +739,84 @@ body, html {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--primary);
+}
+
+/* ---------- 卡片列表浮窗（wCardDisplay，F1-F8 快捷键查看） ---------- */
+.card-display-overlay {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  z-index: 1200;
+  pointer-events: auto;
+}
+.card-display-window {
+  background: var(--bg-card);
+  border: 1px solid var(--border-cyan);
+  border-radius: 10px;
+  width: 264px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.card-display-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: bold;
+}
+.card-display-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+}
+.card-display-close:hover { color: #fff; }
+.card-display-list {
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.card-display-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 12px 0;
+}
+.card-display-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.card-display-item:hover {
+  background: rgba(0, 210, 255, 0.08);
+  border-color: var(--border-cyan);
+}
+.card-display-pic {
+  width: 44px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex: none;
+  background: #0a0f1e;
+}
+.card-display-pic-empty { width: 44px; height: 64px; }
+.card-display-name {
+  font-size: 12px;
+  color: var(--text-main, #dbe7ff);
+  line-height: 1.4;
+  word-break: break-all;
 }

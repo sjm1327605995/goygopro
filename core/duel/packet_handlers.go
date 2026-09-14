@@ -116,7 +116,7 @@ func HandleLeaveGame(c *PacketContext) {
 		c.AbortWithError(ErrNeedGame())
 		return
 	}
-	c.Player.Game.LeaveGame(c.Player)
+	c.Player.leaveGameOnce()
 }
 
 // --------------------------------------------------

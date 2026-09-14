@@ -3,9 +3,8 @@ package duel
 import (
 	"context"
 	"encoding/binary"
-	"encoding/hex"
-	"fmt"
 	"io"
+	"log"
 	"sync"
 	"unsafe"
 
@@ -184,10 +183,8 @@ func (d *DuelMode) SendPacketDataToPlayer(dp *DuelPlayer, proto byte, data any) 
 	binary.LittleEndian.PutUint16(d.buff[:], uint16(n+1))
 	d.buff[2] = proto
 	if dp != nil {
-		fmt.Println("SendPacketDataToPlayer", dp.Type, hex.EncodeToString(d.buff[:d.buffOffset]))
-		_, err := dp.Write(d.buff[:d.buffOffset])
-		if err != nil {
-			fmt.Println("send", err)
+		if _, err := dp.Write(d.buff[:d.buffOffset]); err != nil {
+			log.Printf("[duel] send packet 0x%02x to player %d: %v", proto, dp.Type, err)
 		}
 	}
 }
@@ -199,90 +196,91 @@ func (d *DuelMode) ReSendToPlayer(dp *DuelPlayer) {
 		_, _ = dp.Write(d.buff[:d.buffOffset])
 	}
 }
+
 // Chat is an abstract method — SingleDuel / TagDuel must override.
 func (d *DuelMode) Chat(dp *DuelPlayer, pData []byte) {
 	panic("DuelMode.Chat: abstract method not implemented")
 }
 
 // JoinGame is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCreator bool) {
+func (d *DuelMode) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCreator bool) {
 	panic("DuelMode.JoinGame: abstract method not implemented")
 }
 
 // LeaveGame is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) LeaveGame(dp *DuelPlayer) {
+func (d *DuelMode) LeaveGame(dp *DuelPlayer) {
 	panic("DuelMode.LeaveGame: abstract method not implemented")
 }
 
 // ToDuelList is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) ToDuelList(dp *DuelPlayer) {
+func (d *DuelMode) ToDuelList(dp *DuelPlayer) {
 	panic("DuelMode.ToDuelList: abstract method not implemented")
 }
 
 // ToObserver is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) ToObserver(dp *DuelPlayer) {
+func (d *DuelMode) ToObserver(dp *DuelPlayer) {
 	panic("DuelMode.ToObserver: abstract method not implemented")
 }
 
 // PlayerReady is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) PlayerReady(dp *DuelPlayer, isReady bool) {
+func (d *DuelMode) PlayerReady(dp *DuelPlayer, isReady bool) {
 	panic("DuelMode.PlayerReady: abstract method not implemented")
 }
 
 // PlayerKick is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) PlayerKick(dp *DuelPlayer, pos byte) {
+func (d *DuelMode) PlayerKick(dp *DuelPlayer, pos byte) {
 	panic("DuelMode.PlayerKick: abstract method not implemented")
 }
 
 // UpdateDeck is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) UpdateDeck(dp *DuelPlayer, pData []byte) {
+func (d *DuelMode) UpdateDeck(dp *DuelPlayer, pData []byte) {
 	panic("DuelMode.UpdateDeck: abstract method not implemented")
 }
 
 // StartDuel is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) StartDuel(dp *DuelPlayer) {
+func (d *DuelMode) StartDuel(dp *DuelPlayer) {
 	panic("DuelMode.StartDuel: abstract method not implemented")
 }
 
 // HandResult is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) HandResult(dp *DuelPlayer, res byte) {
+func (d *DuelMode) HandResult(dp *DuelPlayer, res byte) {
 	panic("DuelMode.HandResult: abstract method not implemented")
 }
 
 // TPResult is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) TPResult(dp *DuelPlayer, tp byte) {
+func (d *DuelMode) TPResult(dp *DuelPlayer, tp byte) {
 	panic("DuelMode.TPResult: abstract method not implemented")
 }
 
 // Process is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) Process() {
+func (d *DuelMode) Process() {
 	panic("DuelMode.Process: abstract method not implemented")
 }
 
 // Analyze is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) Analyze(msgBuffer []byte) int {
+func (d *DuelMode) Analyze(msgBuffer []byte) int {
 	panic("DuelMode.Analyze: abstract method not implemented")
 }
 
 // Surrender is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) Surrender(dp *DuelPlayer) {
+func (d *DuelMode) Surrender(dp *DuelPlayer) {
 	panic("DuelMode.Surrender: abstract method not implemented")
 }
 
 // GetResponse is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) GetResponse(dp *DuelPlayer, msgBuffer []byte) {
+func (d *DuelMode) GetResponse(dp *DuelPlayer, msgBuffer []byte) {
 	panic("DuelMode.GetResponse: abstract method not implemented")
 }
 
 // TimeConfirm is an abstract method — SingleDuel / TagDuel must override.
-func (d DuelMode) TimeConfirm(dp *DuelPlayer) {
+func (d *DuelMode) TimeConfirm(dp *DuelPlayer) {
 	panic("DuelMode.TimeConfirm: abstract method not implemented")
 }
 
-func (d DuelMode) EndDuel() {
+func (d *DuelMode) EndDuel() {
 	// 子类应重写此方法
 }
-func (d DuelMode) StopServer() {
+func (d *DuelMode) StopServer() {
 	if NetServerEngine != nil {
 		_ = NetServerEngine.Stop(context.Background())
 	}
@@ -290,13 +288,13 @@ func (d DuelMode) StopServer() {
 		BroadcastInstance.Stop()
 	}
 }
-func (d DuelMode) StopListen() {
+func (d *DuelMode) StopListen() {
 	AcceptingConnections = false
 	if BroadcastInstance != nil {
 		BroadcastInstance.Stop()
 	}
 }
-func (d DuelMode) OCGDuel() *ocgcore.Duel {
+func (d *DuelMode) OCGDuel() *ocgcore.Duel {
 	return d.Duel
 
 }

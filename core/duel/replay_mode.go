@@ -38,6 +38,14 @@ type ReplayMode struct {
 	ScriptName   string
 	IsSingleMode bool
 	IsTag        bool
+
+	// Filled in by Run for diagnostics: how many recorded responses were
+	// consumed, how many MSG_RETRY batches the engine emitted (a retry means
+	// the engine rejected the last recorded response — i.e. desync), and
+	// whether the duel ran to PROCESSOR_END.
+	ResponsesConsumed int
+	RetryBatches      int
+	Completed         bool
 }
 
 func NewReplayMode() *ReplayMode {
@@ -75,6 +83,9 @@ func (rm *ReplayMode) Run(handler func(msg []byte)) error {
 	// The replay body begins after the info section; responses are read
 	// from there in lockstep with the engine's select messages.
 	r.SkipInfo()
+	rm.ResponsesConsumed = 0
+	rm.RetryBatches = 0
+	rm.Completed = false
 
 	var d *ocgcore.Duel
 	if hdr.Base.ID == REPLAY_ID_YRP1 {
@@ -106,6 +117,13 @@ func (rm *ReplayMode) Run(handler func(msg []byte)) error {
 
 	buf := make([]byte, ocgcore.SIZE_MESSAGE_BUFFER)
 	var engFlag uint32
+	// A duel must always make progress: either emit a message batch or move to
+	// the next engine unit. Endless empty PROCESSOR_WAIT yields with no output
+	// mean the recorded response no longer matches what the engine waits for
+	// (it retries forever) — abort instead of hanging, like the client UI
+	// would.
+	const maxEmptyYields = 10000
+	emptyYields := 0
 	for engFlag != ocgcore.PROCESSOR_END {
 		result := d.Process()
 		engLen := int(result & ocgcore.PROCESSOR_BUFFER_LEN)
@@ -118,19 +136,52 @@ func (rm *ReplayMode) Run(handler func(msg []byte)) error {
 			if handler != nil {
 				handler(buf[:n])
 			}
-			if engFlag == ocgcore.PROCESSOR_WAITING {
+			// MSG_RETRY means the engine rejected the last recorded response:
+			// the recording no longer matches this engine (version/script
+			// drift or a desynced feed). The engine re-asks and the following
+			// recorded answer then belongs to a different question — the duel
+			// has diverged and the remaining responses shift out of alignment,
+			// so abort instead of replaying garbage (or retry-storming).
+			if n > 0 && buf[0] == ocgcore.MSG_RETRY {
+				rm.RetryBatches++
+				if rm.RetryBatches >= maxRetryBatches {
+					return fmt.Errorf("%w: engine rejected recorded responses (%d retry batches)", ErrReplayDesynchronized, rm.RetryBatches)
+				}
+			}
+			// Whether this batch consumed a recorded response is decided from
+			// the message stream, like the C++ ReplayAnalyze — not from the
+			// engine flag alone (some waits, e.g. rock-paper-scissors, arrive
+			// without PROCESSOR_WAITING). On an unparseable batch fall back to
+			// the flag: a WAITING batch's last message is the select message.
+			respOffset, ok := batchResponseOffset(buf[:n])
+			if (ok && respOffset >= 0) || (!ok && engFlag == ocgcore.PROCESSOR_WAITING) {
 				if !rm.readResponse(d) {
 					return ErrReplayResponseUnderflow
 				}
+				rm.ResponsesConsumed++
 			}
 		} else if engFlag == ocgcore.PROCESSOR_WAITING {
-			// Engine is waiting for a response but produced no message;
-			// the replay no longer matches the engine state.
-			return ErrReplayDesynchronized
+			// Empty WAITING is the engine's PROCESSOR_WAIT yield unit: control
+			// is handed back to the UI without asking for input, and the duel
+			// continues on the next Process call. The C++ ReplayThread simply
+			// loops here; aborting would cut every duel short. Only a WAITING
+			// that arrives with a message batch (a select message) consumes a
+			// recorded response.
+			emptyYields++
+			if emptyYields > maxEmptyYields {
+				return fmt.Errorf("replay stuck: %d consecutive empty engine yields (response desync)", maxEmptyYields)
+			}
+			continue
 		}
+		emptyYields = 0
 	}
+	rm.Completed = true
 	return nil
 }
+
+// maxRetryBatches bounds how many rejected-response (MSG_RETRY) batches are
+// tolerated before the replay is declared desynchronized.
+const maxRetryBatches = 20
 
 // loadDecks reconstructs the core duel's deck from the replay's recorded
 // deck lists, mirroring the deck layout logic of the C++ StartDuel.

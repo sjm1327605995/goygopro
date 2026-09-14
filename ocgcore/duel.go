@@ -3,7 +3,6 @@ package ocgcore
 import (
 	"bytes"
 	"fmt"
-	"math/rand"
 	"sync"
 )
 
@@ -23,10 +22,56 @@ var (
 )
 
 // NewDuel 创建新的决斗实例
+//
+// The C++ client derives the engine seed from the replay header through a real
+// MT19937 step (std::mt19937 rnd(rh.seed); create_duel(rnd())). math/rand is a
+// different generator, so the derived seed — and therefore every shuffle —
+// would differ from the recorded duel. Use a local MT19937 instead.
 func NewDuel(seed uint32) *Duel {
-	random := rand.New(rand.NewSource(int64(seed)))
-	duelPtr := API.CreateDuel(random.Int31())
+	rnd := newMT19937(seed)
+	duelPtr := API.CreateDuel(int32(rnd.next()))
 	return newDuel(duelPtr)
+}
+
+// mt19937 is the standard MT19937 generator, matching std::mt19937 bit-for-bit.
+type mt19937 struct {
+	state [624]uint32
+	index int
+}
+
+func newMT19937(seed uint32) *mt19937 {
+	m := &mt19937{index: 624}
+	m.state[0] = seed
+	for i := 1; i < 624; i++ {
+		prev := m.state[i-1]
+		m.state[i] = 1812433253*(prev^(prev>>30)) + uint32(i)
+	}
+	return m
+}
+
+func (m *mt19937) twist() {
+	for i := 0; i < 624; i++ {
+		y := (m.state[i] & 0x80000000) | (m.state[(i+1)%624] & 0x7fffffff)
+		n := m.state[(i+397)%624] ^ (y >> 1)
+		if y&1 != 0 {
+			n ^= 0x9908b0df
+		}
+		m.state[i] = n
+	}
+	m.index = 0
+}
+
+func (m *mt19937) next() uint32 {
+	if m.index >= 624 {
+		m.twist()
+	}
+	y := m.state[m.index]
+	m.index++
+	y ^= y >> 11
+	y ^= (y << 7) & 0x9d2c5680
+	y ^= (y << 15) & 0xefc60000
+	y ^= y >> 18
+	return y
 }
 
 // NewDuelV2 使用种子序列创建新的决斗实例（v2 API）

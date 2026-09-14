@@ -3,7 +3,7 @@ package duel
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
+	"log"
 	"math/rand"
 	"slices"
 	"time"
@@ -354,7 +354,7 @@ func (s *SingleDuel) UpdateDeck(dp *DuelPlayer, pData []byte) {
 	var deckBuf protocol.CTOSDeckData
 	err := restruct.Unpack(pData, binary.LittleEndian, &deckBuf)
 	if err != nil {
-		fmt.Println(err)
+		log.Printf("[duel] unpack CTOS_UPDATE_DECK: %v", err)
 		return
 	}
 	if deckBuf.MainC < 0 || deckBuf.MainC > protocol.MAINC_MAX {
@@ -683,7 +683,6 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println("engType", engType)
 
 		// 根据消息类型进行不同的处理逻辑
 		switch engType {
@@ -1069,12 +1068,12 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			if err := pbuf.Unpack(&msg); err != nil {
 				panic(err)
 			}
-			// 当前玩家只收到 player+count（不含 codes）
-			header := append([]byte{engType}, utils.PackGameMsg(&msg)[:2]...)
-			s.SendPacketDataToPlayer(s.players[msg.Player], network.STOC_GAME_MSG, header)
-			// 隐藏 codes 发给其他人
-			msg.HideAllCodes()
+			// 当前玩家收到完整消息（含打乱后的 codes，客户端据此重排手牌）
 			data := append([]byte{engType}, utils.PackGameMsg(&msg)...)
+			s.SendPacketDataToPlayer(s.players[msg.Player], network.STOC_GAME_MSG, data)
+			// codes 归零后发给对手
+			msg.HideAllCodes()
+			data = append([]byte{engType}, utils.PackGameMsg(&msg)...)
 			s.SendPacketDataToPlayer(s.players[1-msg.Player], network.STOC_GAME_MSG, data)
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
@@ -1085,12 +1084,12 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			if err := pbuf.Unpack(&msg); err != nil {
 				panic(err)
 			}
-			// 当前玩家只收到 player+count（不含 codes）
-			header := append([]byte{engType}, utils.PackGameMsg(&msg)[:2]...)
-			s.SendPacketDataToPlayer(s.players[msg.Player], network.STOC_GAME_MSG, header)
-			// 隐藏 codes 发给其他人
-			msg.HideAllCodes()
+			// 当前玩家收到完整消息（含打乱后的 codes）
 			data := append([]byte{engType}, utils.PackGameMsg(&msg)...)
+			s.SendPacketDataToPlayer(s.players[msg.Player], network.STOC_GAME_MSG, data)
+			// codes 归零后发给对手
+			msg.HideAllCodes()
+			data = append([]byte{engType}, utils.PackGameMsg(&msg)...)
 			s.SendPacketDataToPlayer(s.players[1-msg.Player], network.STOC_GAME_MSG, data)
 			for _, v := range s.Observers {
 				s.ReSendToPlayer(v)
@@ -1511,12 +1510,8 @@ func (s *SingleDuel) Analyze(msgBuffer []byte) int {
 			// 当前玩家收到完整消息
 			data := append([]byte{engType}, utils.PackGameMsg(&msg)...)
 			s.SendPacketDataToPlayer(s.players[msg.Player], network.STOC_GAME_MSG, data)
-			// 单人模式：高位 0x80 标记为已知，未标记的隐藏
-			for i := range msg.Cards {
-				if uint32(msg.Cards[i])>>24&0x80 != 0 {
-					msg.Cards[i] = 0
-				}
-			}
+			// 未带 0x80000000 公开标记的抽卡对对手隐藏（引擎仅对表侧卡置高位）
+			msg.HideUnknownCards()
 			data = append([]byte{engType}, utils.PackGameMsg(&msg)...)
 			s.SendPacketDataToPlayer(s.players[1-msg.Player], network.STOC_GAME_MSG, data)
 			for _, v := range s.Observers {

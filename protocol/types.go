@@ -216,3 +216,16 @@ type STOCHsPlayerChange struct {
 type STOCHsWatchChange struct {
 	WatchCount uint16 `struct:"uint16"`
 }
+
+// STOCDeckCount — 卡组数量通知
+// C++: STOC_DECK_COUNT payload = int16_t[6]（network.h:286）。
+// 服务器发送前按玩家交换前后 6 字节（single_duel.cpp:340-345、tag_duel.cpp:304-310），
+// 所以每位玩家收到的 12 字节都已是"自己在前"的相对序。
+type STOCDeckCount struct {
+	Deck0  uint16 `struct:"uint16" json:"deck0"`
+	Extra0 uint16 `struct:"uint16" json:"extra0"`
+	Side0  uint16 `struct:"uint16" json:"side0"`
+	Deck1  uint16 `struct:"uint16" json:"deck1"`
+	Extra1 uint16 `struct:"uint16" json:"extra1"`
+	Side1  uint16 `struct:"uint16" json:"side1"`
+}
