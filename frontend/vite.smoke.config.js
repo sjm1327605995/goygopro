@@ -41,6 +41,7 @@ export default defineConfig({
         theater_smoke: resolve(root, 'theater_smoke.html'),
         settings_smoke: resolve(root, 'settings_smoke.html'),
         menu_smoke: resolve(root, 'menu_smoke.html'),
+        single_smoke: resolve(root, 'single_smoke.html'),
       },
     },
   },

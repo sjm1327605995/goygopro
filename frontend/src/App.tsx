@@ -7,6 +7,7 @@ import MainMenu from './components/MainMenu.tsx';
 import Lobby from './components/Lobby.tsx';
 import DeckBuilder from './components/DeckBuilder.tsx';
 import DuelScreen from './components/DuelScreen.tsx';
+import SingleModeWindow from './components/SingleModeWindow.tsx';
 import ReplayTheater from './components/ReplayTheater.tsx';
 import SideDecking from './components/SideDecking.tsx';
 import ReplaySavePrompt from './components/ReplaySavePrompt.tsx';
@@ -73,12 +74,14 @@ export default function App() {
 
   const toggleMute = () => setMuted(soundManager.toggleMute());
 
-  const startPracticeDuel = () => {
-    setDuelMode('practice');
-    setScreen('duel');
-  };
   const startOnlineDuel = () => {
     setDuelMode('online');
+    setScreen('duel');
+  };
+  // 单人模式（wSinglePlay 确定 → BUTTON_LOAD_SINGLEPLAY → StartPlay）：
+  // 谜题引擎事件流与在线对局同构，复用决斗画面。
+  const startSingleDuel = () => {
+    setDuelMode('single');
     setScreen('duel');
   };
 
@@ -115,7 +118,7 @@ export default function App() {
       {screen === 'menu' && (
         <MainMenu
           onDuel={() => setScreen('lobby')}
-          onPractice={startPracticeDuel}
+          onPractice={() => setScreen('single')}
           onDeck={() => setScreen('deck')}
           onReplay={() => setScreen('replay')}
           onQuit={() => WailsBridge.quit()}
@@ -123,6 +126,7 @@ export default function App() {
       )}
       {screen === 'lobby' && <Lobby onNavigate={setScreen} onDuelStart={startOnlineDuel} />}
       {screen === 'deck' && <DeckBuilder onNavigate={setScreen} />}
+      {screen === 'single' && <SingleModeWindow onNavigate={setScreen} onStart={startSingleDuel} />}
       {screen === 'duel' && <DuelScreen mode={duelMode} onNavigate={setScreen} />}
       {screen === 'replay' && <ReplayTheater onNavigate={setScreen} />}
 

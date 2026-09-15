@@ -280,8 +280,12 @@ export interface DuelUpdateDataEvent {
   event: 'duel:update_data';
   player: number;
   location: number;
-  /** 每张卡一条 query；解码失败的 blob 被跳过 */
-  cards?: CardQuery[];
+  /**
+   * 每张卡一条 query；解码失败的 blob 被跳过。MZONE/SZONE 的空槽写
+   * LEN_EMPTY(4) 标记（ocgapi.cpp query_field_card），以 null 占位保持
+   * 条目与槽序号对齐。
+   */
+  cards?: (CardQuery | null)[];
 }
 
 export interface DuelUpdateCardEvent extends CardQuery {
@@ -550,6 +554,38 @@ export interface DuelChainCountEvent {
   count: number;
 }
 
+// ---- 波 J：单人模式（single_mode.go / libdebug 调试消息）----
+
+/** MSG_AI_NAME — 单机谜题的 AI 对手名（引擎 seat 1） */
+export interface DuelAINameEvent {
+  event: 'duel:ai_name';
+  name: string;
+}
+
+/** MSG_SHOW_HINT — 谜题脚本 Debug.ShowHint 的提示文本 */
+export interface DuelShowHintEvent {
+  event: 'duel:show_hint';
+  text: string;
+}
+
+/** MSG_RELOAD_FIELD — 完整布场快照（query_field_info；谜题布场/中途加入） */
+export interface DuelReloadFieldEvent {
+  event: 'duel:reload_field';
+  rule: number;
+  players: {
+    lp: number;
+    mzone: ({ pos: number; overlay: number } | null)[];
+    szone: ({ pos: number } | null)[];
+    deck: number;
+    hand: number;
+    grave: number;
+    removed: number;
+    extra: number;
+    extraP: number;
+  }[];
+  chainCount: number;
+}
+
 // 所有 duel:* 事件的联合
 export type DuelEvent =
   | DuelStartEvent
@@ -606,6 +642,9 @@ export type DuelEvent =
   | DuelCardHintEvent
   | DuelPlayerHintEvent
   | DuelMatchKillEvent
+  | DuelAINameEvent
+  | DuelShowHintEvent
+  | DuelReloadFieldEvent
   | { event: DuelEmptyEvent };
 
 // ---- stoc:* 协议事件（duel_client.go handleSTOCPacket）----

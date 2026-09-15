@@ -108,7 +108,14 @@ export const DUEL_EVENTS = [
   'duel:card_hint',
   'duel:player_hint',
   'duel:match_kill',
+  // ---- 波 J：单人模式的调试/重载消息（libdebug / query_field_info）----
+  'duel:ai_name',
+  'duel:show_hint',
+  'duel:reload_field',
 ];
 
+/** 单人模式会话事件（single_mode.go StartSingle 的 goroutine emit） */
+export const SINGLE_EVENTS = ['single:ended'];
+
 /** 桥层应转发的全部事件 */
-export const FORWARDED_EVENTS = [...STOC_EVENTS, ...DUEL_EVENTS];
+export const FORWARDED_EVENTS = [...STOC_EVENTS, ...DUEL_EVENTS, ...SINGLE_EVENTS];

@@ -398,13 +398,19 @@ func walkCountList(p *int, msg []byte, size int) bool {
 }
 
 // walkQueryBlobs walks length-prefixed card-query blobs until the buffer ends
-// or a fragment too small to be a query appears.
+// or a fragment too small to be a query appears. MZONE/SZONE 空槽写 LEN_EMPTY(4)
+// 标记（ocgapi.cpp query_field_card）：跳过 4 字节继续，保持后面的 blob 可达。
 func walkQueryBlobs(p *int, msg []byte) bool {
 	for *p < len(msg) {
 		if len(msg)-*p < 4 {
 			return false
 		}
 		clen := int(uint32(msg[*p]) | uint32(msg[*p+1])<<8 | uint32(msg[*p+2])<<16 | uint32(msg[*p+3])<<24)
+		if clen == ocgcore.LEN_EMPTY {
+			// 空槽标记：不是 blob，占 4 字节
+			*p += 4
+			continue
+		}
 		if clen < ocgcore.LEN_HEADER {
 			// Not a query blob; whatever remains belongs to another message.
 			return true

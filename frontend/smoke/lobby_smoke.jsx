@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { WailsBridge, eventBus } from '../src/wails_bridge.ts';
 import '../css/style.css';
+import '../css/gframe-window.css';
 import Lobby from '../src/components/Lobby.tsx';
 
 const root = createRoot(document.getElementById('root'));
@@ -59,8 +60,8 @@ try {
   await waitFor(() => !!$('lobby-duel-rule-select') && !!$('lobby-duel-mode-select'));
   record('lobby-renders-rule-select', true);
 
-  // Find the 创建房间 button inside the room-create-panel.
-  const createBtn = [...document.querySelectorAll('.room-create-panel .btn')].find((b) => b.textContent.includes('创建房间'));
+  // Find the 确定 button inside the room-create-panel（docs 原型 wCreateHost 底部按钮）.
+  const createBtn = [...document.querySelectorAll('.room-create-panel .btn')].find((b) => b.textContent.includes('确定'));
   record('lobby-has-create-btn', !!createBtn);
   createBtn.click();
   await waitFor(() => createGameReqs.length === 1);
@@ -124,7 +125,14 @@ try {
   const startSrvBtn = [...document.querySelectorAll('#server-connect-panel .btn')].find((b) => b.textContent.includes('启动服务器'));
   startSrvBtn.click();
   await waitFor(() => !!$('lobby-deck-select') && $('lobby-deck-select').options.length > 0);
-  record('deck-select-populated', $('lobby-deck-select').options.length === 3);
+  // docs 原型两下拉：卡组分类 + 分类内卡组（mock 卡组 "Meta/Cyber Dragon OTK" 归 Meta 分类，
+  // 未分类下 2 个）
+  record('deck-select-populated', $('lobby-deck-select').options.length === 2
+    && $('lobby-deck-category') && $('lobby-deck-category').options.length === 2);
+  fireChange($('lobby-deck-category'), 'Meta');
+  await waitFor(() => $('lobby-deck-select').options.length === 1
+    && $('lobby-deck-select').textContent.includes('Cyber Dragon OTK'));
+  record('deck-category-filters', true);
 
   const readyBtn = [...document.querySelectorAll('#room-lobby-panel .btn')].find((b) => b.textContent.includes('准备'));
   record('ready-btn-exists', !!readyBtn);
@@ -139,7 +147,7 @@ try {
   // 前面两次"创建房间"已置 isHost/inRoom：先点"离开房间"复位身份，
   // 验证加入行重新可见后再走加入流程
   WailsBridge.leaveGame = () => {};
-  const leaveBtns = [...document.querySelectorAll('#room-lobby-panel .btn')].filter((b) => b.textContent.includes('离开房间'));
+  const leaveBtns = [...document.querySelectorAll('#room-lobby-panel .btn')].filter((b) => b.textContent.includes('退出'));
   leaveBtns[0].click();
   const joinSends = [];
   WailsBridge.joinGame = async (pass) => { joinSends.push(pass); return { success: true }; };
@@ -198,13 +206,13 @@ try {
   eventBus.emit('stoc:error_msg', { msg: 1, code: 1 });
   await waitFor(() => document.body.textContent.includes('房间密码错误'));
   record('joinerror-1-password', true);
-  // 关闭弹窗
-  [...document.querySelectorAll('.btn')].find((b) => b.textContent === '确定').click();
+  // 关闭弹窗（错误窗的确定按钮有专属 id，避免误点建房窗的「确定」）
+  $('lobby-errmsg-ok').click();
   await waitFor(() => !document.body.textContent.includes('房间密码错误'));
   eventBus.emit('stoc:error_msg', { msg: 2, code: (1 << 28) | 89631139 }); // LFLIST | Blue-Eyes
   await waitFor(() => document.body.textContent.includes('Blue-Eyes White Dragon'));
   record('deckerror-lflist-cardname', true);
-  [...document.querySelectorAll('.btn')].find((b) => b.textContent === '确定').click();
+  $('lobby-errmsg-ok').click();
 
   record('no-fatal', true);
 } catch (err) {

@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import DuelStage from './DuelStage.tsx';
 import CardListOverlay from './CardListOverlay.tsx';
+import { WailsBridge } from '../wails_bridge.ts';
 import { aiSimulator } from '../duel/ai_simulator.ts';
 import { installHotkeys } from '../duel/hotkeys.ts';
 
@@ -22,6 +23,13 @@ export default function DuelScreen({ mode, onNavigate }: DuelScreenProps) {
         aiSimulator.stop();
       };
     }
+  }, [mode]);
+
+  // 单人模式：离开决斗画面 = 退出谜题（原版 btnLeaveGame → StopPlay）。
+  // 引擎 goroutine 经 stopCh 解除等待并发出 single:ended completed=false。
+  useEffect(() => {
+    if (mode !== 'single') return;
+    return () => WailsBridge.stopSingle();
   }, [mode]);
 
   // 波 F：A/S/D 按住连锁键 + F1-F8 卡片列表快捷键（gframe event_handler）

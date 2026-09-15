@@ -44,7 +44,7 @@ try {
   const win = $('main-menu-window');
   const cls = win && win.className;
   record('menu-window-shape', !!win && cls.includes('gfw-window') && cls.includes('gfw-mainmenu'));
-  record('menu-title-version', win && win.querySelector('.gfw-title')?.textContent === 'YGOPro Version:1.03.2');
+  record('menu-title-version', win && win.querySelector('.gfw-title')?.textContent === 'YGOPro Version:1.036.2');
 
   // 5 个按钮（SysString 1200/1201/1202/1204/1210）
   const btnTexts = [...win.querySelectorAll('button')].map((b) => b.textContent);
