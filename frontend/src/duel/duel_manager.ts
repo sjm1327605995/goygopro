@@ -69,6 +69,15 @@ export class DuelManager {
       this.field3D.setOpponentHandCount(0);
     });
 
+    // MSG_RELOAD_FIELD（谜题布场）：对手手背行直接取快照里的手牌数
+    sub('duel:reload_field', (data) => {
+      const opp = data.players && data.players[1 - this.playerSlot];
+      if (opp) {
+        this.opponentHandCount = opp.hand || 0;
+        this.field3D.setOpponentHandCount(this.opponentHandCount);
+      }
+    });
+
     sub('duel:draw', async (data) => {
       // 对手手背行是持久表示，计数在 __instant（seek 重建）下也要同步
       if (data.player !== this.playerSlot) {

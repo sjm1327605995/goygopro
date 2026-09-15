@@ -218,6 +218,34 @@ export const WailsBridge = {
     }
   },
 
+  // ---- 单人模式（wSinglePlay，menu_handler.cpp:400-411）----
+
+  async listSingles(): Promise<{ name: string; message: string }[]> {
+    if (isWails) {
+      return (await callWails("ListSingles")) || [];
+    }
+    return [
+      { name: '青眼一击.lua', message: '入门残局：用青眼的强大力量一击制胜！' },
+      { name: '魔导师的初阵.lua', message: '用连锁完成突破。' },
+    ];
+  },
+
+  // returnDeckTop = chkSinglePlayReturnDeckTop（不洗切时回卡组改为回顶端）。
+  // 成功后事件流与在线对局同构（duel:start → reload_field/update_data →
+  // select_* → …… → single:ended）。
+  async startSingle(name: string, returnDeckTop = false): Promise<{ success: boolean; name?: string; error?: string }> {
+    if (isWails) {
+      return await callWails("StartSingle", name, returnDeckTop);
+    }
+    console.log("[MockBridge] StartSingle:", name, returnDeckTop);
+    return { success: true, name };
+  },
+
+  stopSingle() {
+    if (isWails) callWails("StopSingle");
+    else console.log("[MockBridge] StopSingle");
+  },
+
   async createGame(req: any, roomName: string, pass: string) {
     if (isWails) {
       return await callWails("CreateGame", req, roomName, pass);

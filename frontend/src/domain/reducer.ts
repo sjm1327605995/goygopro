@@ -626,13 +626,27 @@ export function applyEvent(state: DuelState, name: string, data: any): DuelState
     case 'duel:update_data': {
       // MSG_UPDATE_DATA：cards[i] 按序对应 location 区的第 i 张卡
       if (!ev.cards || !ev.cards.length) return state;
+      // 本方手牌的整表刷新：谜题脚本布的手牌没有 draw 事件，只能从这里来
+      // （在线路径服务器同样会对本方发 HAND 的 update_data，覆盖即权威）
+      if (ev.location === LOC_HAND && ev.player === state.playerSlot) {
+        const hand = ev.cards.map((q) => (q && q.code ? { code: q.code } : null));
+        return { ...state, hand };
+      }
       const board = cloneBoard(state);
       const zone = zoneOf(board[localSeat(state, ev.player)], ev.location);
       if (!zone) return state;
       let changed = false;
-      (ev.cards as CardQuery[]).forEach((q, seq) => {
+      (ev.cards as (CardQuery | null)[]).forEach((q, seq) => {
         if (seq >= zone.length) return;
         const cur = zone[seq];
+        if (!q) {
+          // LEN_EMPTY 空槽标记：引擎说这个槽没卡
+          if (cur) {
+            zone[seq] = null;
+            changed = true;
+          }
+          return;
+        }
         const card: BoardCard = {
           code: q.code ?? cur?.code ?? 0,
           pos: q.position?.p ?? cur?.pos ?? 0,
@@ -658,6 +672,35 @@ export function applyEvent(state: DuelState, name: string, data: any): DuelState
       if (cur && cur.code === card.code && cur.pos === card.pos) return state;
       zone[ev.sequence] = card;
       return { ...state, board };
+    }
+
+    // ---- 波 J：单人模式（谜题脚本驱动的事件）----
+
+    case 'duel:ai_name': {
+      // MSG_AI_NAME：单机谜题的 AI 对手名（引擎 seat 1，playerSlot 恒 0）
+      const names: [string, string] = [...state.names];
+      names[localSeat(state, 1)] = ev.name || names[localSeat(state, 1)];
+      return { ...state, names };
+    }
+
+    case 'duel:show_hint':
+      // MSG_SHOW_HINT：谜题脚本的提示文本（原版弹提示窗，这里走提示条 + 日志）
+      return withLog({ ...state, hint: ev.text }, ev.text);
+
+    case 'duel:reload_field': {
+      // MSG_RELOAD_FIELD：完整布场快照。先落 LP 与堆计数；场上卡的细节
+      // 由紧随其后的 update_data 刷新（SinglePlayRefresh）补齐。
+      let next = state;
+      for (const seat of [0, 1] as const) {
+        const p = ev.players && ev.players[seat];
+        if (!p) continue;
+        next = setLP(next, seat, p.lp);
+        const disp = localSeat(next, seat);
+        const piles: [PileCounts, PileCounts] = [...next.piles];
+        piles[disp] = { ...piles[disp], deck: p.deck, grave: p.grave, banish: p.removed, extra: p.extra };
+        next = { ...next, piles };
+      }
+      return next;
     }
 
     case 'duel:waiting':

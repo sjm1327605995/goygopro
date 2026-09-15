@@ -100,47 +100,47 @@ func encodeBattleCmdResponse(idx, cmdType int32) []byte {
 
 // RespondSelectCard 回答 MSG_SELECT_CARD / MSG_SELECT_TRIBUTE（选中的卡片序号列表）。
 func (a *App) RespondSelectCard(indices []int32) {
-	_ = a.client.SendResponseB(encodeSelectCardResponse(indices))
+	_ = a.routeResponseB(encodeSelectCardResponse(indices))
 }
 
 // RespondSelectUnselect 回答 MSG_SELECT_UNSELECT_CARD（两列表合并后的 0 基序号）。
 func (a *App) RespondSelectUnselect(index int32) {
-	_ = a.client.SendResponseB(encodeSelectUnselectResponse(index))
+	_ = a.routeResponseB(encodeSelectUnselectResponse(index))
 }
 
 // RespondCounter 回答 MSG_SELECT_COUNTER（每张卡的移除数量）。
 func (a *App) RespondCounter(counts []int32) {
-	_ = a.client.SendResponseB(encodeCounterResponse(counts))
+	_ = a.routeResponseB(encodeCounterResponse(counts))
 }
 
 // RespondSelectSum 回答 MSG_SELECT_SUM（总数 + select 列表中被选序号）。
 func (a *App) RespondSelectSum(count int32, indices []int32) {
-	_ = a.client.SendResponseB(encodeSelectSumResponse(count, indices))
+	_ = a.routeResponseB(encodeSelectSumResponse(count, indices))
 }
 
 // RespondSelectPlace 回答 MSG_SELECT_PLACE / MSG_SELECT_DISFIELD。
 func (a *App) RespondSelectPlace(player, loc, seq int32) {
-	_ = a.client.SendResponseB(encodeSelectPlaceResponse(player, loc, seq))
+	_ = a.routeResponseB(encodeSelectPlaceResponse(player, loc, seq))
 }
 
 // RespondSortCard 回答 MSG_SORT_CARD（排列字节）。
 func (a *App) RespondSortCard(perm []int32) {
-	_ = a.client.SendResponseB(encodeSortCardResponse(perm))
+	_ = a.routeResponseB(encodeSortCardResponse(perm))
 }
 
 // RespondSortCardCancel 取消 MSG_SORT_CARD。
 func (a *App) RespondSortCardCancel() {
-	_ = a.client.SendResponseB(encodeSortCardCancelResponse())
+	_ = a.routeResponseB(encodeSortCardCancelResponse())
 }
 
 // RespondIdleCmd 回答 MSG_SELECT_IDLECMD：卡片/激活列表内序号 + 命令类型
 // （0=summon 1=spsummon 2=repos 3=mset 4=sset 5=activate 6=toBP 7=toEP 8=shuffle）。
 func (a *App) RespondIdleCmd(idx, cmdType int32) {
-	_ = a.client.SendResponseB(encodeIdleCmdResponse(idx, cmdType))
+	_ = a.routeResponseB(encodeIdleCmdResponse(idx, cmdType))
 }
 
 // RespondBattleCmd 回答 MSG_SELECT_BATTLECMD：列表内序号 + 命令类型
 // （0=activate 1=attack 2=toM2 3=toEP）。
 func (a *App) RespondBattleCmd(idx, cmdType int32) {
-	_ = a.client.SendResponseB(encodeBattleCmdResponse(idx, cmdType))
+	_ = a.routeResponseB(encodeBattleCmdResponse(idx, cmdType))
 }

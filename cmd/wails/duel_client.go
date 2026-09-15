@@ -79,6 +79,13 @@ func (c *WailsDuelClient) Connect(addr string, username string, pass string) err
 	return c.sendPlayerInfo(username)
 }
 
+// IsConnected 在锁内报告连接状态（StartSingle 的守卫用）。
+func (c *WailsDuelClient) IsConnected() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.isConnected
+}
+
 func (c *WailsDuelClient) Disconnect() {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/sjm1327605995/goygopro/core/duel"
 	"github.com/sjm1327605995/goygopro/ocgcore"
@@ -97,7 +96,7 @@ func parseSingleMessage(path string) string {
 // SingleMode::StartPlay）。引擎在后台 goroutine 上驱动；返回后前端切到
 // 决斗画面，事件流与在线对局同构（duel:start → reload_field/update_data →
 // select_* 提示 → 玩家响应 → …… → single:ended）。
-func (a *App) StartSingle(name string) map[string]interface{} {
+func (a *App) StartSingle(name string, returnDeckTop bool) map[string]interface{} {
 	if a.client != nil && a.client.IsConnected() {
 		return map[string]interface{}{"success": false, "error": "在线对局进行中，无法启动单人模式"}
 	}
@@ -129,7 +128,11 @@ func (a *App) StartSingle(name string) map[string]interface{} {
 	}
 
 	ss := duel.NewSingleSession(seed)
-	if err := ss.Prepare(name); err != nil {
+	opt := int32(0)
+	if returnDeckTop {
+		opt = int32(ocgcore.DUEL_RETURN_DECK_TOP)
+	}
+	if err := ss.PrepareWithOpt(name, opt); err != nil {
 		return map[string]interface{}{"success": false, "error": err.Error()}
 	}
 
@@ -169,9 +172,10 @@ func (a *App) StartSingle(name string) map[string]interface{} {
 		}()
 
 		// 谜题布场后的权威快照：query_field_info 直接产出一条完整的
-		// MSG_RELOAD_FIELD 消息（ocgapi.cpp:319-338）。
+		// MSG_RELOAD_FIELD 消息（ocgapi.cpp:319-338）；info[0] 是 opcode，
+		// body 从 rule 字节开始。缓冲尾部是残留，按 consumed+1 截断。
 		info := ss.Duel.QueryFieldInfo()
-		fields, consumed, infoOK := parseReloadFieldInfo(info)
+		fields, consumed, infoOK := parseReloadFieldBody(info[1:])
 
 		// 开场事件（在线路径由服务器 MSG_START 合成；键名与 PlayReplay 一致）
 		startPayload := map[string]interface{}{
@@ -196,7 +200,7 @@ func (a *App) StartSingle(name string) map[string]interface{} {
 		}
 		emit("duel:start", startPayload)
 		if infoOK {
-			if err := collector.handleGameMessage(info[:consumed]); err != nil {
+			if err := collector.handleGameMessage(info[:1+consumed]); err != nil {
 				log.Printf("[App] single reload_field parse error: %v", err)
 			}
 		}

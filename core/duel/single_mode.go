@@ -46,9 +46,15 @@ func NewSingleSession(seedSequence [8]uint32) *SingleSession {
 // name inside ./single/ (the "./single/" prefix matches the C++
 // preload_script call). SinglePlayThread 固定 8000 基本分 / 5 张起手 / 每回合
 // 抽 1；谜题脚本里的 Debug.SetPlayerInfo 会在脚本加载后覆盖这些默认值，
-// ReloadFieldBegin 的规则与选项（DUEL_ATTACK_FIRST_TURN 等）由引擎内部保存，
-// start_duel 的 opt 保持 0（chkSinglePlayReturnDeckTop 未勾选）。
+// ReloadFieldBegin 的规则与选项（DUEL_ATTACK_FIRST_TURN 等）由引擎内部保存。
 func (ss *SingleSession) Prepare(scriptName string) error {
+	return ss.PrepareWithOpt(scriptName, 0)
+}
+
+// PrepareWithOpt 同 Prepare，但把额外选项并进 start_duel 的 opt（原版
+// SinglePlayThread：勾选 chkSinglePlayReturnDeckTop 时 opt |= DUEL_RETURN_DECK_TOP，
+// 「不洗切时回卡组改为回顶端」）。
+func (ss *SingleSession) PrepareWithOpt(scriptName string, opt int32) error {
 	d := ss.Duel
 	if d == nil {
 		return fmt.Errorf("single session: no engine duel")
@@ -58,7 +64,7 @@ func (ss *SingleSession) Prepare(scriptName string) error {
 	if ocgcore.API.PreloadScript(d.GetNativePtr(), filename, int32(len(filename))) == 0 {
 		return fmt.Errorf("preload script %s: failed", filename)
 	}
-	d.Start(0)
+	d.Start(opt)
 	ss.Started = true
 	return nil
 }

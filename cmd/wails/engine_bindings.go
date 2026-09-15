@@ -493,16 +493,22 @@ func decodeQueryBody(body []byte) map[string]interface{} {
 // decodeQueryBlobList 解码 ocgcore query blob 列表；maxBlobs 语义同
 // skipQueryBlobList（0 = 直到缓冲区尾）。blob 的 8 字节头（长度+flag）保证
 // 无论解码成败缓冲区都按整 blob 推进；解码失败的 blob 被跳过不计入结果。
+// MZONE/SZONE 的空槽写 LEN_EMPTY(4) 标记（ocgapi.cpp query_field_card），
+// 以 nil 占位保持输出条目与槽序号的对齐（client_field.cpp:353-359 同语义）。
 // 截断（len 头大于剩余字节）视为列表结束。
 func decodeQueryBlobList(pbuf *utils.YGOBuffer, maxBlobs int) ([]map[string]interface{}, error) {
 	var out []map[string]interface{}
 	for skipped := 0; maxBlobs == 0 || skipped < maxBlobs; skipped++ {
-		if pbuf.Len() < 8 {
+		if pbuf.Len() < 4 {
 			return out, nil
 		}
 		var clen int32
 		if err := pbuf.Read(&clen); err != nil {
 			return nil, err
+		}
+		if clen == ocgcore.LEN_EMPTY {
+			out = append(out, nil)
+			continue
 		}
 		if clen < ocgcore.LEN_HEADER {
 			return out, nil
@@ -775,24 +781,24 @@ func readNullTerminated16(pbuf *utils.YGOBuffer) (string, error) {
 	return string(body), nil
 }
 
-// parseReloadFieldInfo walks a complete MSG_RELOAD_FIELD message（opcode 起，
-// 与 field.cpp reload_field_info / ocgapi.cpp query_field_info 的输出一致）
-// and returns the decoded fields plus the total bytes consumed — 单机模式拿
-// query_field_info 的固定 256 字节缓冲时，consumed 用来截掉尾部残留。
-func parseReloadFieldInfo(msg []byte) (map[string]interface{}, int, bool) {
-	p := 1
+// parseReloadFieldBody walks a MSG_RELOAD_FIELD body（rule 起，opcode 之后；
+// 布局见 field.cpp reload_field_info / ocgapi.cpp query_field_info 的输出）
+// and returns the decoded fields plus the body bytes consumed — 单机模式拿
+// query_field_info 的固定 256 字节缓冲时，consumed+1 用来截掉尾部残留。
+func parseReloadFieldBody(body []byte) (map[string]interface{}, int, bool) {
+	p := 0
 	u32 := func() (uint32, bool) {
-		if p+4 > len(msg) {
+		if p+4 > len(body) {
 			return 0, false
 		}
-		v := binary.LittleEndian.Uint32(msg[p:])
+		v := binary.LittleEndian.Uint32(body[p:])
 		p += 4
 		return v, true
 	}
-	if p+1 > len(msg) {
+	if p+1 > len(body) {
 		return nil, 0, false
 	}
-	rule := msg[p]
+	rule := body[p]
 	p++
 	players := make([]map[string]interface{}, 2)
 	for pl := 0; pl < 2; pl++ {
@@ -802,38 +808,38 @@ func parseReloadFieldInfo(msg []byte) (map[string]interface{}, int, bool) {
 		}
 		mzone := make([]map[string]interface{}, 7)
 		for i := 0; i < 7; i++ {
-			if p+1 > len(msg) {
+			if p+1 > len(body) {
 				return nil, 0, false
 			}
-			if msg[p] == 0 {
+			if body[p] == 0 {
 				p++
 				continue
 			}
-			if p+3 > len(msg) {
+			if p+3 > len(body) {
 				return nil, 0, false
 			}
-			mzone[i] = map[string]interface{}{"pos": msg[p+1], "overlay": msg[p+2]}
+			mzone[i] = map[string]interface{}{"pos": body[p+1], "overlay": body[p+2]}
 			p += 3
 		}
 		szone := make([]map[string]interface{}, 8)
 		for i := 0; i < 8; i++ {
-			if p+1 > len(msg) {
+			if p+1 > len(body) {
 				return nil, 0, false
 			}
-			if msg[p] == 0 {
+			if body[p] == 0 {
 				p++
 				continue
 			}
-			if p+2 > len(msg) {
+			if p+2 > len(body) {
 				return nil, 0, false
 			}
-			szone[i] = map[string]interface{}{"pos": msg[p+1]}
+			szone[i] = map[string]interface{}{"pos": body[p+1]}
 			p += 2
 		}
-		if p+6 > len(msg) {
+		if p+6 > len(body) {
 			return nil, 0, false
 		}
-		counts := msg[p : p+6]
+		counts := body[p : p+6]
 		p += 6
 		players[pl] = map[string]interface{}{
 			"lp":      int32(lp),
@@ -847,12 +853,12 @@ func parseReloadFieldInfo(msg []byte) (map[string]interface{}, int, bool) {
 			"extraP":  counts[5],
 		}
 	}
-	if p+1 > len(msg) {
+	if p+1 > len(body) {
 		return nil, 0, false
 	}
-	chainCount := int(msg[p])
+	chainCount := int(body[p])
 	p++
-	if p+chainCount*15 > len(msg) {
+	if p+chainCount*15 > len(body) {
 		return nil, 0, false
 	}
 	p += chainCount * 15
@@ -866,11 +872,12 @@ func parseReloadFieldInfo(msg []byte) (map[string]interface{}, int, bool) {
 // decorateReloadField 转换 MSG_RELOAD_FIELD：完整布场快照（谜题重载、
 // 单机/观战中途加入都会出现）。
 func decorateReloadField(c *WailsDuelClient, _ byte, pbuf *utils.YGOBuffer, _ any) error {
-	fields, consumed, ok := parseReloadFieldInfo(pbuf.Bytes())
+	// pbuf 的游标在 opcode 之后，body 从 rule 字节开始
+	fields, consumed, ok := parseReloadFieldBody(pbuf.Bytes())
 	if !ok {
 		return fmt.Errorf("reload field: truncated body")
 	}
-	pbuf.Next(consumed - 1) // opcode 已由 handleGameMessage 消费
+	pbuf.Next(consumed)
 	c.emit("duel:reload_field", fields)
 	return nil
 }
