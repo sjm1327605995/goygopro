@@ -251,11 +251,12 @@ func (c *WailsDuelClient) UpdateDeck(mainList []uint32, sideList []uint32) error
 	deckData.List = append(deckData.List, mainList...)
 	deckData.List = append(deckData.List, sideList...)
 	buf := make([]byte, deckData.SizeOf())
-	data, err := deckData.Pack(buf, binary.LittleEndian)
-	if err != nil {
+	// Pack 的返回值是写完后剩余的缓冲区（与 Unpack 返回剩余字节对称），
+	// 而不是已写入的数据 —— 发包要截 buf 的前 SizeOf 字节。
+	if _, err := deckData.Pack(buf, binary.LittleEndian); err != nil {
 		return err
 	}
-	return c.sendPacket(network.CTOS_UPDATE_DECK, data)
+	return c.sendPacket(network.CTOS_UPDATE_DECK, buf)
 }
 
 // SaveReplay 把最近一次 STOC_REPLAY 的包体原样写入 replayDir/name.yrp

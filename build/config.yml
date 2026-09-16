@@ -1,0 +1,33 @@
+# Dev mode configuration for `wails3 dev` (wired up by the `dev` task in the
+# root Taskfile.yml). Wails watches *.go / *.ts / *.tsx sources; on change it
+# reruns the `blocking` command then restarts the `primary` one. The frontend
+# dev server runs once in the background on the port exported as
+# WAILS_VITE_PORT, and the webview loads from FRONTEND_DEVSERVER_URL.
+version: '3'
+
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 1000
+  ignore:
+    dir:
+      - .git
+      - node_modules
+      - frontend
+      - bin
+    file:
+      - .DS_Store
+      - "*_test.go"
+    watched_extension:
+      - "*.go"
+      - "*.ts"
+      - "*.tsx"
+      - "*.js"
+    git_ignore: true
+  executes:
+    - cmd: wails3 task frontend:dev
+      type: background
+    - cmd: go build -o bin/goygopro-dev.exe ./cmd/wails
+      type: blocking
+    - cmd: ./bin/goygopro-dev.exe
+      type: primary

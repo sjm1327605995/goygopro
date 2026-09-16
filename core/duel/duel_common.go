@@ -6,7 +6,6 @@ import (
 	"log"
 
 	"github.com/duke-git/lancet/v2/condition"
-	"github.com/go-restruct/restruct"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol"
@@ -457,7 +456,10 @@ func unpackDeckData(base *DuelMode, dp *DuelPlayer, pData []byte) (protocol.CTOS
 		return protocol.CTOSDeckData{}, false
 	}
 	var deckBuf protocol.CTOSDeckData
-	if err := restruct.Unpack(pData, binary.LittleEndian, &deckBuf); err != nil {
+	// CTOSDeckData 带变长 List，走它自己的 Unpack（restruct 的反射路径处理
+	// 不了无 struct tag 的变长切片，会解包失败导致卡组被静默丢弃——随后
+	// StartDuel 解引用 nil 的 pDeck 直接 panic）。
+	if _, err := deckBuf.Unpack(pData, binary.LittleEndian); err != nil {
 		log.Printf("[duel] unpack CTOS_UPDATE_DECK: %v", err)
 		return protocol.CTOSDeckData{}, false
 	}

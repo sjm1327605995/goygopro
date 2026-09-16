@@ -170,13 +170,16 @@ func TestStartSingleDrivesPuzzleToWin(t *testing.T) {
 	// 场地同步：对手 mzone 的恶魔的召唤（seq 2）要作为 update_data 到达
 	foundOpponentMonster := false
 	for _, ev := range rec.all("duel:update_data") {
-		m := ev.(map[string]interface{})
-		// map 值是 Go 原生类型（uint8），与未类型化常量比较会因动态类型不同而恒不等
-		if m["player"] != uint8(1) || m["location"] != uint8(0x04) {
+		m := ev.(updateDataDTO)
+		if m.Player != 1 || m.Location != 0x04 {
 			continue
 		}
-		for _, c := range m["cards"].([]map[string]interface{}) {
-			if c["code"] == uint32(70781052) {
+		for _, c := range m.Cards {
+			// 空位（LEN_EMPTY）解码为 nil 占位
+			if c == nil {
+				continue
+			}
+			if c.Code != nil && *c.Code == 70781052 {
 				foundOpponentMonster = true
 			}
 		}
