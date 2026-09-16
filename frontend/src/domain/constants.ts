@@ -55,7 +55,6 @@ export const TYPE_NORMAL = 0x10;
 export const TYPE_EFFECT = 0x20;
 export const TYPE_FUSION = 0x40;
 export const TYPE_RITUAL = 0x80;
-export const TYPE_TRAPMONSTER = 0x100;
 export const TYPE_SPIRIT = 0x200;
 export const TYPE_UNION = 0x400;
 export const TYPE_DUAL = 0x800;
@@ -94,14 +93,11 @@ export const ATTRS = [
   [0x10, '光'], [0x20, '暗'], [0x40, '神'],
 ];
 
-// ---- 引擎 opcode（ocgcore/common.go OPCODE_*）----
-// 值低于操作符区间的都是压栈字面量。
-export const OPCODE_OPERATORS = new Set([
-  0x40000000, 0x40000001, 0x40000002, 0x40000003, 0x40000004, 0x40000005,
-  0x40000006, 0x40000007, 0x40000100, 0x40000101, 0x40000102, 0x40000103,
-  0x40000104,
-]);
-export const OPCODE_ISCODE = 0x40000100;
+// ---- 玩家提示（MSG_PLAYER_HINT；ocgcore/common.go PHINT_*、
+// gframe client_field.h:166 CARD_QUESTION）----
+// CARD_QUESTION 加到本方 → 全场墓地禁查（duelclient.cpp:3757-3768）。
+export const CARD_QUESTION = 38723936;
+export const PHINT_DESC_ADD = 6;
 
 // ---- 引擎阶段码（ocgcore PHASE_*，MSG_NEW_PHASE 的 phase 字段）----
 export const PHASE_DRAW = 0x01;

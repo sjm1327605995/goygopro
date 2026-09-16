@@ -30,7 +30,7 @@ func withConfigDir(t *testing.T, confContent string) {
 func TestLoadConfigDefaults(t *testing.T) {
 	withConfigDir(t, "")
 	app := NewApp()
-	cfg := app.LoadConfig()
+	cfg := app.loadConfig()
 	if cfg.AutoSpellPos != 1 || cfg.DrawFieldSpell != 1 || cfg.SeparateClearButton != 1 {
 		t.Fatalf("原版默认开启项错误: %+v", cfg)
 	}
@@ -80,7 +80,7 @@ func TestLoadConfigParsesOriginalKeys(t *testing.T) {
 	}, "\n")
 	withConfigDir(t, conf)
 	app := NewApp()
-	cfg := app.LoadConfig()
+	cfg := app.loadConfig()
 
 	if cfg.Nickname != "海马瀬人" || cfg.LastDeck != "青眼卡组" || cfg.LastCategory != "环境" {
 		t.Fatalf("字符串键解析错误: %+v", cfg)
@@ -109,7 +109,7 @@ func TestLoadConfigParsesOriginalKeys(t *testing.T) {
 func TestLoadConfigLegacyDefaultOTKey(t *testing.T) {
 	withConfigDir(t, "defaultOT = 4\n")
 	app := NewApp()
-	if cfg := app.LoadConfig(); cfg.DefaultOT != 4 {
+	if cfg := app.loadConfig(); cfg.DefaultOT != 4 {
 		t.Fatalf("defaultOT 兼容键应可读，DefaultOT=%d", cfg.DefaultOT)
 	}
 }
@@ -125,7 +125,7 @@ func TestSaveConfigMergesAndPersists(t *testing.T) {
 	})
 
 	// 回读：未提及的键（volume=30 之外的其它默认值）必须保留
-	cfg := app.LoadConfig()
+	cfg := app.loadConfig()
 	if cfg.Nickname != "新昵称" || cfg.SoundVolume != 75 || cfg.HideSetName != 1 {
 		t.Fatalf("落盘回读不一致: %+v", cfg)
 	}

@@ -21,6 +21,7 @@ node_modules/
 frontend/node_modules/
 dist/
 frontend/dist/
+frontend/smoke-dist/
 
 # OS
 .DS_Store

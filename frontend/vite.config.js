@@ -32,5 +32,12 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('libs/three.module.js')) return 'three';
+        },
+      },
+    },
   },
 });

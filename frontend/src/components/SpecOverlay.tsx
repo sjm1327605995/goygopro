@@ -58,11 +58,11 @@ export default function SpecOverlay() {
     const onChainNegated = () => push('negated', lastChainCode.current);
     const onTossCoin = (d: any) => {
       const faces = (d.results || []).map((r: number) => (r ? '正面' : '反面'));
-      showAc(`硬币抛掷结果：[ ${faces.join(' ] [ ')} ]`);
+      showAc(`投掷硬币结果：[ ${faces.join(' ] [ ')} ]`);
     };
     const onTossDice = (d: any) => {
       const rolls = (d.results || []).join(' ] [ ');
-      showAc(`骰子点数：[ ${rolls} ]`);
+      showAc(`投掷骰子结果：[ ${rolls} ]`);
     };
 
     eventBus.on('duel:summoning', onSummoning);

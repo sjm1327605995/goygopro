@@ -1,14 +1,14 @@
 /* ==================================================================
-   gframe 窗口皮肤 — 按 docs/layout_prototype.html 与
-   docs/main_menu_layout.html 原型规格实现（.yg-* 规格）：
+   gframe 窗口皮肤 — 按 docs/layout_prototype.html 原型规格实现
+   （.yg-* 规格；主菜单同此文件第 1 节 wMainMenu，不再另用
+   docs/main_menu_layout.html 的旧规格）：
    - 窗口体：银灰渐变 #d0d0d0→#c0c0c0、2px solid #808080、
      阴影 0 4px 12px rgba(0,0,0,0.4)
    - 标题栏：24px 高、深蓝渐变 #4a6fa5→#2a4a7a、白字 12px 左对齐
-     （主菜单专用：26px、文字居中、text-shadow）
    - 按钮：26px 高三段金属渐变 #e8e8e8→#c8c8c8(50%)→#b0b0b0、
      border #888、radius 2px、inset 高光 + 外阴影
    - 输入：22px 高、border #888、白底、padding 0 4px、font 12
-   - 窗口定位：水平居中 + 顶部留白（mainmenu 18vh / lan 25% /
+   - 窗口定位：水平居中 + 顶部留白（mainmenu 20% / lan 25% /
      create 22% / prepare 28%）
    ================================================================== */
 
@@ -130,32 +130,26 @@
 }
 
 /* ---- 各窗口的固定宽度与顶部留白（docs 原型规格表） ---- */
-.gfw-mainmenu { width: 320px; top: 18vh; }              /* 320 × 约220，18% 顶部留白 */
+.gfw-mainmenu { width: 320px; height: 210px; top: 20%; }    /* 320 × 210（标题栏24+内容区186），20% 顶部留白 */
 .gfw-lan      { width: 580px; top: 25%; }                /* 580 × 约380，25% 顶部留白 */
-.gfw-create   { width: 400px; top: 22%; }                /* 400 × 约400，22% 顶部留白 */
+.gfw-create   { width: 400px; height: 400px; top: 22%; }    /* 400 × 400（底部主机名称/密码+确定/取消 贴底），22% 顶部留白 */
 .gfw-prepare  { width: 480px; top: 28%; }                /* 480 × 约320，28% 顶部留白 */
 .gfw-replay   { width: 580px; height: 420px; top: 20%; } /* wReplay 内部为绝对定位，需固定高 */
 .gfw-single   { width: 580px; height: 420px; top: 20%; } /* wSinglePlay 同上 */
 
-/* ---- 主菜单专用（docs/main_menu_layout.html）：标题居中 26px、按钮 32px ---- */
-.gfw-mainmenu .gfw-title {
-  height: 26px;
-  font-size: 13px;
-  justify-content: center;
-  padding-left: 0;
-  text-shadow: 1px 1px 0 #000;
-}
+/* ---- 主菜单专用（docs/layout_prototype.html 第 1 节 wMainMenu）：按钮 296×30 ----
+        标题栏用基础样式（24px 左对齐），不再覆写 */
 .gfw-mainmenu .gfw-btn {
-  height: 32px;
-  font-size: 14px;
+  height: 30px;
+  font-size: 13px;
   width: 100%; /* 内容区 padding 12px → 296px 宽 */
 }
 
-/* 窗口内按钮纵排（主菜单 5 键：间距 6px） */
+/* 窗口内按钮纵排（主菜单 5 键：间距 5px） */
 .gfw-col {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 /* ---- 老类名在窗口内的原型化（冒烟契约依赖 .form-input/.form-select/.btn 类名，
@@ -187,8 +181,8 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 .gfw-mainmenu .btn {
-  height: 32px;
-  font-size: 14px;
+  height: 30px;
+  font-size: 13px;
 }
 
 /* modal-box 与 gfw-window 叠用时归零内距（设置面板走 position:static 内联覆盖） */

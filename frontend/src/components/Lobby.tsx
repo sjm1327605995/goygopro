@@ -21,15 +21,15 @@ const EMPTY_SEAT = (): PlayerSeat => ({ name: '', status: '等待玩家加入...
 //             MASTER_RULE_2020=5（服务端按 DuelFlag<<16 透传给 ocgcore）
 //   mode:     network.h MODE_SINGLE=0 / MODE_MATCH=1 / MODE_TAG=2
 const DUEL_RULES: { value: number; label: string }[] = [
-  { value: 5, label: '大师规则 2020 (MR5)' },
-  { value: 4, label: '新大师规则 (NMR)' },
-  { value: 3, label: '大师规则 3' },
+  { value: 5, label: '大师规则（2020）' },
+  { value: 4, label: '新大师规则（2017）' },
+  { value: 3, label: '大师规则３' },
 ];
 
 const DUEL_MODES: { value: number; label: string }[] = [
-  { value: 0, label: '单局赛（1 局）' },
-  { value: 1, label: '比赛赛（三局两胜）' },
-  { value: 2, label: '组队赛（2 对 2）' },
+  { value: 0, label: '单局模式' },
+  { value: 1, label: '比赛模式' },
+  { value: 2, label: 'ＴＡＧ' },
 ];
 
 // 卡片允许（SysString 1481+rule）：OCG/TCG/简体中文/自定义卡片
@@ -522,7 +522,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
         <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {/* 昵称行：昵称 + 输入框 + 建立主机（80px） */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span className="gfw-label" style={{ width: '40px', flexShrink: 0 }}>昵称:</span>
+            <span className="gfw-label" style={{ width: '40px', flexShrink: 0 }}>昵称：</span>
             <input
               id="lobby-nickname"
               className="gfw-input form-input"
@@ -552,7 +552,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
           <div style={{ display: 'flex', gap: '8px' }}>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span className="gfw-label" style={{ width: '60px', flexShrink: 0 }}>主机信息:</span>
+                <span className="gfw-label" style={{ width: '60px', flexShrink: 0 }}>主机信息：</span>
                 <input
                   id="lobby-join-host"
                   className="gfw-input form-input"
@@ -571,7 +571,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
                 />
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span className="gfw-label" style={{ width: '60px', flexShrink: 0 }}>主机密码:</span>
+                <span className="gfw-label" style={{ width: '60px', flexShrink: 0 }}>主机密码：</span>
                 <input
                   id="lobby-host-pass"
                   className="gfw-input form-input"
@@ -589,7 +589,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
           </div>
           {/* 本地服务器（docs 原型无此项；本地无发现协议，保留功能入口） */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderTop: '1px solid #aaa', paddingTop: '6px' }}>
-            <span className="gfw-label" style={{ width: '60px', flexShrink: 0 }}>本地端口:</span>
+            <span className="gfw-label" style={{ width: '60px', flexShrink: 0 }}>本地端口：</span>
             <input
               id="lobby-local-port"
               className="gfw-input form-input"
@@ -608,11 +608,11 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
               主机密码，右 80px 列 确定/取消）---- */}
       <div
         className="gfw-window gfw-create room-create-panel"
-        style={{ display: showCreate ? 'block' : 'none' }}
+        style={{ display: showCreate ? 'flex' : 'none', flexDirection: 'column' }}
       >
         <div className="gfw-title">建立主机</div>
-        <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          {row('禁限卡表:', (
+        <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '5px', flex: 1, boxSizing: 'border-box' }}>
+          {row('禁限卡表：', (
             <select
               id="lobby-lflist-select"
               className="gfw-select form-select"
@@ -623,7 +623,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
               {lfLists.map((l) => <option key={l.hash} value={l.hash}>{l.name}</option>)}
             </select>
           ))}
-          {row('卡片允许:', (
+          {row('卡片允许：', (
             <select
               id="lobby-rule-select"
               className="gfw-select form-select"
@@ -634,7 +634,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
               {CARD_RULES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           ))}
-          {row('决斗模式:', (
+          {row('决斗模式：', (
             <select
               id="lobby-duel-mode-select"
               className="gfw-select form-select"
@@ -645,7 +645,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
               {DUEL_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
           ))}
-          {row('每回合时间:', (
+          {row('每回合时间：', (
             <input
               id="lobby-timelimit"
               className="gfw-input form-input"
@@ -657,7 +657,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
           ))}
           {/* 额外选项提示（docs 原型：灰色小字） */}
           <div style={{ fontSize: '11px', color: '#666', padding: '2px 0 2px 96px' }}>↓额外选项（无特殊要求请勿修改）</div>
-          {row('规则:', (
+          {row('规则：', (
             <select
               id="lobby-duel-rule-select"
               className="gfw-select form-select"
@@ -678,22 +678,23 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
               不洗切卡组
             </label>
           </div>
-          {row('初始基本分:', (
+          {row('初始基本分：', (
             <input id="lobby-startlp" className="gfw-input form-input" type="number" style={{ width: '60px', flexShrink: 0, textAlign: 'center' }} value={startLp} onChange={(e) => setStartLp(e.target.value)} />
           ))}
-          {row('初始手卡数:', (
+          {row('初始手卡数：', (
             <input id="lobby-starthand" className="gfw-input form-input" type="number" style={{ width: '60px', flexShrink: 0, textAlign: 'center' }} value={startHand} onChange={(e) => setStartHand(e.target.value)} />
           ))}
-          {row('每回合抽卡:', (
+          {row('每回合抽卡：', (
             <input id="lobby-drawcount" className="gfw-input form-input" type="number" style={{ width: '60px', flexShrink: 0, textAlign: 'center' }} value={drawCount} onChange={(e) => setDrawCount(e.target.value)} />
           ))}
-          {/* 底部：左 主机名称/主机密码，右 80px 列 确定/取消（border-top 分隔） */}
+          {/* 底部贴底（docs 原型 flex:1 占位 spacer）：左 主机名称/主机密码，右 80px 列 确定/取消（border-top 分隔） */}
+          <div style={{ flex: 1 }} />
           <div style={{ display: 'flex', gap: '8px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #aaa' }}>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {row('主机名称:', (
+              {row('主机名称：', (
                 <input id="lobby-room-name" className="gfw-input form-input" type="text" style={{ flex: 1 }} value={roomName} onChange={(e) => setRoomName(e.target.value)} />
               ))}
-              {row('主机密码:', (
+              {row('主机密码：', (
                 <input id="lobby-room-pass" className="gfw-input form-input" type="text" style={{ flex: 1 }} value={roomPass} onChange={(e) => setRoomPass(e.target.value)} />
               ))}
             </div>
@@ -722,7 +723,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
               {seatRow(0)}
               {seatRow(1)}
               {isObserver ? (
-                <button id="lobby-to-duelist" className="gfw-btn btn" style={{ marginTop: '4px' }} onClick={backToDuelist}>转为决斗者</button>
+                <button id="lobby-to-duelist" className="gfw-btn btn" style={{ marginTop: '4px' }} onClick={backToDuelist}>→决斗者</button>
               ) : (!isHost && inRoom) ? (
                 <button id="lobby-watch-btn" className="gfw-btn btn" style={{ marginTop: '4px' }} onClick={watchAsObserver}>→观战</button>
               ) : null}
@@ -750,7 +751,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
                 </div>
               ) : null}
               <div style={{ borderTop: '1px solid #888', margin: '4px 0' }} />
-              <div>当前观战人数: <span id="lobby-watch-count">{watchCount}</span></div>
+              <div>当前观战人数：<span id="lobby-watch-count">{watchCount}</span></div>
               {inRoom && !isObserver ? (
                 <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'center' }}>
                   <button className="gfw-btn btn" style={{ width: '100px' }} onClick={toggleReady}>
@@ -763,7 +764,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
           {/* 卡组选择：分类 + 具体卡组 两下拉（观战者无卡组操作） */}
           {!isObserver ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-              <span className="gfw-label" style={{ width: '60px', flexShrink: 0 }}>卡组选择:</span>
+              <span className="gfw-label" style={{ width: '60px', flexShrink: 0 }}>卡组选择：</span>
               <select
                 id="lobby-deck-category"
                 className="gfw-select form-select"

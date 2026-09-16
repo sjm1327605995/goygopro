@@ -19,9 +19,6 @@ func (d *DuelPlayer) GetID() string {
 func (d *DuelPlayer) SetID(id string) {
 	d.ID = id
 }
-func (d *DuelPlayer) Disconnect() {
-	d.Conn.Close()
-}
 
 func (d *DuelPlayer) Write(data []byte) (int, error) {
 	return d.Conn.Write(data)

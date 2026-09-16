@@ -89,19 +89,19 @@ export default function PhaseStrip() {
             className={`phase-btn${canBP ? ' actionable' : ''}`}
             disabled={!canBP}
             onClick={onBP}
-          >战斗</button>
+          >ＢＰ</button>
           <button
             id="phase-btn-m2"
             className={`phase-btn${canM2 ? ' actionable' : ''}`}
             disabled={!canM2}
             onClick={onM2}
-          >M2</button>
+          >Ｍ２</button>
           <button
             id="phase-btn-ep"
             className={`phase-btn${canEP ? ' actionable' : ''}`}
             disabled={!canEP}
             onClick={onEP}
-          >结束</button>
+          >ＥＰ</button>
         </div>
       )}
       {banner ? (

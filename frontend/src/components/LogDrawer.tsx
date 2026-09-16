@@ -20,7 +20,7 @@ export default function LogDrawer() {
   return (
     <div className="duel-log-drawer">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-        <span style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '13px' }}>决斗日志</span>
+        <span style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '13px' }}>消息记录</span>
       </div>
       <div id="duel-log-list" className="log-messages" ref={listRef}>
         {log.map((e) => (

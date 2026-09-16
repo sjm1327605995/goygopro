@@ -278,7 +278,7 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
         <div className="gfw-body" style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px', height: '392px', boxSizing: 'border-box' }}>
           {/* 上半：左列表 + 右信息（lstReplayList + stReplayInfo/ebRepStartTurn） */}
           <div style={{ flex: 1, display: 'flex', gap: '10px', minHeight: 0 }}>
-            <div id="replay-list" className="gfw-list" style={{ width: '280px', flexShrink: 0 }}>
+            <div id="replay-list" className="gfw-list" style={{ width: '340px', flexShrink: 0 }}>
               {replays.length === 0 && (
                 <div className="gfw-list-item" style={{ color: '#8a8a8a' }}>（没有录像文件）</div>
               )}
@@ -317,11 +317,11 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
                 style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', background: '#e2f0d9', border: '1px solid #4c7a3f', color: '#1e4620', fontSize: '12px', padding: '2px 10px' }}
               >{toast}</span>
             )}
-            <button id="replay-export-btn" className="gfw-btn btn" style={{ width: '90px' }} onClick={exportDeck} disabled={!selected}>提取卡组</button>
+            <button id="replay-export-btn" className="gfw-btn btn" style={{ width: '100px' }} onClick={exportDeck} disabled={!selected}>提取卡组</button>
             <button id="replay-load-btn" className="gfw-btn btn" style={{ width: '100px' }} onClick={loadReplay} disabled={!selected}>载入录像</button>
-            <button id="replay-delete-btn" className="gfw-btn btn" style={{ width: '90px' }} onClick={deleteReplay} disabled={!selected}>删除</button>
-            <button id="replay-rename-btn" className="gfw-btn btn" style={{ width: '90px' }} onClick={renameReplay} disabled={!selected}>重命名</button>
-            <button className="gfw-btn btn" style={{ width: '70px' }} onClick={() => { pause(); onNavigate('menu'); }}>退出</button>
+            <button id="replay-delete-btn" className="gfw-btn btn" style={{ width: '100px' }} onClick={deleteReplay} disabled={!selected}>删除录像</button>
+            <button id="replay-rename-btn" className="gfw-btn btn" style={{ width: '100px' }} onClick={renameReplay} disabled={!selected}>重命名</button>
+            <button className="gfw-btn btn" style={{ width: '100px' }} onClick={() => { pause(); onNavigate('menu'); }}>退出</button>
           </div>
 
           {truncated && (

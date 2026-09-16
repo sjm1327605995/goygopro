@@ -332,11 +332,6 @@ export const WailsBridge = {
     else console.log("[MockBridge] SendResponseI:", val);
   },
 
-  sendResponseB(bytes: number[]) {
-    if (isWails) callWails("SendResponseB", bytes);
-    else console.log("[MockBridge] SendResponseB:", bytes);
-  },
-
   // ---- 语义化响应：字节编码在 Go 侧（responses.go），前端只发语义参数 ----
 
   respondSelectCard(indices: number[]) {

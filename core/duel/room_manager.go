@@ -51,15 +51,6 @@ func (m *Manager) RemoveRoom(roomID string) {
 	m.rooms.Remove(roomID)
 }
 
-// CurrentRoom 获取当前第一个可用房间
-// C++ 语义：NetServer::duel_mode 是唯一的房间。Go 中多房间时返回第一个。
-func (m *Manager) CurrentRoom() *Room {
-	for _, room := range m.rooms.Items() {
-		return room
-	}
-	return nil
-}
-
 // AllRooms 获取所有房间
 func (m *Manager) AllRooms() map[string]*Room {
 	return m.rooms.Items()

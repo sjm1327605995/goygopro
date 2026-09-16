@@ -56,11 +56,11 @@ func HandleCreateGame(c *PacketContext) {
 	var mode IDuelMode
 	switch pkt.Info.Mode {
 	case MODE_SINGLE:
-		mode = &SingleDuel{Observers: make(map[string]*DuelPlayer)}
+		mode = newSingleDuel(false)
 	case MODE_MATCH:
-		mode = &SingleDuel{Observers: make(map[string]*DuelPlayer), MatchMode: true}
+		mode = newSingleDuel(true)
 	case MODE_TAG:
-		mode = &TagDuel{Observers: make(map[string]*DuelPlayer)}
+		mode = newTagDuel()
 	default:
 		return
 	}
@@ -88,7 +88,12 @@ func HandleCreateGame(c *PacketContext) {
 	mode.BaseMode().RoomID = roomId
 
 	c.Player.Game = room.DuelMode
+	// create 未挂 RoomLockMiddleware（RequireNotInGame 保证进来时 c.Game()==nil，
+	// 该中间件是 no-op），而 JoinGame 写房间的共享玩家表，需显式持锁，
+	// 避免 --multicore=true 下与并发加入者竞争。
+	room.DuelMode.BaseMode().Mu.Lock()
 	c.Player.Game.JoinGame(c.Player, nil, true)
+	room.DuelMode.BaseMode().Mu.Unlock()
 }
 
 // --------------------------------------------------
@@ -105,7 +110,11 @@ func HandleJoinGame(c *PacketContext) {
 	}
 
 	c.Player.Game = room.DuelMode
+	// join 同理未挂 RoomLockMiddleware（RequireNotInGame 保证进来时 c.Game()==nil），
+	// JoinGame 写房间共享玩家表需显式持锁。
+	room.DuelMode.BaseMode().Mu.Lock()
 	c.Player.Game.JoinGame(c.Player, pkt, false)
+	room.DuelMode.BaseMode().Mu.Unlock()
 }
 
 // --------------------------------------------------

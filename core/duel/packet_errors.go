@@ -3,18 +3,23 @@ package duel
 import "fmt"
 
 // --------------------------------------------------
-// 统一错误码（与 network.go 中的 ERRMSG_* 对应）
+// 统一内部错误码
+//
+// 注意：这些码是服务端内部的分类码（0x10-0x18），与协议层 network.ERRMSG_*
+// （0x1-0x4，客户端据此弹对应文案）不是一回事。只有能映射到 ERRMSG_* 的错误
+// 才会经 SendError 上报客户端（见 packet_context.go errmsgCode），其余协议
+// 违例类错误与原版 netserver 一样只服务端处理、不回复。
 // --------------------------------------------------
 const (
-	ErrBadRequest      uint8 = 0x10 // 通用非法请求
-	ErrPayloadTooShort uint8 = 0x11 // Payload 长度不足
-	ErrBindFailed      uint8 = 0x12 // 数据解析失败
-	ErrNotInGame       uint8 = 0x13 // 不在游戏中
-	ErrDuelNotStarted  uint8 = 0x14 // 决斗未开始
+	ErrBadRequest         uint8 = 0x10 // 通用非法请求
+	ErrPayloadTooShort    uint8 = 0x11 // Payload 长度不足
+	ErrBindFailed         uint8 = 0x12 // 数据解析失败
+	ErrNotInGame          uint8 = 0x13 // 不在游戏中
+	ErrDuelNotStarted     uint8 = 0x14 // 决斗未开始
 	ErrDuelAlreadyStarted uint8 = 0x15 // 决斗已开始
-	ErrInvalidState    uint8 = 0x16 // 状态非法
-	ErrAlreadyInGame   uint8 = 0x17 // 已在游戏中
-	ErrObserverNotAllowed uint8 = 0x18 // 观战者不允许
+	ErrInvalidState       uint8 = 0x16 // 状态非法
+	ErrAlreadyInGame      uint8 = 0x17 // 已在游戏中
+	ErrJoinFailed         uint8 = 0x18 // 加入房间失败（映射 ERRMSG_JOINERROR）
 )
 
 // PacketError 是统一错误类型
@@ -76,5 +81,5 @@ func ErrAlreadyInGameAction() *PacketError {
 }
 
 func ErrJoinError() *PacketError {
-	return NewPacketError(ErrNotInGame, "room not found or join error")
+	return NewPacketError(ErrJoinFailed, "room not found or join error")
 }

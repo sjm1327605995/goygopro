@@ -27,7 +27,7 @@ const TYPE_SEGMENTS: [number, string][] = [
   [TYPE_UNION, '同盟'], [TYPE_DUAL, '二重'],
 ];
 
-export function typeLabel(type: number): string {
+function typeLabel(type: number): string {
   return TYPE_SEGMENTS
     .filter(([bit]) => (type & bit) !== 0)
     .map(([, label]) => label)
@@ -86,11 +86,11 @@ export default function CardPreviewPanel() {
           <Tabs.Trigger
             value="info"
             className={`preview-tab${tab === 'info' ? ' active' : ''}`}
-          >信息</Tabs.Trigger>
+          >卡片信息</Tabs.Trigger>
           <Tabs.Trigger
             value="log"
             className={`preview-tab${tab === 'log' ? ' active' : ''}`}
-          >日志</Tabs.Trigger>
+          >消息记录</Tabs.Trigger>
         </Tabs.List>
         {tab === 'info' ? (
           <Tabs.Content value="info" id="preview-info" className="preview-info">

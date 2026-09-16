@@ -72,7 +72,7 @@ export default function SideDecking() {
         </select>
         {error && <div className="side-decking-error">{error}</div>}
         <button id="side-deck-confirm" className="btn btn-gold" disabled={waiting || !picked} onClick={confirm}>
-          {waiting ? '等待对手...' : '确认卡组'}
+          {waiting ? '等待更换副卡组中...' : '副卡组更换完成'}
         </button>
       </div>
     </div>

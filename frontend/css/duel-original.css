@@ -151,8 +151,10 @@
   top: 8px;
 }
 
+/* 当前回合方的整块背景框（drawing.cpp:582-588：0xa0000000 填充 + 0xffff8080 红描边） */
 .player-state-panel.is-turn {
-  filter: drop-shadow(0 0 4px rgba(255, 230, 106, 0.55));
+  background: rgba(0, 0, 0, 0.63);
+  border: 1px solid #ff8080;
 }
 
 /* 原版名字画在 LP 条下方；DOM 顺序不变，用 flex order 调整 */
@@ -199,14 +201,52 @@
 }
 
 .lp-fill {
+  position: relative;
   height: 100%;
   background: url('/textures/lp.png') repeat-x center / auto 100%;
   transition: width 0.4s ease;
 }
 
+/* LP 超过初始值时的底层满条（分层配色，见 PlayerPanel lpBarLayers） */
+.lp-fill.lp-fill-bg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  transition: none;
+}
+
 /* 原版对手的条从右往左收缩 */
 #opponent-panel .lp-fill {
   margin-left: auto;
+}
+
+#opponent-panel .lp-fill.lp-fill-bg {
+  margin-left: 0;
+  left: auto;
+  right: 0;
+}
+
+/* 时限条（drawing.cpp:637-642：100px 宽灰条 + 白描边；对手从右往左缩） */
+.time-limit-bar {
+  order: 1;
+  position: relative;
+  height: 10px;
+  width: 100px;
+  margin: 1px auto 0;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid #ffffff;
+  display: flex;
+}
+
+#opponent-panel .time-limit-bar {
+  justify-content: flex-end;
+}
+
+.time-limit-fill {
+  height: 100%;
+  background: linear-gradient(180deg, rgba(224, 224, 224, 0.63), rgba(192, 192, 192, 0.63));
 }
 
 .lp-value {
@@ -215,10 +255,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ffe000;
+  color: #ffff00;
   font-weight: 700;
   font-size: 15px;
-  text-shadow: 1px 1px 2px #000;
+  text-shadow: 1px 1px 0 #000, 2px 1px 2px #000;
   z-index: 1;
 }
 
@@ -624,6 +664,27 @@
 }
 
 .surrender-btn:hover { border-color: #ff6a6a; color: #ffd0d0; }
+
+/* 观战者的 btnLeaveGame（duelclient.cpp:653-656 SysString 1350「离开」） */
+.leave-game-btn {
+  width: 88px;
+  padding: 7px 0;
+  background: #2a2a3a;
+  color: #c8c8e0;
+  border: 1px solid #5a5a7a;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.leave-game-btn:hover { border-color: #9a9aff; color: #e0e0ff; }
+
+/* 原版 DrawSelectionLine 的黄色高亮（0xffffff00）：组队赛队友已请求投降时
+   btnLeaveGame 常亮黄框提醒（drawing.cpp:579-580） */
+.btn-hint-glow {
+  outline: 2px solid #ffff00;
+  outline-offset: 2px;
+}
 
 /* 投降两步确认（原版 wSurrender 弹窗） */
 .surrender-confirm {

@@ -17,6 +17,7 @@ import { duelStore } from '../src/duel/store.ts';
 import PromptHost from '../src/components/PromptHost.tsx';
 import HintBar from '../src/components/HintBar.tsx';
 import LogDrawer from '../src/components/LogDrawer.tsx';
+import RightControls from '../src/components/RightControls.tsx';
 // 弹窗原版样式（视觉断言需要真样式表）
 import '../css/style.css';
 import '../css/duel-original.css';
@@ -42,12 +43,16 @@ WailsBridge.respondBattleCmd = (idx, cmdType) => { responses.push({ kind: 'battl
 WailsBridge.getCardImage = async (code) => ({ url: `/textures/cover.jpg#${code}`, full: false });
 
 // React mounts the prompt host + hint bar + log drawer (all store-driven).
+const observerLeaves = [];
+const leaveSends = [];
+WailsBridge.leaveGame = () => leaveSends.push(1);
 const root = createRoot(document.getElementById('root'));
 root.render(
   <React.Fragment>
     <PromptHost />
     <HintBar />
     <LogDrawer />
+    <RightControls onLeaveObserver={() => observerLeaves.push(1)} />
   </React.Fragment>
 );
 
@@ -206,8 +211,8 @@ const run = async () => {
   const hintBar = () => document.getElementById('hint-bar');
   eventBus.emit('duel:waiting', {});
   await waitFor(() => hintBar().style.display === 'block' && hintBar().innerText.includes('等待'));
-  assert('waitingHint', hintBar().innerText.includes('等待对方行动中')
-    && duelStore.getState().hint === '等待对方行动中...');
+  assert('waitingHint', hintBar().innerText.includes('等待行动中')
+    && duelStore.getState().hint === '等待行动中...');
 
   // ---- MSG_ROCK_PAPER_SCISSORS: f1=石头→1 f2=剪刀→2 f3=布→3（gframe
   // event_handler.cpp:33，出拳值与 STOC 选择手牌同套）；弹窗打开时提示条隐藏 ----
@@ -362,8 +367,9 @@ const run = async () => {
   assert('effectynResponse', r.kind === 'I' && r.v === 1, JSON.stringify(r));
   WailsBridge.resolveDesc = async () => '';
 
-  // ---- 选满闪黄：max=2 选 1 张时确认钮可用但不闪，选满 2 张后加
-  // .btn-flash-gold（原版确认按钮 selected==max 的 gold 提示动画） ----
+  // ---- 满足最少张数即闪黄（原版 select_ready 高亮，drawing.cpp:577：
+  //    btnCancelOrFinish && select_ready → 黄色 selection line；
+  //    select_ready = 已选 ≥ select_min，duelclient.cpp:1574）----
   eventBus.emit('duel:select_card', {
     player: 0, cancelable: false, min: 1, max: 2,
     cards: [
@@ -373,13 +379,15 @@ const run = async () => {
   });
   await waitForModal('.card-tile');
   const flashConfirm = () => overlay().querySelector('#modal-select-confirm');
+  assert('unselectedNotFlashing', !flashConfirm().classList.contains('btn-flash-gold'),
+    flashConfirm().className);
   overlay().querySelectorAll('.card-tile')[0].click();
-  await waitFor(() => flashConfirm() && !flashConfirm().disabled);
-  assert('partialSelectNotFlashing', !flashConfirm().classList.contains('btn-flash-gold'),
+  await waitFor(() => flashConfirm().classList.contains('btn-flash-gold'));
+  assert('selectReadyFlashesAtMin', flashConfirm().classList.contains('btn-flash-gold'),
     flashConfirm().className);
   overlay().querySelectorAll('.card-tile')[1].click();
   await waitFor(() => flashConfirm().classList.contains('btn-flash-gold'));
-  assert('fullSelectFlashes', flashConfirm().classList.contains('btn-flash-gold'));
+  assert('fullSelectStillFlashes', flashConfirm().classList.contains('btn-flash-gold'));
   flashConfirm().click();
   r = await waitResp();
   await waitModalClosed();
@@ -534,6 +542,23 @@ const run = async () => {
   assert('engineHintShown', hintBar().style.display === 'block'
     && hintBar().innerText.includes('效果提示文本'));
   WailsBridge.resolveDesc = async () => '';
+
+  // ---- 波 4：观战者 btnLeaveGame（duelclient.cpp:653-656）+ 队友投降高亮 ----
+  assert('duelistShowsSurrender', !!document.getElementById('surrender-btn'));
+  eventBus.emit('stoc:teammate_surrender', {});
+  await waitFor(() => document.getElementById('surrender-btn').textContent.includes('1/2'));
+  assert('teammateSurrenderLabel', true);
+  // MSG_START playertype 高 4 位非 0 = 观战者视角（duelclient.cpp:1269-1270）
+  eventBus.emit('duel:start', { playerType: 0x10, lp0: 8000, lp1: 8000 });
+  await waitFor(() => !!document.getElementById('leave-game-btn'));
+  assert('observerShowsLeaveGame', !document.getElementById('surrender-btn')
+    && document.getElementById('leave-game-btn').textContent === '离开',
+    document.getElementById('leave-game-btn') && document.getElementById('leave-game-btn').textContent);
+  // 队友投降时 btnLeaveGame 常亮黄框（drawing.cpp:579-580 DrawSelectionLine）
+  assert('observerLeaveGlow', document.getElementById('leave-game-btn').classList.contains('btn-hint-glow'));
+  document.getElementById('leave-game-btn').click();
+  await waitFor(() => leaveSends.length === 1 && observerLeaves.length === 1);
+  assert('observerLeaveSends', leaveSends.length === 1 && observerLeaves.length === 1);
 
   window.__promptsSmoke.checks = checks;
   window.__promptsSmoke.ready = true;

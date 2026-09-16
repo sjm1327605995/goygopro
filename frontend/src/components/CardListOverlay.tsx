@@ -23,8 +23,8 @@ export interface ShowPileEvent {
 const PILE_LABEL: Record<ShowPile, string> = {
   grave: '墓地',
   banish: '除外',
-  extra: '额外卡组',
-  overlay: '超量素材',
+  extra: '额外',
+  overlay: '叠放',
 };
 
 export default function CardListOverlay() {

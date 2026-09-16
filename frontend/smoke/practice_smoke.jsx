@@ -163,15 +163,15 @@ window.__practiceSmoke = { field, manager, aiSimulator, store: duelStore, transc
 
   // ---- UI-driven action: click Pot of Greed in the hand dock → the 2D
   // action popup offers what the engine's idle command allows (activate +
-  // set) → clicking 发动效果 answers RespondIdleCmd(idx, 5) AND drives the
+  // set) → clicking 发动 answers RespondIdleCmd(idx, 5) AND drives the
   // simulator's real activation (draw 2). ----
   document.querySelector('#hand-cards-dock .hand-card-item[data-code="55144522"]').click();
   await waitFor(() => popup().querySelectorAll('.action-btn').length >= 1);
   const popupLabels = [...popup().querySelectorAll('.action-btn')].map((b) => b.innerText);
-  checks.popupOffersEngineActions = popupLabels.includes('发动效果') && popupLabels.includes('盖卡')
-    && !popupLabels.includes('通常召唤'); // level-8 monsters get no 通常召唤
+  checks.popupOffersEngineActions = popupLabels.includes('发动') && popupLabels.includes('盖放')
+    && !popupLabels.includes('召唤'); // level-8 monsters get no 召唤（原版 1151）
   [...popup().querySelectorAll('.action-btn')]
-    .find((b) => b.innerText === '发动效果').click();
+    .find((b) => b.innerText === '发动').click();
   const potPrompt = nextEvent('duel:select_idlecmd'); // re-prompt after the chain resolves
   await waitFor(() => state().hand.length === 6); // 5 − Pot itself + two draws
   await potPrompt;
@@ -179,7 +179,7 @@ window.__practiceSmoke = { field, manager, aiSimulator, store: duelStore, transc
   checks.potDrewTwo = state().hand.length === 6 && emitted('duel:chaining');
 
   // Player summons Blue-Eyes face-up through the same entry point the popup
-  // uses (handlePlayerAction). The rules-correct popup only offered 盖放怪兽
+  // uses (handlePlayerAction). The rules-correct popup only offered 盖放
   // for a level-8 monster, but the practice simulator honors the summon
   // action directly — that keeps the battle-phase path testable.
   const rePrompt = nextEvent('duel:select_idlecmd');

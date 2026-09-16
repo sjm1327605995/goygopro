@@ -13,6 +13,7 @@ type ErrorHandler func(message string)
 type Duel struct {
 	duelPtr      uintptr
 	buffer       []byte
+	errorMu      sync.Mutex
 	errorHandler ErrorHandler
 }
 
@@ -98,7 +99,9 @@ func newDuel(duelPtr uintptr) *Duel {
 
 // SetErrorHandler 设置错误处理器
 func (d *Duel) SetErrorHandler(handler ErrorHandler) {
+	d.errorMu.Lock()
 	d.errorHandler = handler
+	d.errorMu.Unlock()
 }
 
 // InitPlayers 初始化玩家
@@ -149,21 +152,10 @@ func (d *Duel) QueryFieldCard(player uint8, location uint8, flag uint32, buff []
 
 const SIZE_QUERY_BUFFER = 0x4000
 
-// QueryCard(int player, int location, int sequence, int flag = 0xFFFFFF & ~(int)Query.ReasonCard, bool useCache = false)
-func (d *Duel) QueryFieldCardDef(player uint8, location uint8) int32 {
-	flag := 0xFFFFFF &^ uint32(QueryReasonCard) // Go中的按位取反运算符是^
-	var buff = make([]byte, SIZE_QUERY_BUFFER)
-	return d.QueryFieldCard(player, location, flag, buff, false)
-}
-
 // QueryCard 查询卡片
 func (d *Duel) QueryCard(player uint8, location uint8, sequence uint8, flag int32, buff []byte, useCache bool) int32 {
 	return API.QueryCard(d.duelPtr, player, location, sequence, flag, buff, btoi(useCache))
 
-}
-func (d *Duel) QueryCardDef(player uint8, location uint8, sequence uint8, buff []byte) int32 {
-	flag := 0xFFFFFF &^ int(QueryReasonCard) // Go中的按位取反运算符是^
-	return d.QueryCard(player, location, sequence, int32(flag), buff, false)
 }
 
 // QueryFieldInfo 查询场地信息
@@ -193,14 +185,19 @@ func (d *Duel) Dispose() {
 	duelLock.Unlock()
 }
 
-// OnMessage 处理消息
+// OnMessage 处理消息（由 C 回调 defaultOnMessageHandler 经 duelLock 查表后
+// 调用，可能与 SetErrorHandler 并发，故 errorHandler 读写都加 errorMu；
+// handler 在锁外调用，避免其在回调里再次触碰 Duel 造成死锁）。
 func (d *Duel) OnMessage(size uint32) {
 	arr := make([]byte, 256)
 	API.GetLogMessage(d.duelPtr, arr)
 	message := string(bytes.TrimRight(arr, "\x00"))
 	fmt.Println(message)
-	if d.errorHandler != nil {
-		d.errorHandler(message)
+	d.errorMu.Lock()
+	handler := d.errorHandler
+	d.errorMu.Unlock()
+	if handler != nil {
+		handler(message)
 	}
 }
 

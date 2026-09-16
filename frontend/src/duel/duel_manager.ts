@@ -19,6 +19,7 @@ import { duelStore } from './store.ts';
 import {
   LOC_NAMES,
   LOC_DECK, LOC_HAND, LOC_EXTRA,
+  CARD_QUESTION, PHINT_DESC_ADD,
 } from '../domain/constants.ts';
 
 export class DuelManager {
@@ -67,6 +68,15 @@ export class DuelManager {
       this.playerSlot = (data.playerType || 0) & 0x0f;
       this.opponentHandCount = 0;
       this.field3D.setOpponentHandCount(0);
+      this.field3D.setCantCheckGrave(false);
+    });
+
+    // MSG_PLAYER_HINT 的 CARD_QUESTION（duelclient.cpp:3757-3768）：
+    // 提示加/删到本方 → 双方墓地上空的禁查「?」图标显/隐。
+    sub('duel:player_hint', (data) => {
+      if (data.data === CARD_QUESTION && data.player === this.playerSlot) {
+        this.field3D.setCantCheckGrave(data.type === PHINT_DESC_ADD);
+      }
     });
 
     // MSG_RELOAD_FIELD（谜题布场）：对手手背行直接取快照里的手牌数
@@ -364,11 +374,11 @@ export class DuelManager {
     if (!this.idleCmd) return [];
     const opts = [];
     const has = (list: any) => list && list.some((c: any) => c.code === code);
-    if (has(this.idleCmd.summon)) opts.push({ label: '通常召唤', action: 'summon', code });
+    if (has(this.idleCmd.summon)) opts.push({ label: '召唤', action: 'summon', code });
     if (has(this.idleCmd.spsummon)) opts.push({ label: '特殊召唤', action: 'spsummon', code });
-    if (has(this.idleCmd.mset)) opts.push({ label: '盖放怪兽', action: 'mset', code });
-    if (has(this.idleCmd.sset)) opts.push({ label: '盖卡', action: 'sset', code });
-    if (has(this.idleCmd.activate)) opts.push({ label: '发动效果', action: 'activate', code });
+    if (has(this.idleCmd.mset)) opts.push({ label: '盖放', action: 'mset', code });
+    if (has(this.idleCmd.sset)) opts.push({ label: '盖放', action: 'sset', code });
+    if (has(this.idleCmd.activate)) opts.push({ label: '发动', action: 'activate', code });
     return opts;
   }
 
