@@ -809,6 +809,7 @@ export class DuelField3D {
       mesh.userData.slot = { player, loc: locName, seq: stack.length };
       this.scene.add(mesh);
       stack.push(mesh);
+      if (locName === 'grave' && this.graveLockSprites.length) this.repositionGraveLockSprites();
       return mesh;
     }
     return null; // deck/extra/hand/overlay have no resting mesh on the board
@@ -931,6 +932,56 @@ export class DuelField3D {
       const offset = i - (this.opponentHandMeshes.length - 1) / 2;
       mesh.position.set(-offset * spacing, 0.35, -8.8);
       mesh.rotation.set(Math.PI, 0, 0);
+    });
+  }
+
+  // ---- 墓地禁查（drawing.cpp:564-575 的 tNegated 贴图）----
+  // CARD_QUESTION 玩家提示置位后，双方墓地中心上空常显一张「?」圆牌
+  // （高度随墓地张数抬高，对应 grave.size()*0.01f+0.02f）。
+  graveLockSprites: any[] = [];
+
+  setCantCheckGrave(on: boolean): void {
+    if (on && this.graveLockSprites.length === 0) {
+      for (const p of [0, 1]) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d')!;
+        ctx.fillStyle = 'rgba(15,23,42,0.85)';
+        ctx.beginPath();
+        ctx.arc(32, 32, 27, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.fillStyle = '#fecaca';
+        ctx.font = 'bold 34px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('?', 32, 34);
+        const tex = new (THREE as any).CanvasTexture(canvas);
+        const sprite = new (THREE as any).Sprite(new (THREE as any).SpriteMaterial({
+          map: tex, transparent: true, depthTest: false,
+        }));
+        sprite.userData.gravePlayer = p;
+        this.graveLockSprites.push(sprite);
+        this.scene.add(sprite);
+      }
+    }
+    this.graveLockSprites.forEach((sprite) => {
+      sprite.visible = on;
+    });
+    this.repositionGraveLockSprites();
+  }
+
+  /** 禁查图标随墓地叠高重新落位（与堆区 0.02/张的叠放一致） */
+  repositionGraveLockSprites(): void {
+    this.graveLockSprites.forEach((sprite) => {
+      const p: number = sprite.userData.gravePlayer;
+      const c = ZONE_COORDS[p].grave;
+      const stack = (this.cardsOnField[p] && this.cardsOnField[p].grave) || [];
+      sprite.position.set(c.x, 0.07 + Math.min(stack.length, 20) * 0.02 + 0.15, c.z);
+      sprite.scale.set(1.1, 1.1, 1);
     });
   }
 
@@ -1275,6 +1326,12 @@ export class DuelField3D {
         this.disposeMeshResources(mesh);
       });
       this.cardMeshes = [];
+      this.graveLockSprites.forEach((sprite) => {
+        this.scene.remove(sprite);
+        if (sprite.material.map) sprite.material.map.dispose();
+        sprite.material.dispose();
+      });
+      this.graveLockSprites = [];
     }
     this.cardTextureCache.forEach((tex) => tex.dispose());
     this.cardTextureCache.clear();

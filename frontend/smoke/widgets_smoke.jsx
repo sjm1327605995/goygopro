@@ -318,8 +318,8 @@ const run = async () => {
   await waitFor(() => $('card-display-title') && $('card-display-title').innerText === '除外(0)');
   assert('f2BanishSwitch', $('card-display-title').innerText === '除外(0)');
   keyup('F3');
-  await waitFor(() => $('card-display-title').innerText === '额外卡组(1)');
-  assert('f3ExtraList', $('card-display-title').innerText === '额外卡组(1)');
+  await waitFor(() => $('card-display-title').innerText === '额外(1)');
+  assert('f3ExtraList', $('card-display-title').innerText === '额外(1)');
 
   // 超量素材：extra 卡吸附到 mzone[2]（LOC_OVERLAY=0x80，cs=槽位）
   eventBus.emit('duel:move', {
@@ -329,8 +329,8 @@ const run = async () => {
   await waitFor(() => duelStore.getState().board[0].overlay[2].length === 1);
   assert('overlayMaterialTracked', duelStore.getState().board[0].overlay[2][0] === 46986414);
   keyup('F4');
-  await waitFor(() => $('card-display-title').innerText === '超量素材(1)');
-  assert('f4OverlayList', $('card-display-title').innerText === '超量素材(1)');
+  await waitFor(() => $('card-display-title').innerText === '叠放(1)');
+  assert('f4OverlayList', $('card-display-title').innerText === '叠放(1)');
   assert('extraDrainedByOverlayMove', $('player-pile-extra').innerText === '12');
 
   // 对方视角：F5 = 对方墓地（空 → 标题带「对方」+（空）占位）

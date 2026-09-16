@@ -57,36 +57,36 @@ export default function SettingsPanel({ open, onClose }: { open: boolean; onClos
               className={`settings-tab${tab === 'system' ? ' active' : ''}`}
               data-tab="system"
               onClick={() => setTab('system')}
-            >系统设置</div>
+            >系统设定</div>
             <div
               className={`settings-tab${tab === 'helper' ? ' active' : ''}`}
               data-tab="helper"
               onClick={() => setTab('helper')}
-            >决斗辅助</div>
+            >辅助功能</div>
           </div>
           {tab === 'system' ? (
             <div className="settings-body" data-page="system">
-              <CheckRow k="mute_opponent" label="屏蔽对手聊天" />
-              <CheckRow k="mute_spectators" label="屏蔽观战者聊天" />
-              <CheckRow k="hide_player_name" label="隐藏玩家名" />
+              <CheckRow k="mute_opponent" label="禁用聊天功能" />
+              <CheckRow k="mute_spectators" label="忽略观战者发言" />
+              <CheckRow k="hide_player_name" label="隐藏玩家昵称" />
               <CheckRow k="hide_setname" label="卡片信息隐藏系列名" />
-              <CheckRow k="enable_sound" label="启用音效" />
+              <CheckRow k="enable_sound" label="开启音效" />
               <VolumeRow k="sound_volume" label="音效音量" />
-              <CheckRow k="enable_music" label="启用音乐" />
+              <CheckRow k="enable_music" label="开启音乐" />
               <VolumeRow k="music_volume" label="音乐音量" />
               <CheckRow k="draw_field_spell" label="显示场地魔法背景" />
             </div>
           ) : (
             <div className="settings-body" data-page="helper">
-              <CheckRow k="automonsterpos" label="怪兽自动放置" />
-              <CheckRow k="autospellpos" label="魔陷自动放置" />
-              <CheckRow k="randompos" label="放置位置随机" />
-              <CheckRow k="autochain" label="自动连锁（不询问）" />
-              <CheckRow k="waitchain" label="有可连锁时等待" />
-              <CheckRow k="showchain" label="默认显示连锁" />
-              <CheckRow k="quick_animation" label="快速动画" />
+              <CheckRow k="automonsterpos" label="自动选择怪兽卡片位置" />
+              <CheckRow k="autospellpos" label="自动选择魔陷卡片位置" />
+              <CheckRow k="randompos" label="↑随机选择位置" />
+              <CheckRow k="autochain" label="自动发动并排序必发效果" />
+              <CheckRow k="waitchain" label="没有可连锁的卡时延迟回应" />
+              <CheckRow k="showchain" label="开局默认显示所有时点" />
+              <CheckRow k="quick_animation" label="加快动画效果" />
               <CheckRow k="auto_save_replay" label="自动保存录像" />
-              <CheckRow k="draw_single_chain" label="单条连锁也显示图标" />
+              <CheckRow k="draw_single_chain" label="只有连锁1也显示连锁动画" />
             </div>
           )}
           <div className="settings-footer">

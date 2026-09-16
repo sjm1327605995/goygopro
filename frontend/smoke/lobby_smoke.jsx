@@ -113,12 +113,12 @@ try {
   await waitFor(() => !!$('lobby-room-rule'));
   const ruleText = $('lobby-room-rule').textContent;
   record('rule-info-panel', ruleText.includes('禁限卡表：Test List') && ruleText.includes('卡片允许：ＴＣＧ')
-    && ruleText.includes('决斗模式：比赛赛') && ruleText.includes('初始基本分：16000')
+    && ruleText.includes('决斗模式：比赛模式') && ruleText.includes('初始基本分：16000')
     && ruleText.includes('初始手卡数：6') && ruleText.includes('每回合抽卡：2')
     && ruleText.includes('每回合时间：300') && ruleText.includes('*不检查卡组')
-    && ruleText.includes('*新大师规则 (NMR)') && !ruleText.includes('*不洗切卡组'), ruleText);
+    && ruleText.includes('*新大师规则（2017）') && !ruleText.includes('*不洗切卡组'), ruleText);
   // 默认规则（CURRENT_RULE=5）不显示规则名行
-  record('default-rule-name-hidden', !ruleText.includes('大师规则 2020'));
+  record('default-rule-name-hidden', !ruleText.includes('*大师规则（2020）'));
 
   // --- CTOS_UPDATE_DECK 握手：启动本地服务器 → 选卡组 → 准备 ---
   WailsBridge.startLocalServer = async () => ({ success: true, port: 7911 });

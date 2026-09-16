@@ -66,7 +66,7 @@ export default function ReplaySavePrompt() {
         borderRadius: '12px', padding: '24px', width: '340px',
         display: 'flex', flexDirection: 'column', gap: '12px',
       }}>
-        <h3 style={{ color: 'var(--primary)', margin: 0 }}>保存对局录像</h3>
+        <h3 style={{ color: 'var(--primary)', margin: 0 }}>是否保存录像？</h3>
         <input
           id="replay-save-name"
           className="form-input"
@@ -77,7 +77,7 @@ export default function ReplaySavePrompt() {
         />
         <div id="replay-save-status" style={{ fontSize: '12px', color: 'var(--text-muted)', minHeight: '16px' }}>{status}</div>
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-          <button id="replay-save-cancel" className="btn btn-secondary" onClick={() => setSuggested(null)}>不保存</button>
+          <button id="replay-save-cancel" className="btn btn-secondary" onClick={() => setSuggested(null)}>取消</button>
           <button id="replay-save-confirm" className="btn btn-primary" onClick={save} disabled={saving}>保存</button>
         </div>
       </div>

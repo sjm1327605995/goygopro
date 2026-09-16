@@ -14,11 +14,6 @@ type SimpleCodec struct {
 	Player *DuelPlayer
 }
 
-func (codec SimpleCodec) Encode(buf []byte) ([]byte, error) {
-
-	return nil, nil
-}
-
 func (codec SimpleCodec) Decode(c gnet.Conn) ([]byte, bool, error) {
 	currentBufferLen := c.InboundBuffered()
 	if currentBufferLen < 2 {

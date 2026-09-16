@@ -1,7 +1,7 @@
 import React from 'react';
 
-// 主菜单按 docs/main_menu_layout.html 原型：320 宽窗口、18vh 顶部留白、
-// 标题居中 26px 深蓝渐变（版本号 1.036.2）、5 个 296×32 按钮间距 6。
+// 主菜单按 docs/layout_prototype.html 第 1 节 wMainMenu 原型：320×210 窗口、
+// 20% 顶部留白、标题栏 24px 左对齐（版本号 1.036.2）、5 个 296×30 按钮间距 5。
 interface MainMenuProps {
   onDuel: () => void;
   onPractice: () => void;

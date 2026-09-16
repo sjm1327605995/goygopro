@@ -113,15 +113,6 @@ func (d *deckManager) LoadLFList() {
 	d.LFList = append(d.LFList, nolimit)
 }
 
-func (d *deckManager) GetLFListName(lfhash uint32) string {
-	for _, list := range d.LFList {
-		if list.Hash == lfhash {
-			return list.ListName
-		}
-	}
-	return UnknownString
-}
-
 func (d *deckManager) GetLFList(lfhash uint32) *LFList {
 	for i := range d.LFList {
 		if d.LFList[i].Hash == lfhash {

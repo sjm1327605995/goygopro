@@ -320,26 +320,6 @@ func (r *Replay) OpenReplay(name string) bool {
 	return true
 }
 
-func (r *Replay) DeleteReplay(name string) bool {
-	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
-		return false
-	}
-	path := filepath.Join("./replay", name)
-	return os.Remove(path) == nil
-}
-
-func (r *Replay) RenameReplay(oldName, newName string) bool {
-	if strings.Contains(oldName, "/") || strings.Contains(oldName, "\\") {
-		return false
-	}
-	if strings.Contains(newName, "/") || strings.Contains(newName, "\\") {
-		return false
-	}
-	oldPath := filepath.Join("./replay", oldName)
-	newPath := filepath.Join("./replay", newName)
-	return os.Rename(oldPath, newPath) == nil
-}
-
 func (r *Replay) ReadNextResponse(resp []byte) bool {
 	var length uint8
 	if !r.ReadData([]byte{length}, 1) {
@@ -403,11 +383,6 @@ func (r *Replay) ReadInt32() int32 {
 	return int32(binary.LittleEndian.Uint32(b[:]))
 }
 
-func (r *Replay) Rewind() {
-	r.dataPosition = 0
-	r.canRead = true
-}
-
 func (r *Replay) Reset() {
 	r.isRecording = false
 	r.isReplaying = false
@@ -426,10 +401,6 @@ func (r *Replay) SkipInfo() {
 	if r.dataPosition == 0 {
 		r.dataPosition = r.infoOffset
 	}
-}
-
-func (r *Replay) IsReplaying() bool {
-	return r.isReplaying
 }
 
 func (r *Replay) SaveDeck(index int, filename string) bool {

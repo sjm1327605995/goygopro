@@ -16,16 +16,14 @@ import (
 
 // PacketRouter 是包级别的路由器，类似 gin.Engine
 type PacketRouter struct {
-	groups     []*PacketRouterGroup       // 所有路由组
 	handlers   map[uint8][]PacketHandlerFunc // 消息类型 → 处理链
-	middleware []PacketHandlerFunc          // 全局中间件
+	middleware []PacketHandlerFunc           // 全局中间件
 }
 
 // PacketRouterGroup 路由组，支持给一组路由加前缀中间件
 type PacketRouterGroup struct {
 	router     *PacketRouter
-	basePath   string                       // 保留字段，未来扩展
-	middleware []PacketHandlerFunc          // 组级别中间件
+	middleware []PacketHandlerFunc // 组级别中间件
 }
 
 // NewPacketRouter 创建一个新的路由器
@@ -44,7 +42,6 @@ func (r *PacketRouter) Use(middleware ...PacketHandlerFunc) {
 func (r *PacketRouter) Group(path string, middleware ...PacketHandlerFunc) *PacketRouterGroup {
 	return &PacketRouterGroup{
 		router:     r,
-		basePath:   path,
 		middleware: append([]PacketHandlerFunc{}, middleware...),
 	}
 }
@@ -198,19 +195,6 @@ func Bind(sample interface{}) PacketHandlerFunc {
 	}
 }
 
-// BindWithSize 是 Bind 的增强版，先检查长度再解析
-func BindWithSize(sample interface{}, minLen int) PacketHandlerFunc {
-	bind := Bind(sample)
-	return func(c *PacketContext) {
-		if len(c.Payload) < minLen {
-			log.Printf("[packet] bind length check failed: need %d, got %d | pktType=0x%02x", minLen, len(c.Payload), c.PktType)
-			c.Abort()
-			return
-		}
-		bind(c)
-	}
-}
-
 // RoomLockMiddleware 保证进入该中间件后的操作在房间互斥锁保护下执行
 func RoomLockMiddleware(c *PacketContext) {
 	if c.Game() != nil && c.BaseMode() != nil {
@@ -218,33 +202,4 @@ func RoomLockMiddleware(c *PacketContext) {
 		defer c.BaseMode().Mu.Unlock()
 	}
 	c.Next()
-}
-
-// --------------------------------------------------
-// 便捷组合中间件（常用搭配）
-// --------------------------------------------------
-
-// GameAction 返回 [RequireGame + handler] 的组合
-func GameAction(handler PacketHandlerFunc) []PacketHandlerFunc {
-	return []PacketHandlerFunc{RequireGame, handler}
-}
-
-// DuelAction 返回 [RequireDuel + handler] 的组合
-func DuelAction(handler PacketHandlerFunc) []PacketHandlerFunc {
-	return []PacketHandlerFunc{RequireDuel, handler}
-}
-
-// LobbyAction 返回 [RequireLobby + handler] 的组合
-func LobbyAction(handler PacketHandlerFunc) []PacketHandlerFunc {
-	return []PacketHandlerFunc{RequireLobby, handler}
-}
-
-// BindAction 返回 [RequireGame + ValidateLength + Bind + handler] 的完整组合
-func BindAction(sample interface{}, minLen int, handler PacketHandlerFunc) []PacketHandlerFunc {
-	return []PacketHandlerFunc{
-		RequireGame,
-		ValidateLength(minLen),
-		Bind(sample),
-		handler,
-	}
 }

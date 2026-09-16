@@ -62,11 +62,6 @@ func (c *PacketContext) Abort() {
 	c.aborted = true
 }
 
-// IsAborted 返回是否已中止
-func (c *PacketContext) IsAborted() bool {
-	return c.aborted
-}
-
 // --------------------------------------------------
 // 数据绑定（由 BindMiddleware 设置）
 // --------------------------------------------------
@@ -78,18 +73,10 @@ func (c *PacketContext) SetPayload(v interface{}) {
 	c.Set(payloadKey, v)
 }
 
-// GetPayload 获取解析后的消息体，需要类型断言
-func (c *PacketContext) GetPayload() interface{} {
-	if v, ok := c.Get(payloadKey); ok {
-		return v
-	}
-	return nil
-}
-
 // MustPayload 获取解析后的消息体，如果不存在则 panic（会被 RecoverMiddleware 捕获）
 func (c *PacketContext) MustPayload() interface{} {
-	v := c.GetPayload()
-	if v == nil {
+	v, ok := c.Get(payloadKey)
+	if !ok || v == nil {
 		panic(fmt.Sprintf("packet %d: payload not bound", c.PktType))
 	}
 	return v
@@ -148,36 +135,39 @@ func (c *PacketContext) Error(code uint8, msg string, cause ...error) {
 	_ = c.SendError(code, msg)
 }
 
-// SendError 向客户端发送 STOC_ERROR_MSG
+// SendError 向客户端发送 STOC_ERROR_MSG。只有能映射到 ERRMSG_* 的内部错误才
+// 发客户端包；其余内部错误仅服务端处理（原版 netserver 对协议违例同样不回复）。
 func (c *PacketContext) SendError(errCode uint8, msg string) error {
 	if c.Player == nil || c.Player.Conn == nil {
 		return fmt.Errorf("player or connection is nil")
 	}
-	// 构造 STOC_ErrorMsg：uint8 msg + [3]byte padding + uint32 code
-	// 简单处理：msg 字段放 errCode，code 字段放 0
+	stocMsg, ok := errmsgCode(errCode)
+	if !ok {
+		return nil
+	}
+	// 构造 STOC_ErrorMsg：uint8 msg(ERRMSG_*) + [3]byte padding + uint32 code
 	buf := make([]byte, 8)
-	buf[0] = errCode
+	buf[0] = stocMsg
 	// padding 3 bytes 保持 0
 	binary.LittleEndian.PutUint32(buf[4:], 0)
 	return c.Reply(network.STOC_ERROR_MSG, buf)
 }
 
-// SendPacketError 用 PacketError 发送错误
-func (c *PacketContext) SendPacketError(err *PacketError) error {
-	if err == nil {
-		return nil
+// errmsgCode 把内部 PacketError 码映射为 STOC_ERROR_MSG 的 ERRMSG_* 值。
+// Msg 必须是 network.ERRMSG_*（duelclient.cpp:261-368 只识别这四种，其余
+// 被静默丢弃）。返回 ok=false 表示该错误没有客户端可见的协议错误码。
+func errmsgCode(errCode uint8) (msg uint8, ok bool) {
+	switch errCode {
+	case ErrJoinFailed:
+		return network.ERRMSG_JOINERROR, true
+	default:
+		return 0, false
 	}
-	return c.SendError(err.Code, err.Message)
 }
 
 // AbortWithError 中止并发送统一错误响应
 func (c *PacketContext) AbortWithError(err *PacketError) {
 	c.Error(err.Code, err.Message, err.Cause)
-}
-
-// HasError 返回是否有错误
-func (c *PacketContext) HasError() bool {
-	return c.errCode != 0 || c.errMsg != ""
 }
 
 // --------------------------------------------------
@@ -197,12 +187,4 @@ func (c *PacketContext) Get(key string) (interface{}, bool) {
 	}
 	v, ok := c.keys[key]
 	return v, ok
-}
-
-func (c *PacketContext) MustGet(key string) interface{} {
-	v, ok := c.Get(key)
-	if !ok {
-		panic(fmt.Sprintf("key %s not found in context", key))
-	}
-	return v
 }

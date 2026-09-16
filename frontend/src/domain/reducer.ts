@@ -16,7 +16,7 @@
 import type { CardQuery, GameEvent } from './events.ts';
 import {
   LOC_DECK, LOC_HAND, LOC_MZONE, LOC_SZONE, LOC_GRAVE, LOC_BANISH, LOC_EXTRA, LOC_OVERLAY,
-  LOC_LABELS,
+  LOC_LABELS, CARD_QUESTION, PHINT_DESC_ADD,
 } from './constants.ts';
 import { cardName } from './card_names.ts';
 
@@ -103,6 +103,14 @@ export interface DuelState {
   piles: [PileCounts, PileCounts];
   /** [本方, 对方] 剩余秒数；null = 没有计时 */
   timer: [number | null, number | null];
+  /** 每回合计时时限（秒；0 = 未知）。原版 dInfo.time_limit（时限条的归一基准） */
+  timeLimit: number;
+  /** 初始基本分（LP 条归一基准；原版 dInfo.start_lp） */
+  startLP: number;
+  /** 观战者视角（MSG_START playertype 高 4 位非 0，duelclient.cpp:1269-1270） */
+  isObserver: boolean;
+  /** 墓地禁查（CARD_QUESTION 玩家提示，duelclient.cpp:3757-3768） */
+  cantCheckGrave: boolean;
   win: { winner: number; type: number } | null;
   /** MSG_MATCH_KILL 展示卡（胜利画面用）；null = 无 */
   matchKill: number | null;
@@ -144,6 +152,10 @@ export function initialDuelState(): DuelState {
       { deck: 0, grave: 0, banish: 0, extra: 0 },
     ],
     timer: [null, null],
+    timeLimit: 0,
+    startLP: 8000,
+    isObserver: false,
+    cantCheckGrave: false,
     win: null,
     matchKill: null,
     fieldDisabled: 0,
@@ -362,6 +374,9 @@ export function applyEvent(state: DuelState, name: string, data: any): DuelState
           { deck: 0, grave: 0, banish: 0, extra: 0 },
         ],
         timer: [null, null],
+        timeLimit: 0,
+        isObserver: ((ev.playerType || 0) & 0xf0) !== 0,
+        cantCheckGrave: false,
         win: null,
         matchKill: null,
         fieldDisabled: 0,
@@ -378,6 +393,8 @@ export function applyEvent(state: DuelState, name: string, data: any): DuelState
       };
       next = seed(0, ev.deck0, ev.extra0);
       next = seed(1, ev.deck1, ev.extra1);
+      // LP 条的归一基准 = 自己的初始基本分（drawing.cpp:591 maxLP = start_lp）
+      next = { ...next, startLP: (playerSlot === 1 ? ev.lp1 : ev.lp0) || 8000 };
       return withLog(next, '决斗开始！', 'log-action');
     }
 
@@ -410,7 +427,7 @@ export function applyEvent(state: DuelState, name: string, data: any): DuelState
 
     case 'stoc:waiting_side':
       // 三局两胜局间，等待对方调整副卡组（sysString 1409）
-      return { ...state, hint: '正在等待对方调整副卡组……' };
+      return { ...state, hint: '等待更换副卡组中...' };
 
     case 'stoc:duel_end':
       return withLog(state, '决斗结束。');
@@ -608,9 +625,17 @@ export function applyEvent(state: DuelState, name: string, data: any): DuelState
       return withLog(state, `${cardName(ev.code)} 错过了发动时点。`, 'log-damage');
 
     case 'duel:card_hint':
-    case 'duel:player_hint':
-      // 效果角标/玩家提示是 3D 浮层素材，reducer 不消费
+      // 效果角标是 3D 浮层素材，reducer 不消费
       return state;
+
+    case 'duel:player_hint': {
+      // MSG_PLAYER_HINT（duelclient.cpp:3757-3768）：CARD_QUESTION 加/删到
+      // 本方 → 全场墓地禁查（drawing.cpp:564-575 在双方墓地上叠禁查图标）。
+      if (ev.data === CARD_QUESTION && ev.player === state.playerSlot) {
+        return { ...state, cantCheckGrave: ev.type === PHINT_DESC_ADD };
+      }
+      return state;
+    }
 
     case 'duel:match_kill':
       return withLog(
@@ -704,7 +729,7 @@ export function applyEvent(state: DuelState, name: string, data: any): DuelState
     }
 
     case 'duel:waiting':
-      return { ...state, hint: '等待对方行动中...' }; // 原版 SysString 1409
+      return { ...state, hint: '等待行动中...' }; // 原版 SysString 1390（MSG_WAITING → stHintMsg）
 
     case 'duel:select_idlecmd':
       return {
@@ -742,10 +767,12 @@ export function applyEvent(state: DuelState, name: string, data: any): DuelState
       );
 
     case 'stoc:time_limit': {
+      // 剩余秒 + 时限条归一基准（dInfo.time_limit 来自建房 host_info；
+      // 首个 time_limit 包即满额值，取历史最大防御乱序）
       const disp = localSeat(state, ev.player);
       const timer: [number | null, number | null] = [...state.timer];
       timer[disp] = ev.leftTime;
-      return { ...state, timer };
+      return { ...state, timer, timeLimit: Math.max(state.timeLimit, ev.leftTime || 0) };
     }
 
     default:

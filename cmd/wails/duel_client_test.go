@@ -51,3 +51,39 @@ func TestSendKickPacket(t *testing.T) {
 		}
 	}
 }
+
+// TestTeardownGenerationGuard 锁定重连代际守卫：旧 readLoop 退出时调 teardown
+// 只对「自己捕获的那条连接」生效——重连后换成新连接、代际 +1，旧循环不得
+// 误断新连接；当前代际的循环才真正断开。
+func TestTeardownGenerationGuard(t *testing.T) {
+	_, connA := net.Pipe()
+	defer connA.Close()
+	_, connB := net.Pipe()
+	defer connB.Close()
+
+	c := NewWailsDuelClient(nil)
+	c.mu.Lock()
+	c.conn = connB
+	c.isConnected = true
+	c.gen = 2
+	c.running.Store(true)
+	c.mu.Unlock()
+
+	// 旧 readLoop（持 connA/gen1）退出：代际不匹配，不得断开当前 connB
+	c.teardown(connA, 1)
+	c.mu.Lock()
+	stillConnected := c.isConnected && c.conn == connB
+	c.mu.Unlock()
+	if !stillConnected {
+		t.Fatal("旧 readLoop 的 teardown 误断了新连接")
+	}
+
+	// 当前 readLoop（持 connB/gen2）退出：应真正断开
+	c.teardown(connB, 2)
+	c.mu.Lock()
+	connected := c.isConnected
+	c.mu.Unlock()
+	if connected {
+		t.Fatal("当前 readLoop 的 teardown 未断开连接")
+	}
+}

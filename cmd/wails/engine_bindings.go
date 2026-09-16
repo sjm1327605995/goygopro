@@ -26,41 +26,25 @@ type engineBinding struct {
 	decorate func(c *WailsDuelClient, engType byte, pbuf *utils.YGOBuffer, msg any) error
 }
 
-// unpackedLocEntries 把打包位置列表转成前端事件的 {c,l,s} 条目。
-func unpackedLocEntries(locs []uint32) []map[string]interface{} {
-	entries := make([]map[string]interface{}, len(locs))
-	for i, loc := range locs {
-		cc, cl, cs, _ := protocol.UnpackPackedLoc(loc)
-		entries[i] = map[string]interface{}{"c": cc, "l": cl, "s": cs}
-	}
-	return entries
-}
-
-// packedLocEntry 把单个打包 info_location 解成 {c,l,s,p}。
-func packedLocEntry(loc uint32) map[string]interface{} {
-	cc, cl, cs, cp := protocol.UnpackPackedLoc(loc)
-	return map[string]interface{}{"c": cc, "l": cl, "s": cs, "p": cp}
-}
-
 // decorateSelectCard 转换 MSG_SELECT_CARD：cancelable 布尔化，条目展开。
 func decorateSelectCard(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error {
 	m := msg.(*protocol.SelectCardMsg)
-	cards := make([]map[string]interface{}, len(m.Cards))
+	cards := make([]selectCardEntryDTO, len(m.Cards))
 	for i, cd := range m.Cards {
-		cards[i] = map[string]interface{}{
-			"code": cd.Code,
-			"c":    cd.Controller,
-			"l":    cd.Location,
-			"s":    cd.Sequence,
-			"p":    cd.Position,
+		cards[i] = selectCardEntryDTO{
+			Code: cd.Code,
+			C:    cd.Controller,
+			L:    cd.Location,
+			S:    cd.Sequence,
+			P:    cd.Position,
 		}
 	}
-	c.emit("duel:select_card", map[string]interface{}{
-		"player":     m.Player,
-		"cancelable": m.Cancelable != 0,
-		"min":        m.Min,
-		"max":        m.Max,
-		"cards":      cards,
+	c.emit("duel:select_card", selectCardDTO{
+		Player:     m.Player,
+		Cancelable: m.Cancelable != 0,
+		Min:        m.Min,
+		Max:        m.Max,
+		Cards:      cards,
 	})
 	return nil
 }
@@ -68,22 +52,22 @@ func decorateSelectCard(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any)
 // decorateSelectUnselect 转换 MSG_SELECT_UNSELECT_CARD：布尔化 + 双列表展开。
 func decorateSelectUnselect(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error {
 	m := msg.(*protocol.SelectUnselectCardMsg)
-	cards := make([]map[string]interface{}, len(m.Cards1))
+	cards := make([]selectUnselectEntryDTO, len(m.Cards1))
 	for i, cd := range m.Cards1 {
-		cards[i] = map[string]interface{}{"code": cd.Code, "c": cd.Controller, "l": cd.Location, "s": cd.Sequence}
+		cards[i] = selectUnselectEntryDTO{Code: cd.Code, C: cd.Controller, L: cd.Location, S: cd.Sequence}
 	}
-	unselect := make([]map[string]interface{}, len(m.Cards2))
+	unselect := make([]selectUnselectEntryDTO, len(m.Cards2))
 	for i, cd := range m.Cards2 {
-		unselect[i] = map[string]interface{}{"code": cd.Code, "c": cd.Controller, "l": cd.Location, "s": cd.Sequence}
+		unselect[i] = selectUnselectEntryDTO{Code: cd.Code, C: cd.Controller, L: cd.Location, S: cd.Sequence}
 	}
-	c.emit("duel:select_unselect", map[string]interface{}{
-		"player":       m.Player,
-		"finishable":   m.Finishable != 0,
-		"cancelable":   m.Cancelable != 0,
-		"min":          m.Min,
-		"max":          m.Max,
-		"cards":        cards,
-		"unselectList": unselect,
+	c.emit("duel:select_unselect", selectUnselectDTO{
+		Player:       m.Player,
+		Finishable:   m.Finishable != 0,
+		Cancelable:   m.Cancelable != 0,
+		Min:          m.Min,
+		Max:          m.Max,
+		Cards:        cards,
+		UnselectList: unselect,
 	})
 	return nil
 }
@@ -92,60 +76,61 @@ func decorateSelectUnselect(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg 
 // 条目位置从打包 info_location 解出。
 func decorateSelectChain(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error {
 	m := msg.(*protocol.SelectChainMsg)
-	chains := make([]map[string]interface{}, len(m.Chains))
+	chains := make([]chainEntryDTO, len(m.Chains))
 	anyForced := false
 	for i, ch := range m.Chains {
 		if ch.Forced != 0 {
 			anyForced = true
 		}
 		cc, cl, cs, cp := protocol.UnpackPackedLoc(ch.InfoLocation)
-		chains[i] = map[string]interface{}{
-			"flag":   ch.DescFlag,
-			"forced": ch.Forced != 0,
-			"code":   ch.Code,
-			"cc":     cc,
-			"cl":     cl,
-			"cs":     cs,
-			"cp":     cp,
-			"desc":   ch.Description,
+		chains[i] = chainEntryDTO{
+			Flag:   ch.DescFlag,
+			Forced: ch.Forced != 0,
+			Code:   ch.Code,
+			CC:     cc,
+			CL:     cl,
+			CS:     cs,
+			CP:     cp,
+			Desc:   ch.Description,
 		}
 	}
-	c.emit("duel:select_chain", map[string]interface{}{
-		"player": m.Player,
-		"count":  m.Count,
-		"forced": anyForced,
-		"chains": chains,
+	c.emit("duel:select_chain", selectChainDTO{
+		Player: m.Player,
+		Count:  m.Count,
+		Forced: anyForced,
+		Chains: chains,
 	})
 	return nil
-}
-
-// cardCmdEntries 把 idlecmd 卡片条目转成前端事件条目（带序号 idx）。
-func cardCmdEntries(entries []protocol.CmdCardEntry) []map[string]interface{} {
-	out := make([]map[string]interface{}, len(entries))
-	for i, e := range entries {
-		out[i] = map[string]interface{}{"code": e.Code, "c": e.CC, "l": e.CL, "s": e.CS, "idx": i}
-	}
-	return out
 }
 
 // decorateIdleCmd 转换 MSG_SELECT_IDLECMD：五张卡片列表 + 激活列表。
 func decorateIdleCmd(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error {
 	m := msg.(*protocol.SelectIdleCmdMsg)
-	activate := make([]map[string]interface{}, len(m.CmdsF))
-	for i, e := range m.CmdsF {
-		activate[i] = map[string]interface{}{"code": e.Code, "c": e.CC, "l": e.CL, "s": e.CS, "desc": e.Description, "idx": i}
+	cardEntries := func(entries []protocol.CmdCardEntry) []cmdCardEntryDTO {
+		out := make([]cmdCardEntryDTO, len(entries))
+		for i, e := range entries {
+			out[i] = cmdCardEntryDTO{Code: int32(e.Code), C: e.CC, L: e.CL, S: e.CS, Idx: i}
+		}
+		return out
 	}
-	c.emit("duel:select_idlecmd", map[string]interface{}{
-		"player":   m.Player,
-		"summon":   cardCmdEntries(m.CmdsA),
-		"spsummon": cardCmdEntries(m.CmdsB),
-		"repos":    cardCmdEntries(m.CmdsC),
-		"mset":     cardCmdEntries(m.CmdsD),
-		"sset":     cardCmdEntries(m.CmdsE),
-		"activate": activate,
-		"toBP":     m.ToBP != 0,
-		"toEP":     m.ToEP != 0,
-		"shuffle":  m.CanShuffle != 0,
+	activateEntries := func(entries []protocol.CmdActivateEntry) []cmdActivateEntryDTO {
+		out := make([]cmdActivateEntryDTO, len(entries))
+		for i, e := range entries {
+			out[i] = cmdActivateEntryDTO{Code: int32(e.Code), C: e.CC, L: e.CL, S: e.CS, Desc: e.Description, Idx: i}
+		}
+		return out
+	}
+	c.emit("duel:select_idlecmd", selectIdleCmdDTO{
+		Player:   m.Player,
+		Summon:   cardEntries(m.CmdsA),
+		SPSummon: cardEntries(m.CmdsB),
+		Repos:    cardEntries(m.CmdsC),
+		MSet:     cardEntries(m.CmdsD),
+		SSet:     cardEntries(m.CmdsE),
+		Activate: activateEntries(m.CmdsF),
+		ToBP:     m.ToBP != 0,
+		ToEP:     m.ToEP != 0,
+		Shuffle:  m.CanShuffle != 0,
 	})
 	return nil
 }
@@ -153,20 +138,20 @@ func decorateIdleCmd(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) er
 // decorateBattleCmd 转换 MSG_SELECT_BATTLECMD：激活列表 + 攻击列表。
 func decorateBattleCmd(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error {
 	m := msg.(*protocol.SelectBattleCmdMsg)
-	activate := make([]map[string]interface{}, len(m.CmdsA))
+	activate := make([]cmdActivateEntryDTO, len(m.CmdsA))
 	for i, e := range m.CmdsA {
-		activate[i] = map[string]interface{}{"code": e.Code, "c": e.CC, "l": e.CL, "s": e.CS, "desc": e.Description, "idx": i}
+		activate[i] = cmdActivateEntryDTO{Code: int32(e.Code), C: e.CC, L: e.CL, S: e.CS, Desc: e.Description, Idx: i}
 	}
-	attack := make([]map[string]interface{}, len(m.CmdsB))
+	attack := make([]cmdAttackEntryDTO, len(m.CmdsB))
 	for i, e := range m.CmdsB {
-		attack[i] = map[string]interface{}{"code": e.Code, "c": e.CC, "l": e.CL, "s": e.CS, "diratt": e.DirectAttackable != 0, "idx": i}
+		attack[i] = cmdAttackEntryDTO{Code: int32(e.Code), C: e.CC, L: e.CL, S: e.CS, DirAtt: e.DirectAttackable != 0, Idx: i}
 	}
-	c.emit("duel:select_battlecmd", map[string]interface{}{
-		"player":   m.Player,
-		"activate": activate,
-		"attack":   attack,
-		"toM2":     m.ToM2 != 0,
-		"toEP":     m.ToEP != 0,
+	c.emit("duel:select_battlecmd", selectBattleCmdDTO{
+		Player:   m.Player,
+		Activate: activate,
+		Attack:   attack,
+		ToM2:     m.ToM2 != 0,
+		ToEP:     m.ToEP != 0,
 	})
 	return nil
 }
@@ -179,10 +164,10 @@ func decorateDraw(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error
 		// 最高位 0x80000000 是引擎的公开标记（表侧抽卡），不是卡号的一部分
 		cards[i] = code & 0x7fffffff
 	}
-	c.emit("duel:draw", map[string]interface{}{
-		"player": m.Player,
-		"count":  m.Count,
-		"cards":  cards,
+	c.emit("duel:draw", drawDTO{
+		Player: m.Player,
+		Count:  m.Count,
+		Cards:  cards,
 	})
 	return nil
 }
@@ -190,11 +175,9 @@ func decorateDraw(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error
 // decorateAttack 转换 MSG_ATTACK：两处打包位置解成 {c,l,s}。
 func decorateAttack(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error {
 	m := msg.(*protocol.AttackMsg)
-	ac, al, as, _ := protocol.UnpackPackedLoc(m.AttackerInfo)
-	tc, tl, ts, _ := protocol.UnpackPackedLoc(m.TargetInfo)
-	c.emit("duel:attack", map[string]interface{}{
-		"attacker": map[string]interface{}{"c": ac, "l": al, "s": as},
-		"target":   map[string]interface{}{"c": tc, "l": tl, "s": ts},
+	c.emit("duel:attack", attackDTO{
+		Attacker: newLocRef(m.AttackerInfo),
+		Target:   newLocRef(m.TargetInfo),
 	})
 	return nil
 }
@@ -202,7 +185,7 @@ func decorateAttack(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) err
 // decorateBecomeTarget 转换 MSG_BECOME_TARGET：打包位置解成 {c,l,s}。
 func decorateBecomeTarget(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error {
 	m := msg.(*protocol.BecomeTargetMsg)
-	c.emit("duel:become_target", map[string]interface{}{"targets": unpackedLocEntries(m.Targets)})
+	c.emit("duel:become_target", becomeTargetDTO{Targets: newLocRefList(m.Targets)})
 	return nil
 }
 
@@ -210,21 +193,21 @@ func decorateBecomeTarget(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg an
 // duelclient.cpp:3480-3519 用 aa/ad/da/dd 刷新攻守双方的 ATK/DEF 显示）。
 func decorateBattle(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error {
 	m := msg.(*protocol.BattleMsg)
-	c.emit("duel:battle", map[string]interface{}{
-		"attacker":       packedLocEntry(m.AttackerInfo),
-		"attackerATK":    m.AttackerATK,
-		"attackerDEF":    m.AttackerDEF,
-		"attackerDirect": m.AttackerDirect != 0,
-		"target":         packedLocEntry(m.TargetInfo),
-		"targetATK":      m.TargetATK,
-		"targetDEF":      m.TargetDEF,
-		"targetDirect":   m.TargetDirect != 0,
+	c.emit("duel:battle", battleDTO{
+		Attacker:       newLocPosRef(m.AttackerInfo),
+		AttackerATK:    m.AttackerATK,
+		AttackerDEF:    m.AttackerDEF,
+		AttackerDirect: m.AttackerDirect != 0,
+		Target:         newLocPosRef(m.TargetInfo),
+		TargetATK:      m.TargetATK,
+		TargetDEF:      m.TargetDEF,
+		TargetDirect:   m.TargetDirect != 0,
 	})
 	return nil
 }
 
 // updateDataMsg / updateCardMsg 的消息体后面跟 ocgcore 的变长 query blob，
-// restruct 表达不了，decorate 里用 skipQueryBlobList 消费。
+// restruct 表达不了，decorate 里用 decodeQueryBlobList 消费。
 type updateDataMsg struct {
 	Player   uint8 `struct:"uint8"`
 	Location uint8 `struct:"uint8"`
@@ -242,10 +225,10 @@ func decorateUpdateData(c *WailsDuelClient, _ byte, pbuf *utils.YGOBuffer, msg a
 	if err != nil {
 		return err
 	}
-	c.emit("duel:update_data", map[string]interface{}{
-		"player":   m.Player,
-		"location": m.Location,
-		"cards":    cards,
+	c.emit("duel:update_data", updateDataDTO{
+		Player:   m.Player,
+		Location: m.Location,
+		Cards:    cards,
 	})
 	return nil
 }
@@ -256,17 +239,16 @@ func decorateUpdateCard(c *WailsDuelClient, _ byte, pbuf *utils.YGOBuffer, msg a
 	if err != nil {
 		return err
 	}
-	payload := map[string]interface{}{
-		"player":   m.Player,
-		"location": m.Location,
-		"sequence": m.Sequence,
-	}
+	var card *queryCardDTO
 	if len(cards) > 0 {
-		for k, v := range cards[0] {
-			payload[k] = v
-		}
+		card = cards[0]
 	}
-	c.emit("duel:update_card", payload)
+	c.emit("duel:update_card", updateCardDTO{
+		Player:   m.Player,
+		Location: m.Location,
+		Sequence: m.Sequence,
+		Card:     card,
+	})
 	return nil
 }
 
@@ -281,22 +263,30 @@ func decorateUpdateCard(c *WailsDuelClient, _ byte, pbuf *utils.YGOBuffer, msg a
 // ------------------------------------------------------------------
 
 // query 布局：{flag 位, 消费动作}。顺序即 get_infos 的 if 顺序，不可变。
-func decodeQueryBody(body []byte) map[string]interface{} {
+// 返回 *queryCardDTO：字段是否出现由 flag 决定（指针 nil → json 省略），
+// 解码越过 blob 边界即整体放弃（返回 nil 走 opaque skip）。
+func decodeQueryBody(body []byte) *queryCardDTO {
 	if len(body) < 4 {
 		return nil
 	}
 	flag := binary.LittleEndian.Uint32(body[0:4])
 	rest := body[4:]
 	pos := 0
-	card := map[string]interface{}{}
+	card := &queryCardDTO{}
 
 	u32 := func() uint32 {
 		v := binary.LittleEndian.Uint32(rest[pos:])
 		pos += 4
 		return v
 	}
-	i32 := func() int32 {
-		return int32(binary.LittleEndian.Uint32(rest[pos:]))
+	u32p := func() *uint32 {
+		v := u32()
+		return &v
+	}
+	i32p := func() *int32 {
+		v := int32(binary.LittleEndian.Uint32(rest[pos:]))
+		pos += 4
+		return &v
 	}
 	count := func() int {
 		n := int(int32(binary.LittleEndian.Uint32(rest[pos:])))
@@ -310,111 +300,115 @@ func decodeQueryBody(body []byte) map[string]interface{} {
 			failed = true
 		}
 	}
+	locPosRefp := func() *locPosRefDTO {
+		v := newLocPosRef(u32())
+		return &v
+	}
 
 	if flag&0x01 != 0 { // QUERY_CODE
 		ensure(4)
 		if !failed {
-			card["code"] = u32()
+			card.Code = u32p()
 		}
 	}
 	if !failed && flag&0x02 != 0 { // QUERY_POSITION（get_info_location，含灵摆覆盖形态）
 		ensure(4)
 		if !failed {
-			card["position"] = packedLocEntry(u32())
+			card.Position = locPosRefp()
 		}
 	}
 	if !failed && flag&0x04 != 0 { // QUERY_ALIAS
 		ensure(4)
 		if !failed {
-			card["alias"] = u32()
+			card.Alias = u32p()
 		}
 	}
 	if !failed && flag&0x08 != 0 { // QUERY_TYPE
 		ensure(4)
 		if !failed {
-			card["type"] = u32()
+			card.Type = u32p()
 		}
 	}
 	if !failed && flag&0x10 != 0 { // QUERY_LEVEL（低 16 位等级，高位含灵摆刻度）
 		ensure(4)
 		if !failed {
-			card["level"] = u32()
+			card.Level = u32p()
 		}
 	}
 	if !failed && flag&0x20 != 0 { // QUERY_RANK
 		ensure(4)
 		if !failed {
-			card["rank"] = u32()
+			card.Rank = u32p()
 		}
 	}
 	if !failed && flag&0x40 != 0 { // QUERY_ATTRIBUTE
 		ensure(4)
 		if !failed {
-			card["attribute"] = u32()
+			card.Attribute = u32p()
 		}
 	}
 	if !failed && flag&0x80 != 0 { // QUERY_RACE
 		ensure(4)
 		if !failed {
-			card["race"] = u32()
+			card.Race = u32p()
 		}
 	}
 	if !failed && flag&0x100 != 0 { // QUERY_ATTACK
 		ensure(4)
 		if !failed {
-			card["attack"] = i32()
+			card.Attack = i32p()
 		}
 	}
 	if !failed && flag&0x200 != 0 { // QUERY_DEFENSE
 		ensure(4)
 		if !failed {
-			card["defense"] = i32()
+			card.Defense = i32p()
 		}
 	}
 	if !failed && flag&0x400 != 0 { // QUERY_BASE_ATTACK
 		ensure(4)
 		if !failed {
-			card["baseAttack"] = i32()
+			card.BaseAttack = i32p()
 		}
 	}
 	if !failed && flag&0x800 != 0 { // QUERY_BASE_DEFENSE
 		ensure(4)
 		if !failed {
-			card["baseDefense"] = i32()
+			card.BaseDefense = i32p()
 		}
 	}
 	if !failed && flag&0x1000 != 0 { // QUERY_REASON
 		ensure(4)
 		if !failed {
-			card["reason"] = u32()
+			card.Reason = u32p()
 		}
 	}
 	if !failed && flag&0x2000 != 0 { // QUERY_REASON_CARD
 		ensure(4)
 		if !failed {
-			card["reasonCard"] = packedLocEntry(u32())
+			card.ReasonCard = locPosRefp()
 		}
 	}
 	if !failed && flag&0x4000 != 0 { // QUERY_EQUIP_CARD（无装备时引擎剔除该位）
 		ensure(4)
 		if !failed {
-			card["equipCard"] = packedLocEntry(u32())
+			card.EquipCard = locPosRefp()
 		}
 	}
 	if !failed && flag&0x8000 != 0 { // QUERY_TARGET_CARD
 		ensure(4)
 		if !failed {
 			n := count()
-			entries := make([]map[string]interface{}, n)
+			entries := make([]*locPosRefDTO, 0, n)
 			for i := 0; i < n; i++ {
 				ensure(4)
 				if failed {
 					break
 				}
-				entries[i] = packedLocEntry(u32())
+				entries = append(entries, locPosRefp())
 			}
 			if !failed {
-				card["targets"] = entries
+				card.Targets = entries
 			}
 		}
 	}
@@ -422,16 +416,16 @@ func decodeQueryBody(body []byte) map[string]interface{} {
 		ensure(4)
 		if !failed {
 			n := count()
-			codes := make([]uint32, n)
+			codes := make([]uint32, 0, n)
 			for i := 0; i < n; i++ {
 				ensure(4)
 				if failed {
 					break
 				}
-				codes[i] = u32()
+				codes = append(codes, u32())
 			}
 			if !failed {
-				card["overlays"] = codes
+				card.Overlays = codes
 			}
 		}
 	}
@@ -439,49 +433,49 @@ func decodeQueryBody(body []byte) map[string]interface{} {
 		ensure(4)
 		if !failed {
 			n := count()
-			counters := make([]map[string]interface{}, n)
+			counters := make([]*counterDTO, 0, n)
 			for i := 0; i < n; i++ {
 				ensure(4)
 				if failed {
 					break
 				}
 				raw := u32()
-				counters[i] = map[string]interface{}{"type": raw & 0xffff, "count": raw >> 16}
+				counters = append(counters, &counterDTO{Type: raw & 0xffff, Count: raw >> 16})
 			}
 			if !failed {
-				card["counters"] = counters
+				card.Counters = counters
 			}
 		}
 	}
 	if !failed && flag&0x40000 != 0 { // QUERY_OWNER
 		ensure(4)
 		if !failed {
-			card["owner"] = i32()
+			card.Owner = i32p()
 		}
 	}
 	if !failed && flag&0x80000 != 0 { // QUERY_STATUS
 		ensure(4)
 		if !failed {
-			card["status"] = u32()
+			card.Status = u32p()
 		}
 	}
 	if !failed && flag&0x200000 != 0 { // QUERY_LSCALE
 		ensure(4)
 		if !failed {
-			card["lscale"] = u32()
+			card.LScale = u32p()
 		}
 	}
 	if !failed && flag&0x400000 != 0 { // QUERY_RSCALE
 		ensure(4)
 		if !failed {
-			card["rscale"] = u32()
+			card.RScale = u32p()
 		}
 	}
 	if !failed && flag&0x800000 != 0 { // QUERY_LINK（link + link_marker 各 4 字节）
 		ensure(8)
 		if !failed {
-			card["link"] = u32()
-			card["linkMarker"] = u32()
+			card.Link = u32p()
+			card.LinkMarker = u32p()
 		}
 	}
 	if failed {
@@ -490,14 +484,14 @@ func decodeQueryBody(body []byte) map[string]interface{} {
 	return card
 }
 
-// decodeQueryBlobList 解码 ocgcore query blob 列表；maxBlobs 语义同
-// skipQueryBlobList（0 = 直到缓冲区尾）。blob 的 8 字节头（长度+flag）保证
+// decodeQueryBlobList 解码 ocgcore query blob 列表；maxBlobs 限制最大解码
+// 数量（0 = 直到缓冲区尾）。blob 的 8 字节头（长度+flag）保证
 // 无论解码成败缓冲区都按整 blob 推进；解码失败的 blob 被跳过不计入结果。
 // MZONE/SZONE 的空槽写 LEN_EMPTY(4) 标记（ocgapi.cpp query_field_card），
 // 以 nil 占位保持输出条目与槽序号的对齐（client_field.cpp:353-359 同语义）。
 // 截断（len 头大于剩余字节）视为列表结束。
-func decodeQueryBlobList(pbuf *utils.YGOBuffer, maxBlobs int) ([]map[string]interface{}, error) {
-	var out []map[string]interface{}
+func decodeQueryBlobList(pbuf *utils.YGOBuffer, maxBlobs int) ([]*queryCardDTO, error) {
+	var out []*queryCardDTO
 	for skipped := 0; maxBlobs == 0 || skipped < maxBlobs; skipped++ {
 		if pbuf.Len() < 4 {
 			return out, nil

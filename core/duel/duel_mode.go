@@ -49,6 +49,17 @@ type DuelMode struct {
 	Duel        *ocgcore.Duel
 	startOffset int64
 	lastReplay  *Replay
+
+	// 以下为 SingleDuel / TagDuel 共用的对局状态。
+	// SingleDuel 只使用下标 0/1（两名玩家），TagDuel 使用 0..3。
+	Observers    map[string]*DuelPlayer
+	ready        [4]bool
+	pDeck        [4]*Deck
+	DeckError    [4]uint32
+	handResult   [2]uint8
+	lastResponse uint8
+	timeLimit    [2]int16
+	timeElapsed  int16
 }
 
 const (
@@ -99,32 +110,6 @@ func CheckMsgSize(size int) bool {
 	return true
 }
 
-// 可选：提供一个更符合Go风格的版本
-// 在Go中，我们通常不需要关心类型的大小，因为它们是固定的
-// 这个版本更简洁，但功能相同
-
-// CheckMessageSize 检查UTF-16编码消息大小是否合法（Go风格版本）
-func CheckMessageSize(sizeInBytes int) bool {
-	// 每个UTF-16字符占2字节
-	chars := sizeInBytes / 2
-
-	// 至少需要一个字符和一个null终止符
-	if chars < 2 {
-		return false
-	}
-
-	// 不能超过最大长度
-	if chars > LenChatMsg {
-		return false
-	}
-
-	// 必须是偶数字节（UTF-16字符的整数倍）
-	if sizeInBytes%2 != 0 {
-		return false
-	}
-
-	return true
-}
 func (d *DuelMode) BaseMode() *DuelMode {
 	return d
 }

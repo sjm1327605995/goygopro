@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,7 +56,7 @@ type AppConfig struct {
 	UseLFList     int `conf:"use_lflist"`
 	DefaultLFList int `conf:"default_lflist"`
 	DefaultRule   int `conf:"default_rule"`
-	DefaultOT     int `conf:"defaultOT"` // 1=OCG+TCG 2=OCG 4=TCG 8=自定
+	DefaultOT     int `conf:"default_ot"` // 1=OCG+TCG 2=OCG 4=TCG 8=自定（原版键名 game.cpp:1463）
 
 	// ---- 大厅记忆（原版各输入框回填） ----
 	Nickname     string `conf:"nickname"`
@@ -90,9 +91,9 @@ func defaultConfig() AppConfig {
 // configFilePath：工作目录下的 system.conf（与原版一致）。
 func (a *App) configFilePath() string { return "system.conf" }
 
-// LoadConfig 读取 system.conf；文件不存在或个别行解析失败都按默认值兜底。
+// loadConfig 读取 system.conf；文件不存在或个别行解析失败都按默认值兜底。
 // 解析语义照抄原版：先按 "key = value" 严格匹配，键名小写比对。
-func (a *App) LoadConfig() AppConfig {
+func (a *App) loadConfig() AppConfig {
 	cfg := defaultConfig()
 	f, err := os.Open(a.configFilePath())
 	if err != nil {
@@ -117,98 +118,73 @@ func (a *App) LoadConfig() AppConfig {
 	return cfg
 }
 
-// applyConfigLine 单行应用（LoadConfig 与 SaveConfig 的合并补丁共用）。
+// applyConfigLine 单行应用（loadConfig 与 SaveConfig 的合并补丁共用）。
+// 键 → setter 的映射由 configSetters 表提供（见下），未知键忽略。
 func applyConfigLine(cfg *AppConfig, key, val string) {
-	switch key {
-	case "automonsterpos":
-		cfg.AutoMonsterPos = atoiOr(val, cfg.AutoMonsterPos)
-	case "autospellpos":
-		cfg.AutoSpellPos = atoiOr(val, cfg.AutoSpellPos)
-	case "randompos":
-		cfg.RandomPos = atoiOr(val, cfg.RandomPos)
-	case "autochain":
-		cfg.AutoChain = atoiOr(val, cfg.AutoChain)
-	case "waitchain":
-		cfg.WaitChain = atoiOr(val, cfg.WaitChain)
-	case "showchain":
-		cfg.ShowChain = atoiOr(val, cfg.ShowChain)
-	case "quick_animation":
-		cfg.QuickAnimation = atoiOr(val, cfg.QuickAnimation)
-	case "auto_save_replay":
-		cfg.AutoSaveReplay = atoiOr(val, cfg.AutoSaveReplay)
-	case "draw_single_chain":
-		cfg.DrawSingleChain = atoiOr(val, cfg.DrawSingleChain)
-	case "mute_opponent":
-		cfg.MuteOpponent = atoiOr(val, cfg.MuteOpponent)
-	case "mute_spectators":
-		cfg.MuteSpectators = atoiOr(val, cfg.MuteSpectators)
-	case "hide_player_name":
-		cfg.HidePlayerName = atoiOr(val, cfg.HidePlayerName)
-	case "ignore_deck_changes":
-		cfg.IgnoreDeckChanges = atoiOr(val, cfg.IgnoreDeckChanges)
-	case "auto_search_limit":
-		cfg.AutoSearchLimit = atoiOr(val, cfg.AutoSearchLimit)
-	case "search_multiple_keywords":
-		cfg.SearchMultipleKeywords = atoiOr(val, cfg.SearchMultipleKeywords)
-	case "draw_field_spell":
-		cfg.DrawFieldSpell = atoiOr(val, cfg.DrawFieldSpell)
-	case "separate_clear_button":
-		cfg.SeparateClearButton = atoiOr(val, cfg.SeparateClearButton)
-	case "hide_setname":
-		cfg.HideSetName = atoiOr(val, cfg.HideSetName)
-	case "hide_hint_button":
-		cfg.HideHintButton = atoiOr(val, cfg.HideHintButton)
-	case "swap_yes_no_button":
-		cfg.SwapYesNoButton = atoiOr(val, cfg.SwapYesNoButton)
-	case "resize_select_window":
-		cfg.ResizeSelectWindow = atoiOr(val, cfg.ResizeSelectWindow)
-	case "resize_popup_menu":
-		cfg.ResizePopupMenu = atoiOr(val, cfg.ResizePopupMenu)
-	case "control_mode":
-		cfg.ControlMode = atoiOr(val, cfg.ControlMode)
-	case "prefer_expansion_script":
-		cfg.PreferExpansionScript = atoiOr(val, cfg.PreferExpansionScript)
-	case "enable_sound":
-		cfg.EnableSound = val == "true" || val == "1"
-	case "enable_music":
-		cfg.EnableMusic = val == "true" || val == "1"
-	case "sound_volume":
-		cfg.SoundVolume = clampInt(atoiOr(val, cfg.SoundVolume), 0, 100)
-	case "music_volume":
-		cfg.MusicVolume = clampInt(atoiOr(val, cfg.MusicVolume), 0, 100)
-	case "music_mode":
-		cfg.MusicMode = atoiOr(val, cfg.MusicMode)
-	case "use_lflist":
-		cfg.UseLFList = atoiOr(val, cfg.UseLFList)
-	case "default_lflist":
-		cfg.DefaultLFList = atoiOr(val, cfg.DefaultLFList)
-	case "default_rule":
-		cfg.DefaultRule = atoiOr(val, cfg.DefaultRule)
-	case "default_ot", "defaultot":
-		// 原版读写键为 default_ot（game.cpp:1463/1586）；defaultot 是本
-		// 项目早期误拼的键名，兼容旧 conf 文件继续可读
-		cfg.DefaultOT = atoiOr(val, cfg.DefaultOT)
-	case "nickname":
-		cfg.Nickname = val
-	case "gamename":
-		cfg.GameName = val
-	case "lasthost":
-		cfg.LastHost = val
-	case "lastport":
-		cfg.LastPort = val
-	case "lastcategory":
-		cfg.LastCategory = val
-	case "lastdeck":
-		cfg.LastDeck = val
-	case "serverport":
-		cfg.ServerPort = atoiOr(val, cfg.ServerPort)
+	if set, ok := configSetters[key]; ok {
+		set(cfg, val)
 	}
+}
+
+// configSetters 是 conf 键 → 字段 setter 的总表，由 AppConfig 的 conf tag
+// 反射生成（tag 即原版 system.conf 键名，config.go 结构体声明处注释）。
+// 生成时机保留原版每键的转换语义：
+//   - int 键：atoiOr 失败回退当前值（非法值不覆盖已有配置）；
+//   - bool 键：仅 "true"/"1" 为真，其余一律为假（与原版一致，不做回退）；
+//   - string 键：原样赋值。
+//
+// 两类键在反射生成后追加特例：
+//   - sound_volume/music_volume：赋值后再夹取到 0-100；
+//   - defaultot：本项目早期误拼键名，作为 default_ot 的别名兼容旧 conf。
+var configSetters = buildConfigSetters()
+
+func buildConfigSetters() map[string]func(*AppConfig, string) {
+	setters := map[string]func(*AppConfig, string){}
+	t := reflect.TypeOf(AppConfig{})
+	for i := 0; i < t.NumField(); i++ {
+		idx, field := i, t.Field(i)
+		key := field.Tag.Get("conf")
+		if key == "" {
+			continue
+		}
+		switch field.Type.Kind() {
+		case reflect.Int:
+			setters[key] = func(cfg *AppConfig, val string) {
+				fv := reflect.ValueOf(cfg).Elem().Field(idx)
+				fv.SetInt(int64(atoiOr(val, int(fv.Int()))))
+			}
+		case reflect.String:
+			setters[key] = func(cfg *AppConfig, val string) {
+				reflect.ValueOf(cfg).Elem().Field(idx).SetString(val)
+			}
+		case reflect.Bool:
+			setters[key] = func(cfg *AppConfig, val string) {
+				reflect.ValueOf(cfg).Elem().Field(idx).SetBool(val == "true" || val == "1")
+			}
+		}
+	}
+	for _, k := range []string{"sound_volume", "music_volume"} {
+		inner, fieldName := setters[k], clampedFields[k]
+		setters[k] = func(cfg *AppConfig, val string) {
+			inner(cfg, val)
+			fv := reflect.ValueOf(cfg).Elem().FieldByName(fieldName)
+			fv.SetInt(int64(clampInt(int(fv.Int()), 0, 100)))
+		}
+	}
+	setters["defaultot"] = setters["default_ot"]
+	return setters
+}
+
+// clampedFields：音量键 → AppConfig 字段名（夹取特例用）。
+var clampedFields = map[string]string{
+	"sound_volume": "SoundVolume",
+	"music_volume": "MusicVolume",
 }
 
 // SaveConfig 用补丁合并当前配置并写回 system.conf（键名即 conf 键）。
 // 返回合并后的完整配置。未知键忽略；roompass 等原版只读不写的键不在本表内。
 func (a *App) SaveConfig(patch map[string]interface{}) AppConfig {
-	cfg := a.LoadConfig()
+	cfg := a.loadConfig()
 	for k, v := range patch {
 		s := fmt.Sprintf("%v", v)
 		applyConfigLine(&cfg, strings.ToLower(strings.TrimSpace(k)), s)
@@ -219,7 +195,7 @@ func (a *App) SaveConfig(patch map[string]interface{}) AppConfig {
 
 // GetConfig 返回完整配置快照（JSON-friendly map，键=conf 键）。
 func (a *App) GetConfig() map[string]interface{} {
-	cfg := a.LoadConfig()
+	cfg := a.loadConfig()
 	return configToMap(cfg)
 }
 

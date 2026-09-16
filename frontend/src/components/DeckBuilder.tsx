@@ -501,12 +501,12 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
             {decksInCategory.map((n) => <option key={n} value={n}>{n.split('/').pop()}</option>)}
           </select>
           <input className="form-input" style={{ width: '180px' }} value={deckName} onChange={(e) => setDeckName(e.target.value)} />
-          <button className="btn btn-primary" onClick={saveDeck}>保存卡组</button>
+          <button className="btn btn-primary" onClick={saveDeck}>保存</button>
           <button className="btn btn-secondary" onClick={() => { if (!discardGuard()) newDeck(); }}>新建卡组</button>
-          <button className="btn btn-danger" onClick={deleteDeck}>删除卡组</button>
+          <button className="btn btn-danger" onClick={deleteDeck}>删除</button>
           <button className="btn btn-gold" onClick={simulateSampleHand}>测试起手 5 张</button>
         </div>
-        <button className="btn btn-secondary" onClick={() => { if (!discardGuard()) onNavigate('menu'); }}>← 返回主菜单</button>
+        <button className="btn btn-secondary" onClick={() => { if (!discardGuard()) onNavigate('menu'); }}>退出编辑</button>
       </div>
 
       <div className="deck-main-layout">
@@ -530,7 +530,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
                 </div>
                 {(inspected.type & TYPE_MONSTER) !== 0 ? (
                   <div className="inspector-meta" id="deck-inspector-stats">
-                    {(inspected.type & TYPE_LINK) ? `LINK-${inspected.level}` : `星级 ${inspected.level}`}
+                    {(inspected.type & TYPE_LINK) ? `LINK-${inspected.level}` : `星数 ${inspected.level}`}
                     {' ｜ '}
                     {(RACES.find((r) => r[0] === inspected.race) || [0, ''])[1] as string}
                     {' ｜ '}
@@ -558,27 +558,27 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
         <div className="deck-zones-container">
           {/* 编辑器三键（deck_con.cpp:172-191 BUTTON_CLEAR/SORT/SHUFFLE_DECK） */}
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button id="deck-clear-btn" className="btn btn-secondary" onClick={clearDeck}>清空卡组</button>
-            <button id="deck-sort-btn" className="btn btn-secondary" onClick={sortDeck}>排序卡组</button>
-            <button id="deck-shuffle-btn" className="btn btn-secondary" onClick={shuffleDeck}>洗牌卡组</button>
+            <button id="deck-clear-btn" className="btn btn-secondary" onClick={clearDeck}>清空</button>
+            <button id="deck-sort-btn" className="btn btn-secondary" onClick={sortDeck}>排序</button>
+            <button id="deck-shuffle-btn" className="btn btn-secondary" onClick={shuffleDeck}>打乱</button>
           </div>
           <div>
             <div className="deck-section-title">
-              <span>主卡组（40 - 60）</span>
+              <span>主卡组：</span>
               <span className="badge badge-attr">{currentDeck.main.length} / 60</span>
             </div>
             {renderSection(currentDeck.main, 'main')}
           </div>
           <div>
             <div className="deck-section-title">
-              <span>额外卡组（0 - 15）</span>
+              <span>额外卡组：</span>
               <span className="badge badge-type">{currentDeck.extra.length} / 15</span>
             </div>
             {renderSection(currentDeck.extra, 'extra')}
           </div>
           <div>
             <div className="deck-section-title">
-              <span>副卡组（0 - 15）</span>
+              <span>副卡组：</span>
               <span className="badge badge-attr">{currentDeck.side.length} / 15</span>
             </div>
             {renderSection(currentDeck.side, 'side')}
@@ -598,7 +598,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
           />
           <div style={{ display: 'flex', gap: '6px' }}>
             <select className="form-select" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-              <option value="0">全部种类</option>
+              <option value="0">（无）</option>
               <option value="1">怪兽</option>
               <option value="2">魔法</option>
               <option value="4">陷阱</option>
@@ -611,11 +611,11 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
               <option value="4194304">连接</option>
             </select>
             <select id="deck-filter-race" className="form-select" value={raceFilter} onChange={(e) => setRaceFilter(e.target.value)}>
-              <option value="0">全部种族</option>
+              <option value="0">（无）</option>
               {RACES.map(([v, name]) => <option key={v} value={String(v)}>{name}</option>)}
             </select>
             <select id="deck-filter-attr" className="form-select" value={attrFilter} onChange={(e) => setAttrFilter(e.target.value)}>
-              <option value="0">全部属性</option>
+              <option value="0">（无）</option>
               {ATTRS.map(([v, name]) => <option key={v} value={String(v)}>{name}</option>)}
             </select>
           </div>
@@ -659,7 +659,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
           ) : null}
           <div id="deck-linkmarks-panel" style={{ marginTop: '8px' }}>
             <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '2px' }}>
-              链接箭头{linkMarks > 0 ? `（掩码 ${linkMarks}）` : ''}
+              连接标记{linkMarks > 0 ? `（掩码 ${linkMarks}）` : ''}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 32px)', gap: '2px', justifyItems: 'center' }}>
               {LINK_MARKS.map(([bit, arrow], i) => (
@@ -680,7 +680,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
           </div>
           <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
             <button className="btn btn-primary" style={{ flex: 1 }} onClick={performSearch}>搜索</button>
-            <button id="deck-filter-clear" className="btn btn-secondary" onClick={clearFilters}>清空条件</button>
+            <button id="deck-filter-clear" className="btn btn-secondary" onClick={clearFilters}>清空</button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
             <label style={{ fontSize: '12px', color: 'var(--text-muted)' }}>点击加入：</label>

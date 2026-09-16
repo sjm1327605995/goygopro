@@ -1,5 +1,5 @@
-// 波 H：主菜单 1:1 对齐原版 wMainMenu（game.cpp:199-206）——
-// 280×215 窗口、版本标题、5 个纵排按钮；点联机切 lobby、退出经 bridge。
+// 波 H：主菜单 1:1 对齐 docs/layout_prototype.html 第 1 节 wMainMenu——
+// 320×210 窗口（20% 顶部留白）、版本标题、5 个纵排按钮；点联机切 lobby、退出经 bridge。
 import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { WailsBridge } from '../src/wails_bridge.ts';
@@ -40,7 +40,7 @@ try {
   await waitFor(() => !!$('main-menu-screen'));
   record('menu-screen-renders', true);
 
-  // 原版窗口形态：gfw-mainmenu 尺寸 280×215、标题为版本串
+  // 原型窗口形态：gfw-mainmenu 尺寸 320×210（docs/layout_prototype.html 第 1 节）、标题为版本串
   const win = $('main-menu-window');
   const cls = win && win.className;
   record('menu-window-shape', !!win && cls.includes('gfw-window') && cls.includes('gfw-mainmenu'));

@@ -15,7 +15,6 @@ type OCGApi struct {
 	rootPath          string
 	scriptDirectory   string
 	databaseFile      string
-	buffer            []byte
 	CreateDuel        func(seed int32) uintptr
 	CreateDuelV2      func(seedSequence *[8]uint32) uintptr
 	StartDuel         func(pduel uintptr, options int32)
@@ -40,22 +39,6 @@ type OCGApi struct {
 	scriptReader   ScriptReader
 	cardReader     CardReader
 	messageHandler MessageHandler
-}
-
-// YGOCardData kept for backward compatibility
-type YGOCardData struct {
-	Id         uint32
-	Alias      uint32
-	Setcode    int64
-	Type       uint32
-	Level      uint32
-	Attribute  uint32
-	Race       uint32
-	Attack     int64
-	Defense    int64
-	LScale     uint32
-	RScale     uint32
-	LinkMarker uint32
 }
 
 // Public callback types – user-friendly, no CGO
@@ -133,7 +116,6 @@ func Init(opts ...Option) error {
 		rootPath:        ".",
 		scriptDirectory: "script",
 		databaseFile:    "cards.cdb",
-		buffer:          make([]byte, 128*1024),
 	}
 	ocgApi.scriptReader = ocgApi.defaultScriptReader
 	ocgApi.cardReader = ocgApi.defaultCardReader
@@ -245,22 +227,6 @@ func (o *OCGApi) defaultOnMessageHandler(duelPtr uintptr, msgSize uint32) {
 	if has {
 		duel.OnMessage(msgSize)
 	}
-}
-
-// GoString converts a C string pointer to a Go string.
-func GoString(c uintptr) string {
-	ptr := *(*unsafe.Pointer)(unsafe.Pointer(&c))
-	if ptr == nil {
-		return ""
-	}
-	var length int
-	for {
-		if *(*byte)(unsafe.Add(ptr, uintptr(length))) == '\x00' {
-			break
-		}
-		length++
-	}
-	return string(unsafe.Slice((*byte)(ptr), length))
 }
 
 func cStringToGoString(p *byte) string {

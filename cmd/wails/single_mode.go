@@ -133,6 +133,11 @@ func (a *App) StartSingle(name string, returnDeckTop bool) map[string]interface{
 		opt = int32(ocgcore.DUEL_RETURN_DECK_TOP)
 	}
 	if err := ss.PrepareWithOpt(name, opt); err != nil {
+		// Prepare 失败（如脚本加载失败）不会进入 Run 的 defer d.End()，
+		// 引擎句柄已建，需在此显式释放，避免泄漏（end_duel + Dispose）。
+		if ss.Duel != nil {
+			ss.Duel.End()
+		}
 		return map[string]interface{}{"success": false, "error": err.Error()}
 	}
 
@@ -145,6 +150,10 @@ func (a *App) StartSingle(name string, returnDeckTop bool) map[string]interface{
 	a.singleMu.Lock()
 	if a.single != nil { // 双重检查：并发调用只放一个进来
 		a.singleMu.Unlock()
+		// 上一路径的会话仍在跑；这个已 Prepare 的引擎句柄不会进入 Run，同样释放。
+		if ss.Duel != nil {
+			ss.Duel.End()
+		}
 		return map[string]interface{}{"success": false, "error": "单人模式已在进行中"}
 	}
 	a.single = run

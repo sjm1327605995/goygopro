@@ -58,8 +58,6 @@ func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOpt
 			EmitWailsEvent(a.ctx, eventName, nil)
 		}
 	})
-	a.client.SetContext(ctx)
-
 	// Initialize card database
 	if _, err := os.Stat(a.dbPath); err == nil {
 		_ = a.cardDB.OpenDB(a.dbPath)
@@ -97,13 +95,12 @@ func (a *App) ConnectServer(addr string, username string, pass string) map[strin
 	return map[string]interface{}{"success": true}
 }
 
-func (a *App) DisconnectServer() {
-	if a.client != nil {
-		a.client.Disconnect()
-	}
-}
-
 func (a *App) StartLocalServer(port int) map[string]interface{} {
+	// 端口优先用前端传入值；缺省时回退到 system.conf 的 serverport（原版
+	// 大厅菜单「建立主机」的监听端口），再兜底 7911。
+	if port <= 0 {
+		port = a.loadConfig().ServerPort
+	}
 	if port <= 0 {
 		port = 7911
 	}
@@ -114,9 +111,17 @@ func (a *App) StartLocalServer(port int) map[string]interface{} {
 		return map[string]interface{}{"success": false, "error": fmt.Sprintf("init error: %v", err)}
 	}
 
+	// gnet.Run 绑定端口失败会立刻返回错误，成功则阻塞运行到 Stop；这里后台
+	// 起 goroutine，用短超时探测启动错误，避免把 err 静默丢弃。
+	errCh := make(chan error, 1)
 	go func() {
-		_ = duel.StartDuelServer(port, false)
+		errCh <- duel.StartDuelServer(port, false)
 	}()
+	select {
+	case startErr := <-errCh:
+		return map[string]interface{}{"success": false, "error": fmt.Sprintf("server failed to start: %v", startErr)}
+	case <-time.After(500 * time.Millisecond):
+	}
 
 	return map[string]interface{}{"success": true, "port": port}
 }
@@ -252,10 +257,6 @@ func (a *App) SendTPResult(res byte) {
 
 func (a *App) SendResponseI(val int32) {
 	_ = a.routeResponseI(val)
-}
-
-func (a *App) SendResponseB(data []byte) {
-	_ = a.routeResponseB(data)
 }
 
 func (a *App) SendTimeConfirm() {

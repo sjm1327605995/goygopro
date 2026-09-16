@@ -161,6 +161,75 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
       JSON.stringify([p0set, p1set]));
 
     record('no-fatal', true);
+
+    // ---- 波 4 视觉小项 ----
+    // 种子块在 React 挂载前发出，DuelManager 错过了 duel:start（playerSlot
+    // 停在默认 0）——先重发一次让 manager 与 store 对齐，再测新视觉。
+    eventBus.emit('duel:start', {
+      playerType: 1, duelRule: 5, lp0: 8000, lp1: 4000,
+      deck0: 40, extra0: 15, deck1: 37, extra1: 12,
+    });
+    eventBus.emit('duel:new_turn', { player: 1 });
+
+    // 当前回合背景框（drawing.cpp:582-588：0xa0000000 填充 + 0xffff8080 红描边）
+    // + LP 数字黄字黑描边（:643-644）
+    const myStyle = getComputedStyle($('#player-panel'));
+    const oppStyle = getComputedStyle($('#opponent-panel'));
+    record('turn-frame-red-outline', myStyle.borderTopColor === 'rgb(255, 128, 128)'
+      && myStyle.backgroundColor === 'rgba(0, 0, 0, 0.63)'
+      && oppStyle.borderTopColor !== 'rgb(255, 128, 128)',
+      `${myStyle.borderTopColor} / ${myStyle.backgroundColor} / ${oppStyle.borderTopColor}`);
+    record('lp-value-yellow-shadow',
+      getComputedStyle($('#player-panel-lp')).color === 'rgb(255, 255, 0)');
+
+    // 时限条（drawing.cpp:637-642）：首个 time_limit 包学满额，随后按比例缩
+    eventBus.emit('stoc:time_limit', { player: 1, leftTime: 240 });
+    await waitFor(() => !!$('#player-time-bar'), 'time bar mounts');
+    eventBus.emit('stoc:time_limit', { player: 1, leftTime: 120 });
+    await waitFor(() => {
+      const bar = $('#player-time-bar');
+      const fill = bar && bar.querySelector('.time-limit-fill');
+      return fill && fill.getBoundingClientRect().width > 0;
+    }, 'time fill sized');
+    const tb2 = $('#player-time-bar').getBoundingClientRect().width;
+    const tf2 = $('#player-time-bar .time-limit-fill').getBoundingClientRect().width;
+    const ratio = tf2 / tb2;
+    record('time-limit-half', ratio > 0.4 && ratio < 0.6, String(ratio));
+
+    // LP 超过初始值 → 分层彩条（drawing.cpp:590-619：底层满条 + 前景余数条）。
+    // .lp-fill 有 0.4s width transition，等比例到位再断言。
+    eventBus.emit('duel:recover', { player: 1, amount: 5000 }); // 4000 → 9000
+    const fgWidth = () => $('#player-panel .lp-fill:not(.lp-fill-bg)').getBoundingClientRect().width;
+    const trackWidth = () => $('#player-panel .lp-track').getBoundingClientRect().width;
+    await waitFor(() => {
+      if (!$('#player-panel .lp-fill-bg')) return false;
+      const r = fgWidth() / trackWidth();
+      return r > 0.2 && r < 0.3;
+    }, 'layered LP settles');
+    record('lp-layered-partial', true);
+    record('lp-layered-rows',
+      $('#player-panel .lp-fill-bg').style.backgroundPositionY === '25%'
+      && $('#player-panel .lp-fill:not(.lp-fill-bg)').style.backgroundPositionY === '50%',
+      `${$('#player-panel .lp-fill-bg').style.backgroundPositionY}/${$('#player-panel .lp-fill:not(.lp-fill-bg)').style.backgroundPositionY}`);
+
+    // 墓地禁查（MSG_PLAYER_HINT CARD_QUESTION，duelclient.cpp:3757-3768 +
+    // drawing.cpp:564-575：双方墓地上空「?」图标）
+    eventBus.emit('duel:player_hint', { player: 1, type: 6, data: 38723936 });
+    await waitFor(() => f.graveLockSprites.length === 2
+      && f.graveLockSprites.every((s) => s.visible), 'grave lock on');
+    record('player-hint-grave-lock-on', f.graveLockSprites.length === 2
+      && f.graveLockSprites.every((s) => s.visible));
+    // 图标在双方墓地坐标上空（不是只有自己一侧）
+    const lockPos = f.graveLockSprites.map((s) => `${s.position.x},${s.position.z}`);
+    record('grave-lock-over-both-graves',
+      lockPos.includes('6.6,1.4') && lockPos.includes('-6.8,-1.4'), JSON.stringify(lockPos));
+    eventBus.emit('duel:player_hint', { player: 1, type: 7, data: 38723936 });
+    await waitFor(() => f.graveLockSprites.every((s) => !s.visible), 'grave lock off');
+    record('player-hint-grave-lock-off', f.graveLockSprites.every((s) => !s.visible));
+    // 非本方（对手）的 CARD_QUESTION 不置位
+    eventBus.emit('duel:player_hint', { player: 0, type: 6, data: 38723936 });
+    record('grave-lock-ignores-opponent',
+      !f.graveLockSprites.some((s) => s.visible));
   } catch (err) {
     checks.fatalMsg = String(err && err.stack || err);
     record('fatal', false);

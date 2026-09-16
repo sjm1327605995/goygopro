@@ -15,6 +15,8 @@ import (
 //
 // 方向：Go emit 的每个事件名都必须出现在前端转发名单里。前端名单可以包含
 // Go 暂不 emit 的名字（如尚未接线的 stoc 事件），不算失败。
+// 扫描范围：engineBindings / stocBindings 两张表的 event 字段 + 各 decorate
+// 与 handle 闭包里的 c.emit 字面量（duel_client.go 里剩余的字面量 emit）。
 
 // 注意：event: 分支后面不能再跟 \s*"——那样永远匹配不上（只有 c.emit(
 // 分支生效），engineBindings 表里 event 字段声明的事件全部漏网。
@@ -39,6 +41,7 @@ func collectGoEmits(t *testing.T, files ...string) map[string]bool {
 func TestFrontendForwardsAllEmittedEvents(t *testing.T) {
 	goEmits := collectGoEmits(t,
 		"engine_bindings.go",
+		"stoc_bindings.go",
 		"duel_client.go",
 		"app.go",
 	)

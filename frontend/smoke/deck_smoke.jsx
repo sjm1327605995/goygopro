@@ -161,7 +161,7 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     record('clear-filters', true);
 
     // 删除卡组：走 confirm → DeleteDeck → 列表刷新。
-    const deleteBtn = [...document.querySelectorAll('.deck-header .btn')].find((b) => b.textContent.includes('删除卡组'));
+    const deleteBtn = [...document.querySelectorAll('.deck-header .btn')].find((b) => b.textContent.includes('删除'));
     record('delete-btn-exists', !!deleteBtn);
     deleteBtn.click();
     await waitFor(() => deleteReqs.length === 1);
@@ -191,7 +191,7 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     record('category-load-basename', true);
 
     // 分类下保存 → 完整相对名带分类前缀（GetCategoryPath 语义）
-    [...document.querySelectorAll('.deck-header .btn')].find((b) => b.textContent.includes('保存卡组')).click();
+    [...document.querySelectorAll('.deck-header .btn')].find((b) => b.textContent.includes('保存')).click();
     await waitFor(() => saveSends.length === 1);
     record('save-into-category', saveSends[0].name === 'Tournament/TestDeck',
       JSON.stringify(saveSends[0] && saveSends[0].name));

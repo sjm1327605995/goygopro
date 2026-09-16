@@ -69,6 +69,7 @@ func (y *YGOBuffer) Clone() *YGOBuffer {
 		offset: y.offset,
 	}
 }
+
 // Unpack 用 restruct 从当前 offset 解析二进制到 struct，并自动推进 offset
 func (y *YGOBuffer) Unpack(v interface{}) error {
 	err := restruct.Unpack(y.buff[y.offset:], binary.LittleEndian, v)
@@ -91,13 +92,10 @@ func PackGameMsg(v interface{}) []byte {
 
 // SubSlices 返回从当前 buffer 位置到 clone buffer 位置的切片
 func (y *YGOBuffer) SubSlices(clone *YGOBuffer) []byte {
-	return y.SubSlicesOffset(clone, 0)
-}
-func (y *YGOBuffer) SubSlicesOffset(clone *YGOBuffer, offset int) []byte {
 	if y.offset >= clone.offset {
 		return nil
 	}
-	return y.buff[y.offset : clone.offset+offset]
+	return y.buff[y.offset:clone.offset]
 }
 func (y *YGOBuffer) ReadNext(n int) []byte {
 	if y.offset+n > len(y.buff) {

@@ -119,7 +119,12 @@ export default function DuelStage({
       {interactive && <PromptHost />}
       <VictoryOverlay showVictory={interactive} />
 
-      {showSurrender && <RightControls onSurrendered={handleSurrender} />}
+      {showSurrender && (
+        <RightControls
+          onSurrendered={handleSurrender}
+          onLeaveObserver={onExit ? () => onExit('menu') : undefined}
+        />
+      )}
       {!compact && <ChatOverlay />}
       {/* P4 波 6 补完：DrawSpec 特效（翻卡/放大/揭示/无效化 + 猜硬币文本）与 stTip 悬浮提示 */}
       {!compact && <SpecOverlay />}
