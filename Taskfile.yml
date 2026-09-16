@@ -1,0 +1,48 @@
+# Wails v3 project tasks. `wails3 build` / `wails3 dev` dispatch through this file.
+# See https://taskfile.dev for syntax.
+version: '3'
+
+vars:
+  APP_NAME: goygopro
+  BIN_DIR: bin
+  # Vite dev server port — `wails3 dev` exports WAILS_VITE_PORT and expects the
+  # frontend to listen on it so the webview can reach the dev server.
+  VITE_PORT: '{{env "WAILS_VITE_PORT" | default "9245"}}'
+
+tasks:
+  build:
+    summary: Builds the application (frontend + Go binary)
+    deps: [frontend:build]
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build -tags production -ldflags="-w -s" -o {{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}} ./cmd/wails
+
+  run:
+    summary: Builds and runs the application
+    deps: [build]
+    cmds:
+      - ./{{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}}
+
+  dev:
+    summary: Runs the application in development mode
+    cmds:
+      - wails3 dev -config ./build/config.yml
+
+  frontend:build:
+    summary: Builds the frontend into frontend/dist
+    dir: frontend
+    cmds:
+      - npm run build
+
+  frontend:install:
+    summary: Installs frontend dependencies
+    dir: frontend
+    cmds:
+      - npm install
+
+  frontend:dev:
+    summary: Runs the Vite dev server on the WAILS_VITE_PORT port
+    deps: [frontend:install]
+    dir: frontend
+    cmds:
+      - npm run dev -- --port {{.VITE_PORT}} --strictPort

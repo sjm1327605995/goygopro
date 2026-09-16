@@ -101,6 +101,9 @@ func HandleCreateGame(c *PacketContext) {
 // --------------------------------------------------
 func HandleJoinGame(c *PacketContext) {
 	pkt := c.MustPayload().(*protocol.CTOSJoinGame)
+	// 与 HandleCreateGame 对齐：客户端只填前 N 个 uint16，剩余槽位是 0，
+	// 不解 NUL 截断会把尾随 \x00 算进 roomId，导致按密码永远查不到房间。
+	utils.NullTerminate(pkt.Pass[:], 0)
 	roomId := string(utf16.Decode(pkt.Pass[:]))
 
 	room, exist := DefaultManager.GetRoom(roomId)
@@ -109,11 +112,13 @@ func HandleJoinGame(c *PacketContext) {
 		return
 	}
 
-	c.Player.Game = room.DuelMode
-	// join 同理未挂 RoomLockMiddleware（RequireNotInGame 保证进来时 c.Game()==nil），
+	// 注意不能在这里提前把 c.Player.Game 设为房间：checkJoinAllowed 把
+	// dp.Game != nil 视为「已在其他房间」直接拒绝（C++ 是先校验后赋值，
+	// netserver.cpp CTOS_JOIN_GAME 分支）。JoinGame 校验通过后会自行设置。
+	// join 未挂 RoomLockMiddleware（RequireNotInGame 保证进来时 c.Game()==nil），
 	// JoinGame 写房间共享玩家表需显式持锁。
 	room.DuelMode.BaseMode().Mu.Lock()
-	c.Player.Game.JoinGame(c.Player, pkt, false)
+	room.DuelMode.JoinGame(c.Player, pkt, false)
 	room.DuelMode.BaseMode().Mu.Unlock()
 }
 

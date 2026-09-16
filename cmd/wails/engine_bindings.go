@@ -26,6 +26,12 @@ type engineBinding struct {
 	decorate func(c *WailsDuelClient, engType byte, pbuf *utils.YGOBuffer, msg any) error
 }
 
+// packedLocEntry 把单个打包 info_location 解成 {c,l,s,p}。
+func packedLocEntry(loc uint32) map[string]interface{} {
+	cc, cl, cs, cp := protocol.UnpackPackedLoc(loc)
+	return map[string]interface{}{"c": cc, "l": cl, "s": cs, "p": cp}
+}
+
 // decorateSelectCard 转换 MSG_SELECT_CARD：cancelable 布尔化，条目展开。
 func decorateSelectCard(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error {
 	m := msg.(*protocol.SelectCardMsg)
@@ -84,7 +90,7 @@ func decorateSelectChain(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any
 		}
 		cc, cl, cs, cp := protocol.UnpackPackedLoc(ch.InfoLocation)
 		chains[i] = chainEntryDTO{
-			Flag:   ch.DescFlag,
+			Flag:   uint32(ch.DescFlag),
 			Forced: ch.Forced != 0,
 			Code:   ch.Code,
 			CC:     cc,
