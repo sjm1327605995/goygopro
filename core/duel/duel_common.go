@@ -334,8 +334,11 @@ func leaveGame(m duelRoom, dp *DuelPlayer) {
 	base := m.BaseMode()
 	if dp == base.HostPlayer {
 		m.EndDuel()
-		base.StopServer()
+		// 先摘除房间再停服务器：StopServer 会阻塞等待 gnet 事件循环退出，
+		// 而 leaveGame 正是在事件循环回调（OnClose/CTOS_LEAVE_GAME）里执行的，
+		// 顺序颠倒会死锁，导致 RemoveRoom 永远执行不到。
 		DefaultManager.RemoveRoom(base.RoomID)
+		base.StopServer()
 		return
 	}
 	if dp.Type == network.NETPLAYER_TYPE_OBSERVER {

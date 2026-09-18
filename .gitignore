@@ -26,3 +26,4 @@ frontend/smoke-dist/
 # OS
 .DS_Store
 Thumbs.db
+core/duel/replay/
