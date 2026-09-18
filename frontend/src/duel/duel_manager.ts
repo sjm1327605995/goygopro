@@ -21,10 +21,10 @@ import {
   LOC_DECK, LOC_HAND, LOC_EXTRA,
   CARD_QUESTION, PHINT_DESC_ADD,
 } from '../domain/constants.ts';
+import type { DuelField3D } from './field3d.ts';
 
 export class DuelManager {
-  // field3d 将在棘轮最后一步 strict 化；在那之前以 any 桥接（字段面很宽）。
-  field3D: any;
+  field3D: DuelField3D;
   /** 非交互模式（回放）不发送任何协议响应、不响应点击。 */
   interactive: boolean;
   playerSlot = 0;
@@ -35,7 +35,7 @@ export class DuelManager {
   _resyncing = false;
   _subs: [string, (data: any) => void][] = [];
 
-  constructor(field3D: any, { interactive = true }: { interactive?: boolean } = {}) {
+  constructor(field3D: DuelField3D, { interactive = true }: { interactive?: boolean } = {}) {
     this.field3D = field3D;
     // 非交互模式（回放）不发送任何协议响应、不响应点击。
     this.interactive = interactive;
@@ -220,7 +220,7 @@ export class DuelManager {
       // hand/deck/grave activations (e.g. hand traps) have no slot to pin to.
       if (data.cl === 0x4 || data.cl === 0x8) {
         const locName = data.cl === 0x4 ? 'mzone' : 'szone';
-        this.field3D.chainVisualizer.addChainLink(data.code, { player: data.cc, loc: locName, seq: data.cs }, cardInfo);
+        this.field3D.chainVisualizer?.addChainLink(data.code, { player: data.cc, loc: locName, seq: data.cs }, cardInfo);
         // Activating a set field spell turns it face-up; its art becomes the
         // board background as soon as the chain anchor is announced.
         if (locName === 'szone' && data.cs === 5) {
@@ -230,15 +230,15 @@ export class DuelManager {
     });
 
     sub('duel:chain_solving', (data) => {
-      this.field3D.chainVisualizer.highlightSolvingLink(data.count);
+      this.field3D.chainVisualizer?.highlightSolvingLink(data.count);
     });
 
     sub('duel:chain_solved', (data) => {
-      this.field3D.chainVisualizer.removeSolvingLink(data.count);
+      this.field3D.chainVisualizer?.removeSolvingLink(data.count);
     });
 
     sub('duel:chain_end', () => {
-      this.field3D.chainVisualizer.clearChain();
+      this.field3D.chainVisualizer?.clearChain();
     });
 
     sub('duel:select_idlecmd', (data) => {

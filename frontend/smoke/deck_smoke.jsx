@@ -41,8 +41,16 @@ const SEARCH_RESULTS = [
   { code: 46986414, name: 'Dark Magician', type: 0x11, attack: 2500, defense: 2100, desc: '' },
   { code: 89631139, name: 'Blue-Eyes', type: 0x11, attack: 3000, defense: 2500, desc: '' },
 ];
+// 18 张互异陷阱卡，供副卡组 15 上限测试用（同名 3 张限制不干扰互异卡）
+const ALL_TRAPS = Array.from({ length: 18 }, (_, i) => ({
+  code: 90000000 + i, name: 'Trap ' + i, type: 0x4, attack: 0, defense: 0, desc: '',
+}));
 const searchFilters = [];
-WailsBridge.searchCards = async (filter) => { searchFilters.push({ ...filter }); return SEARCH_RESULTS; };
+// 关键词含 'trap' 返回互异陷阱卡，否则返回固定三卡（保留排序/计数断言不变）
+WailsBridge.searchCards = async (filter) => {
+  searchFilters.push({ ...filter });
+  return (filter.keyword && filter.keyword.includes('trap')) ? ALL_TRAPS : SEARCH_RESULTS;
+};
 // 相对路径名（'/' = 分类层级），与 Go ListDecks 递归返回一致
 WailsBridge.listDecks = async () => ['Alpha', 'Beta', 'Tournament/TestDeck'];
 WailsBridge.loadDeck = async (name) => ({
@@ -147,12 +155,24 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     await waitFor(() => !document.getElementById('deck-zoom-overlay'));
     record('zoom-overlay-closes', true);
 
-    // 副卡组 15 上限：切「加入副卡组」后连点（每拍一次），第 16 张触发告警
+    // 同名 3 张上限（check_limit）+ 副卡组 15 上限（用互异卡区分两条规则）
     setInputValue(document.getElementById('deck-add-target'), 'side');
-    await clickN(results[2], 16); // 陷阱卡，不会进额外
+    const sideStart = sideGrid().querySelectorAll('.deck-card-chip').length;
+    await clickN(results[2], 4); // Mirror Force（陷阱）点 4 次：前 3 进、第 4 被 check_limit 拦下
+    await waitFor(() => alertMsgs.some((m) => m.includes('3 张上限')));
+    record('limit-3-copies', sideGrid().querySelectorAll('.deck-card-chip').length === sideStart + 3);
+
+    // 互异 18 张陷阱 → 填满副卡组到 15 后第 16 张报「副卡组已满」
+    setInputValue(document.getElementById('deck-search-input'), 'trap');
+    [...document.querySelectorAll('.deck-search-panel .btn')].find((b) => b.textContent.includes('搜索')).click();
+    await waitFor(() => document.querySelectorAll('.search-results-grid .deck-card-chip').length === 18);
+    const trapChips = [...document.querySelectorAll('.search-results-grid .deck-card-chip')];
+    for (let i = 0; i < 11; i++) { trapChips[i].click(); await new Promise((r) => setTimeout(r, 10)); }
+    await waitFor(() => sideGrid().querySelectorAll('.deck-card-chip').length === 15);
+    record('side-cap-15', sideGrid().querySelectorAll('.deck-card-chip').length === 15);
+    trapChips[11].click();
     await waitFor(() => alertMsgs.some((m) => m.includes('副卡组已满')));
-    record('side-cap-15', sideGrid().querySelectorAll('.deck-card-chip').length === 15
-      && alertMsgs.some((m) => m.includes('副卡组已满（最多 15 张）')));
+    record('side-cap-blocks-16th', sideGrid().querySelectorAll('.deck-card-chip').length === 15);
 
     // 清空条件按钮：重置全部过滤控件
     const clearBtn = document.getElementById('deck-filter-clear');
@@ -245,6 +265,36 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     const deckSortBtn = document.getElementById('deck-sort-btn');
     const deckShuffleBtn = document.getElementById('deck-shuffle-btn');
     record('editor-buttons-exist', !!deckClearBtn && !!deckSortBtn && !!deckShuffleBtn);
+
+    // ---- 波 5：另存为 / 右键菜单移牌 / 拖拽源 ----
+    const headerBtns = () => [...document.querySelectorAll('.deck-header .btn')];
+    record('save-as-btn-exists', headerBtns().some((b) => b.textContent.includes('另存为')));
+
+    // 右键菜单：main 上右键 → 菜单出现；「移到副卡组」main-1、side+1；再对副卡右键「移到主卡组」恢复
+    const mainBefore = mainGrid().querySelectorAll('.deck-card-chip').length;
+    const sideBefore2 = sideGrid().querySelectorAll('.deck-card-chip').length;
+    mainGrid().querySelector('.deck-card-chip').dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 }));
+    await waitFor(() => document.getElementById('deck-context-menu'));
+    record('context-menu-opens', !!document.querySelector('#deck-context-menu .btn'));
+    const menuBtn = (label) => [...document.querySelectorAll('#deck-context-menu .btn')]
+      .find((b) => b.textContent.includes(label));
+    // main 上不显示「移到主卡组」、显示「移到副卡组/额外/移出」
+    record('context-menu-main-labels', !!menuBtn('移到副卡组') && !!menuBtn('移到额外卡组')
+      && !!menuBtn('移出卡组') && !menuBtn('移到主卡组'));
+    menuBtn('移到副卡组').click();
+    await waitFor(() => mainGrid().querySelectorAll('.deck-card-chip').length === mainBefore - 1);
+    record('context-menu-move-to-side', sideGrid().querySelectorAll('.deck-card-chip').length === sideBefore2 + 1);
+    const sideChips = sideGrid().querySelectorAll('.deck-card-chip');
+    sideChips[sideChips.length - 1].dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 }));
+    await waitFor(() => document.getElementById('deck-context-menu'));
+    menuBtn('移到主卡组').click();
+    await waitFor(() => mainGrid().querySelectorAll('.deck-card-chip').length === mainBefore);
+    record('context-menu-move-to-main', sideGrid().querySelectorAll('.deck-card-chip').length === sideBefore2);
+
+    // 拖拽源：卡组卡片 draggable（HTML5 dnd）
+    record('drag-draggable', mainGrid().querySelector('.deck-card-chip').getAttribute('draggable') === 'true');
 
     // 洗牌：随机重排 + 标脏（标题带 *）
     deckShuffleBtn.click();

@@ -5,93 +5,26 @@
 
 import * as THREE from '../../libs/three.module.js';
 import * as TWEEN from '../../libs/tween.esm.js';
-import { soundManager } from '../audio/sound_manager.ts';
 import { settingsStore } from '../domain/settings.ts';
 import { ChainVisualizer } from './chain_visualizer.ts';
+import { LOC_NAMES } from '../domain/constants.ts';
+import { CARD_WIDTH, CARD_HEIGHT, CARD_DEPTH, ZONE_COORDS } from './field3d_geometry.ts';
+import { generateCardTexture as buildCardTexture } from './field3d_textures.ts';
 import {
-  TYPE_SPELL, TYPE_TRAP, TYPE_EFFECT, TYPE_FUSION,
-  TYPE_SYNCHRO, TYPE_XYZ, TYPE_LINK,
-  LOC_NAMES,
-} from '../domain/constants.ts';
+  animateDrawCard as runDrawCard,
+  animateSummon as runSummon,
+  animateSetCard as runSetCard,
+  animateReposition as runReposition,
+  animateAttack as runAttack,
+  animateDestroy as runDestroy,
+  createShockwave as runShockwave,
+  createHitSparks as runHitSparks,
+  cameraShake as runCameraShake,
+} from './field3d_anim.ts';
 
-// Card dimensions in 3D world units
-export const CARD_WIDTH = 1.4;
-export const CARD_HEIGHT = 2.0;
-export const CARD_DEPTH = 0.03;
+// Re-exported for backward compatibility (was defined inline before P5-4).
+export { CARD_WIDTH, CARD_HEIGHT, CARD_DEPTH, ZONE_COORDS };
 
-// Field Zone coordinate definitions
-// 区域坐标 = YGOPro 原版布局（source/ygopro/gframe/materials.cpp 的
-// vField* 四边形，权威依据），换算 world = ((qx-4)*2, qy*2)：
-// 原版地垫四边形是 x -1..9 / y -4..4 的 10×8，中心 (4,0) 平移到世界原点，
-// 整体 ×2 使地垫铺满 20×16 的可视范围。卡片尺寸对应原版 vCardFront
-// 0.7×1.0 ×2 = CARD_WIDTH×CARD_HEIGHT。mzone 7 槽（5 主怪区 + 两个共享
-// 的额外怪区）、szone 8 槽（5 魔法陷阱 + 场地 + 两侧灵摆），与引擎
-// MR2020 区域编号一致。
-export const ZONE_COORDS: Record<number, Record<string, any>> = {
-  // Player 0（z 正方向，靠近摄像机；对应原版画面下半边）
-  0: {
-    mzone: [
-      { x: -4.5, y: 0.02, z: 2.8 },
-      { x: -2.3, y: 0.02, z: 2.8 },
-      { x: -0.1, y: 0.02, z: 2.8 },
-      { x: 2.1,  y: 0.02, z: 2.8 },
-      { x: 4.3,  y: 0.02, z: 2.8 },
-      // seq 5/6 = 共享的两格额外怪区（原版 vFieldMzone[0][5]/[6]）
-      { x: -2.3, y: 0.02, z: 0.0 },
-      { x: 2.1,  y: 0.02, z: 0.0 }
-    ],
-    szone: [
-      { x: -4.5, y: 0.02, z: 5.2 },
-      { x: -2.3, y: 0.02, z: 5.2 },
-      { x: -0.1, y: 0.02, z: 5.2 },
-      { x: 2.1,  y: 0.02, z: 5.2 },
-      { x: 4.3,  y: 0.02, z: 5.2 },
-      // seq 5 = 场地魔法区；seq 6/7 = 两侧灵摆区（vFieldSzone[0][5..7]）
-      { x: -6.8, y: 0.02, z: 1.4 },
-      { x: -6.8, y: 0.02, z: 4.0 },
-      { x: 6.6,  y: 0.02, z: 4.0 }
-    ],
-    field:     { x: -6.8, y: 0.02, z: 1.4 },
-    grave:     { x: 6.6,  y: 0.02, z: 1.4 },
-    banish:    { x: 8.6,  y: 0.02, z: 1.4 },
-    deck:      { x: 6.6,  y: 0.02, z: 6.6 },
-    extra:     { x: -6.8, y: 0.02, z: 6.6 },
-    emz_left:  { x: -2.3, y: 0.02, z: 0.0 },
-    emz_right: { x: 2.1,  y: 0.02, z: 0.0 }
-  },
-  // Player 1（关于原点中心对称，即原版画面上半边）。额外怪区两格由双方
-  // 共享，seq 5/6 的左右顺序随玩家视角镜像。
-  1: {
-    mzone: [
-      { x: 4.3,  y: 0.02, z: -2.8 },
-      { x: 2.1,  y: 0.02, z: -2.8 },
-      { x: -0.1, y: 0.02, z: -2.8 },
-      { x: -2.3, y: 0.02, z: -2.8 },
-      { x: -4.5, y: 0.02, z: -2.8 },
-      { x: 2.1,  y: 0.02, z: 0.0 },
-      { x: -2.3, y: 0.02, z: 0.0 }
-    ],
-    szone: [
-      { x: 4.3,  y: 0.02, z: -5.2 },
-      { x: 2.1,  y: 0.02, z: -5.2 },
-      { x: -0.1, y: 0.02, z: -5.2 },
-      { x: -2.3, y: 0.02, z: -5.2 },
-      { x: -4.5, y: 0.02, z: -5.2 },
-      // seq 5 = 场地魔法区；seq 6/7 = 两侧灵摆区
-      // （vFieldSzone[1][5..7] 原值；原版左右两半有 0.1 的固有不对称）
-      { x: 6.6,  y: 0.02, z: -1.4 },
-      { x: 6.6,  y: 0.02, z: -4.0 },
-      { x: -6.8, y: 0.02, z: -4.0 }
-    ],
-    field:     { x: 6.6,  y: 0.02, z: -1.4 },
-    grave:     { x: -6.8, y: 0.02, z: -1.4 },
-    banish:    { x: -8.8, y: 0.02, z: -1.4 },
-    deck:      { x: -6.8, y: 0.02, z: -6.6 },
-    extra:     { x: 6.6,  y: 0.02, z: -6.6 },
-    emz_left:  { x: -2.3, y: 0.02, z: 0.0 },
-    emz_right: { x: 2.1,  y: 0.02, z: 0.0 }
-  }
-};
 
 export class DuelField3D {
   container: HTMLElement;
@@ -118,7 +51,7 @@ export class DuelField3D {
   // Optional async (code) => Promise<dataURL|null> set by the host; when a
   // picture arrives the cached canvas texture is redrawn in place so every
   // mesh sharing it picks the art up on the next frame.
-  cardImageProvider: ((code: number) => Promise<{ url: string; full: boolean } | null>) | null = null;
+  cardImageProvider: ((code: number) => Promise<{ url: string } | null>) | null = null;
   // Field spell art as the board background (the YGOPro field.png effect).
   fieldSpellPlane: any = null;
   fieldSpellTexture: any = null;
@@ -185,6 +118,7 @@ export class DuelField3D {
 
     this.container.appendChild(this.renderer.domElement);
     this.cardBackTexture = this.textureLoader.load('textures/cover.jpg');
+    this.negatedTexture = this.textureLoader.load('textures/negated.png');
   }
 
   initLights(): void {
@@ -417,7 +351,7 @@ export class DuelField3D {
     const geo = new (THREE as any).BoxGeometry(CARD_WIDTH, CARD_DEPTH, CARD_HEIGHT);
     const borderMat = new (THREE as any).MeshStandardMaterial({ color: 0x111827 });
     const frontMat = new (THREE as any).MeshStandardMaterial({
-      map: this.generateCardTexture(cardCode, cardInfo),
+      map: this.generateCardTexture(cardCode),
       roughness: 0.4,
       metalness: 0.1
     });
@@ -443,331 +377,32 @@ export class DuelField3D {
     return cardMesh;
   }
 
-  generateCardTexture(cardCode: number, cardInfo: any): any {
-    if (this.cardTextureCache.has(cardCode)) {
-      return this.cardTextureCache.get(cardCode);
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 744;
-    const ctx = canvas.getContext('2d')!;
-
-    let frameColor = '#c28544';
-    if (cardInfo) {
-      // 卡框配色按卡片类型位（TYPE_*，domain/constants.ts）
-      if (cardInfo.type & TYPE_SPELL) frameColor = '#1d9e74';
-      else if (cardInfo.type & TYPE_TRAP) frameColor = '#bc1c6c';
-      else if (cardInfo.type & TYPE_EFFECT) frameColor = '#a05c28';
-      else if (cardInfo.type & TYPE_FUSION) frameColor = '#732c86';
-      else if (cardInfo.type & TYPE_SYNCHRO) frameColor = '#e5e7eb';
-      else if (cardInfo.type & TYPE_XYZ) frameColor = '#1e1e1e';
-      else if (cardInfo.type & TYPE_LINK) frameColor = '#0284c7';
-    }
-
-    ctx.fillStyle = frameColor;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 12;
-    ctx.strokeRect(6, 6, canvas.width - 12, canvas.height - 12);
-
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(40, 80, canvas.width - 80, 360);
-    ctx.strokeStyle = '#334155';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(40, 80, canvas.width - 80, 360);
-
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = 'bold 32px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(cardInfo ? cardInfo.name.substring(0, 16) : `Card #${cardCode}`, 256, 260);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 24px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(cardInfo ? cardInfo.name : `Card ${cardCode}`, 44, 52);
-
-    if (cardInfo && (cardInfo.attack !== undefined || cardInfo.level)) {
-      ctx.fillStyle = '#1e293b';
-      ctx.fillRect(40, 480, canvas.width - 80, 220);
-      ctx.strokeStyle = '#475569';
-      ctx.strokeRect(40, 480, canvas.width - 80, 220);
-
-      if (cardInfo.level) {
-        ctx.fillStyle = '#f59e0b';
-        ctx.font = 'bold 20px sans-serif';
-        let starStr = '★ '.repeat(Math.min(cardInfo.level, 12));
-        ctx.fillText(starStr, 50, 515);
-      }
-
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 24px sans-serif';
-      ctx.fillText(`ATK / ${cardInfo.attack}  DEF / ${cardInfo.defense}`, 50, 680);
-
-      if (cardInfo.desc) {
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '16px sans-serif';
-        const words = cardInfo.desc.substring(0, 100) + '...';
-        ctx.fillText(words.substring(0, 38), 50, 555);
-        ctx.fillText(words.substring(38, 76), 50, 585);
-      }
-    }
-
-    const texture = new (THREE as any).CanvasTexture(canvas);
-    this.cardTextureCache.set(cardCode, texture);
-    // Real card art (if available) is layered over the procedural drawing
-    // asynchronously — the card is playable immediately either way. The
-    // provider resolves to { url, full }: a "full" picture is a complete card
-    // face (CDN) drawn across the whole canvas; raw local art (pics/<code>) is
-    // framed inside the art box of the procedural face.
-    if (this.cardImageProvider) {
-      this.cardImageProvider(cardCode).then((pic) => {
-        if (!pic || !pic.url) return;
-        const img = new Image();
-        img.onload = () => {
-          const tex = this.cardTextureCache.get(cardCode);
-          if (!tex || tex.image !== canvas) return;
-          const ctx = canvas.getContext('2d')!;
-          if (pic.full) {
-            // Complete card face: cover-fit the whole canvas (aspect matches
-            // a real card, 512x744 ≈ 59x86mm, so distortion is negligible).
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
-            const dw = img.width * scale, dh = img.height * scale;
-            ctx.drawImage(img, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh);
-          } else {
-            const ax = 40, ay = 80, aw = canvas.width - 80, ah = 360;
-            ctx.fillStyle = '#0b1120';
-            ctx.fillRect(ax, ay, aw, ah);
-            const scale = Math.min(aw / img.width, ah / img.height);
-            const dw = img.width * scale, dh = img.height * scale;
-            ctx.drawImage(img, ax + (aw - dw) / 2, ay + (ah - dh) / 2, dw, dh);
-          }
-          tex.needsUpdate = true;
-        };
-        img.src = pic.url;
-      }).catch(() => {});
-    }
-    return texture;
+  generateCardTexture(cardCode: number): any {
+    return buildCardTexture(this, cardCode);
   }
 
   animateDrawCard(player: number, cardCode: number, cardInfo: any = null, onComplete: (() => void) | null = null): void {
-    soundManager.playDraw();
-    const cardMesh = this.createCardMesh(cardCode, cardInfo);
-    const startCoord = ZONE_COORDS[player].deck;
-
-    cardMesh.position.set(startCoord.x, 0.4, startCoord.z);
-    cardMesh.rotation.set(Math.PI, 0, 0);
-    this.scene.add(cardMesh);
-
-    const targetPos = player === 0 ? { x: 0, y: 3, z: 8.5 } : { x: 0, y: 3, z: -8.5 };
-
-    this.makeTween(cardMesh.position)
-      .to({ x: targetPos.x, y: 4.5, z: (startCoord.z + targetPos.z) / 2 }, 350)
-      .easing(TWEEN.Easing.Quadratic.Out)
-      .chain(
-        this.makeTween(cardMesh.position)
-          .to({ x: targetPos.x, y: targetPos.y, z: targetPos.z }, 300)
-          .easing(TWEEN.Easing.Quadratic.In)
-          .onComplete(() => {
-            this.scene.remove(cardMesh);
-            const idx = this.cardMeshes.indexOf(cardMesh);
-            if (idx > -1) this.cardMeshes.splice(idx, 1);
-            if (onComplete) onComplete();
-          })
-      )
-      .start();
-
-    this.makeTween(cardMesh.rotation)
-      .to({ x: player === 0 ? 0 : Math.PI, y: 0, z: 0 }, 650)
-      .easing(TWEEN.Easing.Cubic.Out)
-      .start();
+    runDrawCard(this, player, cardCode, cardInfo, onComplete);
   }
 
   animateSummon(player: number, cardCode: number, slotIndex: number, position = 0x1, cardInfo: any = null, isSpecial = false): any {
-    if (isSpecial) soundManager.playSpecialSummon();
-    else soundManager.playSummon();
-
-    const targetCoord = ZONE_COORDS[player].mzone[slotIndex];
-    if (!targetCoord) return;
-
-    // The engine often moves the card into the slot (e.g. grave → mzone for a
-    // special summon) before announcing the summoning; recycle that mesh
-    // instead of stacking a second card in the same slot. The same applies to
-    // flip summons, where the set card already occupies the slot.
-    const existing = this.cardsOnField[player].mzone[slotIndex];
-    if (existing) this.retireMesh(existing, true);
-
-    const cardMesh = this.createCardMesh(cardCode, cardInfo);
-
-    cardMesh.position.set(targetCoord.x, 5.0, targetCoord.z + (player === 0 ? 2 : -2));
-    cardMesh.scale.set(0.2, 0.2, 0.2);
-    this.scene.add(cardMesh);
-
-    // A card on the board is a thin box lying flat (thickness along y). Turning
-    // it sideways for defense means rotating about y (the face normal), NOT z:
-    // a z-rotation tips the card up onto its edge, perpendicular to the board.
-    const targetRot = this.cardRotationFor(player, position);
-
-    this.makeTween(cardMesh.scale)
-      .to({ x: 1, y: 1, z: 1 }, 450)
-      .easing(TWEEN.Easing.Back.Out)
-      .start();
-
-    this.makeTween(cardMesh.position)
-      .to({ x: targetCoord.x, y: targetCoord.y + 0.05, z: targetCoord.z }, 450)
-      .easing(TWEEN.Easing.Bounce.Out)
-      .onComplete(() => {
-        this.createShockwave(targetCoord.x, targetCoord.z, isSpecial ? 0xf59e0b : 0x00d2ff);
-      })
-      .start();
-
-    this.makeTween(cardMesh.rotation)
-      .to(targetRot, 450)
-      .easing(TWEEN.Easing.Cubic.Out)
-      .start();
-
-    cardMesh.userData.slot = { player, loc: 'mzone', seq: slotIndex };
-    cardMesh.userData.positionState = this.positionStateFor(position);
-    this.cardsOnField[player].mzone[slotIndex] = cardMesh;
-    return cardMesh;
+    return runSummon(this, player, cardCode, slotIndex, position, cardInfo, isSpecial);
   }
 
   animateSetCard(player: number, cardCode: number, slotIndex: number, isMonster = false, cardInfo: any = null): any {
-    soundManager.playDraw();
-    const targetCoord = isMonster
-      ? ZONE_COORDS[player].mzone[slotIndex]
-      : ZONE_COORDS[player].szone[slotIndex];
-    if (!targetCoord) return;
-
-    // Validate the slot before creating anything, and recycle any mesh the
-    // preceding MSG_MOVE already placed there.
-    const locName = isMonster ? 'mzone' : 'szone';
-    const existing = this.cardsOnField[player][locName][slotIndex];
-    if (existing) this.retireMesh(existing, true);
-
-    const cardMesh = this.createCardMesh(cardCode, cardInfo);
-
-    cardMesh.position.set(targetCoord.x, 3.5, targetCoord.z);
-    // Face-down sets lie with the back up (x=PI); set monsters are set in
-    // defense, so their top edge follows the same owner's-right-hand rule as
-    // cardRotationFor. Set spells keep their top edge toward the owner.
-    cardMesh.rotation.set(
-      Math.PI,
-      isMonster ? (player === 1 ? Math.PI / 2 : -Math.PI / 2) : 0,
-      0
-    );
-    this.scene.add(cardMesh);
-
-    this.makeTween(cardMesh.position)
-      .to({ x: targetCoord.x, y: targetCoord.y + 0.05, z: targetCoord.z }, 350)
-      .easing(TWEEN.Easing.Quadratic.Out)
-      .start();
-
-    cardMesh.userData.slot = { player, loc: locName, seq: slotIndex };
-    cardMesh.userData.positionState = 'FACEDOWN';
-    this.cardsOnField[player][locName][slotIndex] = cardMesh;
-    this.refreshFieldSpell();
-    return cardMesh;
+    return runSetCard(this, player, cardCode, slotIndex, isMonster, cardInfo);
   }
 
   animateReposition(player: number, locName: any = 'mzone', slotIndex?: any, newPos?: any): void {
-    soundManager.playDraw();
-    // MSG_POS_CHANGE carries the zone; szone flips matter here (a set field
-    // spell activating turns face-up). Older callers may pass the slot as the
-    // 2nd argument with a numeric locName-less form — fall back to mzone.
-    if (typeof locName !== 'string') {
-      slotIndex = locName;
-      locName = 'mzone';
-    }
-    const zone = this.cardsOnField[player] && this.cardsOnField[player][locName];
-    const cardMesh = zone ? zone[slotIndex] : this.cardsOnField[player].mzone[slotIndex];
-    if (!cardMesh) return;
-
-    cardMesh.userData.positionState = this.positionStateFor(newPos);
-
-    this.makeTween(cardMesh.position)
-      .to({ y: 0.8 }, 150)
-      .chain(
-        this.makeTween(cardMesh.position)
-          .to({ y: 0.05 }, 150)
-      )
-      .start();
-
-    const rot = this.cardRotationFor(player, newPos);
-    this.makeTween(cardMesh.rotation)
-      .to({ x: rot.x, y: rot.y, z: rot.z }, 300)
-      .easing(TWEEN.Easing.Cubic.InOut)
-      .start();
-
-    this.refreshFieldSpell();
+    runReposition(this, player, locName, slotIndex, newPos);
   }
 
   animateAttack(attackerPlayer: number, attackerSlot: number, targetPlayer: number, targetSlot: number | undefined, isDirect = false): void {
-    soundManager.playAttack();
-    const attackerMesh = this.cardsOnField[attackerPlayer].mzone[attackerSlot];
-    if (!attackerMesh) return;
-
-    const startPos = { ...attackerMesh.position };
-    let targetPos;
-
-    if (isDirect || targetSlot === undefined || targetSlot < 0) {
-      targetPos = { x: 0, y: 1.5, z: targetPlayer === 1 ? -6.0 : 6.0 };
-    } else {
-      const targetCoord = ZONE_COORDS[targetPlayer].mzone[targetSlot];
-      targetPos = { x: targetCoord.x, y: 0.5, z: targetCoord.z };
-    }
-
-    this.makeTween(attackerMesh.position)
-      .to({ y: 1.6 }, 200)
-      .easing(TWEEN.Easing.Quadratic.Out)
-      .chain(
-        this.makeTween(attackerMesh.position)
-          .to({ x: targetPos.x, y: targetPos.y + 0.3, z: targetPos.z }, 180)
-          .easing(TWEEN.Easing.Exponential.In)
-          .onComplete(() => {
-            soundManager.playDamage();
-            this.createHitSparks(targetPos.x, targetPos.z);
-            this.cameraShake(0.2, 200);
-          })
-          .chain(
-            this.makeTween(attackerMesh.position)
-              .to(startPos, 300)
-              .easing(TWEEN.Easing.Cubic.Out)
-          )
-      )
-      .start();
+    runAttack(this, attackerPlayer, attackerSlot, targetPlayer, targetSlot, isDirect);
   }
 
   animateDestroy(player: number, loc: string, slotIndex: number): void {
-    soundManager.playDamage();
-    const cardMesh = this.cardsOnField[player][loc][slotIndex];
-    if (!cardMesh) return;
-
-    this.cardsOnField[player][loc][slotIndex] = null;
-    const graveCoord = ZONE_COORDS[player].grave;
-
-    this.makeTween(cardMesh.position)
-      .to({ y: 2.0 }, 150)
-      .chain(
-        this.makeTween(cardMesh.position)
-          .to({ x: graveCoord.x, y: 0.2, z: graveCoord.z }, 350)
-          .easing(TWEEN.Easing.Cubic.In)
-          .onComplete(() => {
-            this.scene.remove(cardMesh);
-            const idx = this.cardMeshes.indexOf(cardMesh);
-            if (idx > -1) this.cardMeshes.splice(idx, 1);
-          })
-      )
-      .start();
-
-    this.makeTween(cardMesh.rotation)
-      .to({ x: 0, y: 0, z: Math.PI }, 350)
-      .start();
-
-    this.refreshFieldSpell();
+    runDestroy(this, player, loc, slotIndex);
   }
 
   // Removes a card mesh from its registered slot WITHOUT removing it from the
@@ -936,32 +571,17 @@ export class DuelField3D {
   }
 
   // ---- 墓地禁查（drawing.cpp:564-575 的 tNegated 贴图）----
-  // CARD_QUESTION 玩家提示置位后，双方墓地中心上空常显一张「?」圆牌
-  // （高度随墓地张数抬高，对应 grave.size()*0.01f+0.02f）。
+  // CARD_QUESTION 玩家提示置位后，双方墓地中心上空常显 negated.png
+  // （tNegated，image_manager.cpp:25）——原版是贴图，非自绘「?」。
+  // 高度随墓地张数抬高，对应 grave.size()*0.01f+0.02f。
   graveLockSprites: any[] = [];
+  negatedTexture: any = null;
 
   setCantCheckGrave(on: boolean): void {
     if (on && this.graveLockSprites.length === 0) {
       for (const p of [0, 1]) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 64;
-        canvas.height = 64;
-        const ctx = canvas.getContext('2d')!;
-        ctx.fillStyle = 'rgba(15,23,42,0.85)';
-        ctx.beginPath();
-        ctx.arc(32, 32, 27, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 4;
-        ctx.stroke();
-        ctx.fillStyle = '#fecaca';
-        ctx.font = 'bold 34px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('?', 32, 34);
-        const tex = new (THREE as any).CanvasTexture(canvas);
         const sprite = new (THREE as any).Sprite(new (THREE as any).SpriteMaterial({
-          map: tex, transparent: true, depthTest: false,
+          map: this.negatedTexture, transparent: true, depthTest: false,
         }));
         sprite.userData.gravePlayer = p;
         this.graveLockSprites.push(sprite);
@@ -1131,90 +751,15 @@ export class DuelField3D {
   }
 
   createShockwave(x: number, z: number, colorHex = 0x00d2ff): void {
-    const ringGeo = new (THREE as any).RingGeometry(0.1, 0.4, 32);
-    const ringMat = new (THREE as any).MeshBasicMaterial({
-      color: colorHex,
-      transparent: true,
-      opacity: 0.9,
-      side: THREE.DoubleSide
-    });
-    const ringMesh = new (THREE as any).Mesh(ringGeo, ringMat);
-    ringMesh.rotation.x = -Math.PI / 2;
-    ringMesh.position.set(x, 0.03, z);
-    this.scene.add(ringMesh);
-
-    this.makeTween(ringMesh.scale)
-      .to({ x: 6, y: 6, z: 6 }, 400)
-      .easing(TWEEN.Easing.Quadratic.Out)
-      .start();
-
-    this.makeTween(ringMat)
-      .to({ opacity: 0 }, 400)
-      .easing(TWEEN.Easing.Quadratic.Out)
-      .onComplete(() => this.scene.remove(ringMesh))
-      .start();
+    runShockwave(this, x, z, colorHex);
   }
 
   createHitSparks(x: number, z: number): void {
-    const sparkCount = 20;
-    const pGeo = new (THREE as any).BufferGeometry();
-    const positions = new Float32Array(sparkCount * 3);
-    const velocities: { vx: number; vy: number; vz: number }[] = [];
-
-    for (let i = 0; i < sparkCount; i++) {
-      positions[i * 3] = x;
-      positions[i * 3 + 1] = 0.5;
-      positions[i * 3 + 2] = z;
-      velocities.push({
-        vx: (Math.random() - 0.5) * 6,
-        vy: Math.random() * 5 + 2,
-        vz: (Math.random() - 0.5) * 6
-      });
-    }
-
-    pGeo.setAttribute('position', new (THREE as any).BufferAttribute(positions, 3));
-    const pMat = new (THREE as any).PointsMaterial({
-      color: 0xf59e0b,
-      size: 0.25,
-      transparent: true,
-      opacity: 1
-    });
-
-    const pMesh = new (THREE as any).Points(pGeo, pMat);
-    this.scene.add(pMesh);
-
-    let progress = { t: 0 };
-    this.makeTween(progress)
-      .to({ t: 1 }, 350)
-      .onUpdate(() => {
-        const posAttr = pMesh.geometry.attributes.position;
-        for (let i = 0; i < sparkCount; i++) {
-          posAttr.array[i * 3] += velocities[i].vx * 0.02;
-          posAttr.array[i * 3 + 1] += velocities[i].vy * 0.02 - 0.05;
-          posAttr.array[i * 3 + 2] += velocities[i].vz * 0.02;
-        }
-        posAttr.needsUpdate = true;
-        pMat.opacity = 1 - progress.t;
-      })
-      .onComplete(() => this.scene.remove(pMesh))
-      .start();
+    runHitSparks(this, x, z);
   }
 
   cameraShake(intensity = 0.25, duration = 200): void {
-    const startCamPos = { x: 0, y: 13.5, z: 12.0 };
-    const startTime = performance.now();
-
-    const shakeInterval = setInterval(() => {
-      const elapsed = performance.now() - startTime;
-      if (elapsed >= duration) {
-        clearInterval(shakeInterval);
-        this.camera.position.set(startCamPos.x, startCamPos.y, startCamPos.z);
-        return;
-      }
-      const damping = 1 - elapsed / duration;
-      this.camera.position.x = startCamPos.x + (Math.random() - 0.5) * intensity * damping;
-      this.camera.position.y = startCamPos.y + (Math.random() - 0.5) * intensity * damping;
-    }, 16);
+    runCameraShake(this, intensity, duration);
   }
 
   initEvents(): void {

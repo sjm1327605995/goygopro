@@ -45,12 +45,15 @@ const LINK_MARKS: [number, string][] = [
 ];
 
 // 卡图缩略格子（原版 deck editor 是纯图片网格）。拉一次卡图与卡名缓存。
-function CardChip({ code, count, onInspect, onRemove, onZoom }: {
+function CardChip({ code, count, onInspect, onRemove, onZoom, onContextMenu, onDragStart, onDrop }: {
   code: number;
   count?: number;
   onInspect?: (info: any) => void;
   onRemove?: () => void;
   onZoom?: (code: number) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
 }) {
   const [info, setInfo] = useState<any>(null);
   const [pic, setPic] = useState<string | null>(null);
@@ -65,6 +68,11 @@ function CardChip({ code, count, onInspect, onRemove, onZoom }: {
     <div
       className="select-card-item deck-card-chip"
       style={{ cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
+      draggable={!!onDragStart}
+      onDragStart={onDragStart}
+      onDragOver={onDrop ? (e) => e.preventDefault() : undefined}
+      onDrop={onDrop}
+      onContextMenu={onContextMenu}
       onMouseEnter={() => info && onInspect && onInspect(info)}
       onClick={() => onRemove && onRemove()}
       onDoubleClick={() => onZoom && onZoom(code)}
@@ -92,7 +100,9 @@ interface DeckList {
   side: number[];
 }
 
-// 搜索结果格子：卡图 + 点击加入卡组，悬停进左侧预览，双击看大图。
+// 搜索结果行：纵向列表的一行（原版 DrawDeckBd 搜索区 drawing.cpp:1296-1360），
+// 左缩略图 + 右侧卡名/种类/属性/种族/星级/攻守文本；点击加入卡组，悬停进左侧
+// 预览，双击看大图。
 function SearchResultChip({ card, onInspect, onAdd, onZoom }: {
   card: any;
   onInspect: (info: any) => void;
@@ -106,23 +116,39 @@ function SearchResultChip({ card, onInspect, onAdd, onZoom }: {
     return () => { alive = false; };
   }, [card.code]);
 
+  const t = card.type || 0;
+  const isMonster = (t & TYPE_MONSTER) !== 0;
+  const raceName = (RACES.find((r) => r[0] === card.race) || [0, ''])[1] as string;
+  const attrName = (ATTRS.find((a) => a[0] === card.attribute) || [0, ''])[1] as string;
+  const kind = [cardKind(t), ...cardSubtypes(t)].filter(Boolean).join('｜');
+
   return (
     <div
-      className="select-card-item deck-card-chip"
+      className="deck-card-chip deck-result-row"
       style={{ cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
       onMouseEnter={() => onInspect(card)}
       onClick={onAdd}
       onDoubleClick={() => onZoom(card.code)}
-      title={`${card.name}${card.attack !== undefined ? ` (ATK/${card.attack})` : ''}`}
+      title={card.name}
     >
-      {pic
-        ? <img src={pic} alt={card.name} draggable={false}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-        : <div style={{
-            width: '100%', height: '100%', background: '#1e293b',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '9px', color: '#38bdf8', textAlign: 'center', padding: '2px',
-          }}>{card.name}</div>}
+      <div className="deck-result-thumb">
+        {pic
+          ? <img src={pic} alt={card.name} draggable={false}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          : <div className="deck-result-thumb-fallback">{card.name}</div>}
+      </div>
+      <div className="deck-result-text">
+        <div className="deck-result-name">{card.name}</div>
+        <div className="deck-result-sub">
+          {isMonster ? `${kind}｜${attrName}｜${raceName}` : kind}
+        </div>
+        {isMonster ? (
+          <div className="deck-result-stats">
+            {(t & TYPE_LINK) ? `LINK-${card.level}` : `星 ${card.level}`}
+            {' ｜ ATK '}{fmtStat(card.attack)}{' / DEF '}{fmtStat(card.defense)}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -188,6 +214,10 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   const [inspected, setInspected] = useState<any>(null);
   const [inspectedPic, setInspectedPic] = useState<string | null>(null);
   const [zoomCode, setZoomCode] = useState(0);
+  // 拖拽源（dragstart 存 ref，dragover/drop 读回，不动 state 免得整页重渲染）
+  const draggedRef = React.useRef<{ section: DeckSection; index: number } | null>(null);
+  // 右键上下文菜单状态（卡组卡片：移到主/额外/副卡组 + 移出）
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; section: DeckSection; index: number } | null>(null);
   const settingsSnap = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
 
   // 分类清单 = 卡组名的首段（有 '/' 的才属于分类；gframe TraversalDir isdir）
@@ -218,10 +248,6 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   const buildCounts = async (deck: DeckList): Promise<SectionCounts> => {
     await Promise.all([...deck.main, ...deck.extra, ...deck.side]
       .map((c) => WailsBridge.getCard(c).catch(() => null)));
-    const groupOf = (code: number): number => {
-      const info = WailsBridge._cardCache.get(code);
-      return (info && info.alias) || code;
-    };
     const tally = (codes: number[]): Record<number, number> => {
       const m: Record<number, number> = {};
       for (const c of codes) {
@@ -232,6 +258,15 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
     };
     return { main: tally(deck.main), extra: tally(deck.extra), side: tally(deck.side) };
   };
+
+  // check_limit（deck_con.cpp:1834-1853）：同名卡上限 3 张，按 duel_code（alias 归并）
+  // 计数。仓库无 lflist.conf 时 limit 恒为 3；非 3 禁限依赖 lflist.conf 数据，暂缺。
+  const groupOf = (code: number): number => {
+    const info = WailsBridge._cardCache.get(code);
+    return (info && info.alias) || code;
+  };
+  const countInDeck = (deck: DeckList, group: number): number =>
+    [...deck.main, ...deck.extra, ...deck.side].reduce((acc, c) => acc + (groupOf(c) === group ? 1 : 0), 0);
 
   // 所有卡组变更的唯一入口：换引用、标脏、重算同铭计数
   const applyDeck = (deck: DeckList, { modified = true } = {}): void => {
@@ -265,6 +300,19 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
     setLoadedDeck(name);
     await WailsBridge.saveDeck(deck);
     alert(`卡组「${name}」保存成功！`);
+    const list = await WailsBridge.listDecks();
+    setDeckList(list);
+  };
+
+  // BUTTON_SAVE_DECK（deck_con.cpp:192-204）：保存 = 覆盖当前已载入卡组（不读名字输入框）。
+  // 若有已载入卡组（loadedDeck），写回原路径；否则（新建卡组）退化为另存为。
+  const saveDeckOverwrite = async (): Promise<void> => {
+    if (!loadedDeck) { await saveDeck(); return; }
+    const deck = { ...currentDeck, name: loadedDeck };
+    applyDeck(deck, { modified: false });
+    setDeckName(loadedDeck.split('/').pop() || loadedDeck);
+    await WailsBridge.saveDeck(deck);
+    alert(`卡组「${loadedDeck}」保存成功！`);
     const list = await WailsBridge.listDecks();
     setDeckList(list);
   };
@@ -334,6 +382,8 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
     || (a.name < b.name ? -1 : 1));
 
   const addCardToDeck = (card: any): void => {
+    // check_limit：同名卡（alias 归并）已达 3 张则拒加
+    if (countInDeck(currentDeck, groupOf(card.code)) >= 3) { alert('同名卡已达 3 张上限。'); return; }
     const isExtra = (card.type & EXTRA_TYPES) !== 0;
     const deck = { ...currentDeck, main: [...currentDeck.main], extra: [...currentDeck.extra], side: [...currentDeck.side] };
     if (isExtra) {
@@ -352,6 +402,26 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   const removeCardFromDeck = (section: DeckSection, index: number): void => {
     const deck = { ...currentDeck, main: [...currentDeck.main], extra: [...currentDeck.extra], side: [...currentDeck.side] };
     deck[section].splice(index, 1);
+    applyDeck(deck);
+  };
+
+  // push_* / pop_* 语义（deck_con.cpp:1773-1833）：主卡组拒绝额外怪兽、额外只收
+  // 融合/同调/超量/连接、副卡组不限；上限 60/15/15。区内拖动=插到目标位之前。
+  const moveCard = (from: DeckSection, fromIndex: number, to: DeckSection, toIndex: number): void => {
+    if (fromIndex < 0 || fromIndex >= currentDeck[from].length) return;
+    const deck = { ...currentDeck, main: [...currentDeck.main], extra: [...currentDeck.extra], side: [...currentDeck.side] };
+    const code = deck[from][fromIndex];
+    const info = WailsBridge._cardCache.get(code);
+    const isExtraType = !!(info && (info.type & EXTRA_TYPES));
+    if (from !== to) {
+      if (to === 'main' && isExtraType) { alert('额外卡组的怪兽不能放入主卡组。'); return; }
+      if (to === 'extra' && !isExtraType) { alert('只有融合/同调/超量/连接怪兽能进额外卡组。'); return; }
+      const max = to === 'main' ? 60 : 15;
+      if (deck[to].length >= max) { alert(to === 'main' ? '主卡组已满（最多 60 张）。' : '该卡组已满（最多 15 张）。'); return; }
+    }
+    deck[from].splice(fromIndex, 1);
+    const insertAt = Math.min(Math.max(toIndex, 0), deck[to].length);
+    deck[to].splice(insertAt, 0, code);
     applyDeck(deck);
   };
 
@@ -444,7 +514,16 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   };
 
   const renderSection = (codes: number[], section: DeckSection) => (
-    <div className="deck-grid" style={{ minHeight: section === 'main' ? '220px' : '80px' }}>
+    <div
+      className="deck-grid"
+      style={{ minHeight: section === 'main' ? '220px' : '80px' }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        const d = draggedRef.current;
+        if (d) moveCard(d.section, d.index, section, codes.length);
+      }}
+    >
       {codes.map((code, i) => (
         <CardChip
           key={`${code}-${i}`}
@@ -453,6 +532,17 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
           onInspect={setInspected}
           onRemove={() => removeCardFromDeck(section, i)}
           onZoom={setZoomCode}
+          onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, section, index: i }); }}
+          onDragStart={(e) => {
+            draggedRef.current = { section, index: i };
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', String(code));
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const d = draggedRef.current;
+            if (d) moveCard(d.section, d.index, section, i);
+          }}
         />
       ))}
     </div>
@@ -473,241 +563,294 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
 
   return (
     <div id="deck-screen" className="screen active">
-      <div className="deck-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <h2 style={{ color: 'var(--primary)' }}>卡组构筑{isModified ? ' *' : ''}</h2>
-          {/* 分类下拉（gframe cbDBCategory：未分类卡组 + ./deck/ 子目录）
-              与当前分类下的卡组下拉；名字含 '/' 时只显示最后一段 */}
-          <select
-            id="deck-category-select"
-            className="form-select"
-            style={{ width: '130px' }}
-            value={category}
-            onChange={(e) => {
-              const cat = e.target.value;
-              if (!discardGuard()) { setCategory(cat); }
-            }}
-          >
-            <option value="">未分类卡组</option>
-            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <select
-            id="deck-select"
-            className="form-select"
-            style={{ width: '200px' }}
-            value={decksInCategory.includes(loadedDeck) ? loadedDeck : ''}
-            onChange={(e) => { if (e.target.value && !discardGuard()) loadDeck(e.target.value); }}
-          >
-            {decksInCategory.map((n) => <option key={n} value={n}>{n.split('/').pop()}</option>)}
-          </select>
-          <input className="form-input" style={{ width: '180px' }} value={deckName} onChange={(e) => setDeckName(e.target.value)} />
-          <button className="btn btn-primary" onClick={saveDeck}>保存</button>
-          <button className="btn btn-secondary" onClick={() => { if (!discardGuard()) newDeck(); }}>新建卡组</button>
-          <button className="btn btn-danger" onClick={deleteDeck}>删除</button>
-          <button className="btn btn-gold" onClick={simulateSampleHand}>测试起手 5 张</button>
+      {/* 左侧固定卡图预览区（原版 wCardImg + wInfos，game.cpp:335/356） */}
+      <div className="card-inspector">
+        <div className="inspector-pic-box">
+          {inspectedPic
+            ? <img id="deck-inspector-pic" src={inspectedPic} alt={inspected.name} draggable={false}
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            : <div style={{
+                width: '100%', height: '100%', background: '#0f172a',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '11px', color: '#38bdf8',
+              }}>{inspected ? '卡图加载中……' : '卡牌详情'}</div>}
         </div>
-        <button className="btn btn-secondary" onClick={() => { if (!discardGuard()) onNavigate('menu'); }}>退出编辑</button>
+        <div className="inspector-details">
+          <div className="inspector-name">{inspected ? inspected.name : '卡牌详情'}</div>
+          {inspected ? (
+            <>
+              <div className="inspector-meta" id="deck-inspector-type">
+                {[cardKind(inspected.type || 0), ...cardSubtypes(inspected.type || 0)].filter(Boolean).join('｜')}
+              </div>
+              {(inspected.type & TYPE_MONSTER) !== 0 ? (
+                <div className="inspector-meta" id="deck-inspector-stats">
+                  {(inspected.type & TYPE_LINK) ? `LINK-${inspected.level}` : `星数 ${inspected.level}`}
+                  {' ｜ '}
+                  {(RACES.find((r) => r[0] === inspected.race) || [0, ''])[1] as string}
+                  {' ｜ '}
+                  {(ATTRS.find((a) => a[0] === inspected.attribute) || [0, ''])[1] as string}
+                </div>
+              ) : null}
+              {(inspected.type & TYPE_MONSTER) !== 0 ? (
+                <div className="inspector-meta">
+                  攻击 {fmtStat(inspected.attack)} / 守备 {fmtStat(inspected.defense)}
+                </div>
+              ) : null}
+              {!settingsSnap.hide_setname && inspected.setNames && inspected.setNames.length > 0 ? (
+                <div className="inspector-meta" id="deck-inspector-setnames">
+                  系列：{inspected.setNames.join(' / ')}
+                </div>
+              ) : null}
+              <div className="inspector-desc">{inspected.desc || ''}</div>
+            </>
+          ) : (
+            <div className="inspector-desc">悬停任意卡牌查看详情，双击查看大图。</div>
+          )}
+        </div>
       </div>
 
-      <div className="deck-main-layout">
-        <div className="card-inspector" style={{ position: 'static', width: '100%', height: '100%' }}>
-          <div className="inspector-pic-box">
-            {inspectedPic
-              ? <img id="deck-inspector-pic" src={inspectedPic} alt={inspected.name} draggable={false}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-              : <div style={{
-                  width: '100%', height: '100%', background: '#0f172a',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '11px', color: '#38bdf8',
-                }}>{inspected ? '卡图加载中……' : '卡牌详情'}</div>}
-          </div>
-          <div className="inspector-details">
-            <div className="inspector-name">{inspected ? inspected.name : '卡牌详情'}</div>
-            {inspected ? (
-              <>
-                <div className="inspector-meta" id="deck-inspector-type">
-                  {[cardKind(inspected.type || 0), ...cardSubtypes(inspected.type || 0)].filter(Boolean).join('｜')}
-                </div>
-                {(inspected.type & TYPE_MONSTER) !== 0 ? (
-                  <div className="inspector-meta" id="deck-inspector-stats">
-                    {(inspected.type & TYPE_LINK) ? `LINK-${inspected.level}` : `星数 ${inspected.level}`}
-                    {' ｜ '}
-                    {(RACES.find((r) => r[0] === inspected.race) || [0, ''])[1] as string}
-                    {' ｜ '}
-                    {(ATTRS.find((a) => a[0] === inspected.attribute) || [0, ''])[1] as string}
-                  </div>
-                ) : null}
-                {(inspected.type & TYPE_MONSTER) !== 0 ? (
-                  <div className="inspector-meta">
-                    攻击 {fmtStat(inspected.attack)} / 守备 {fmtStat(inspected.defense)}
-                  </div>
-                ) : null}
-                {!settingsSnap.hide_setname && inspected.setNames && inspected.setNames.length > 0 ? (
-                  <div className="inspector-meta" id="deck-inspector-setnames">
-                    系列：{inspected.setNames.join(' / ')}
-                  </div>
-                ) : null}
-                <div className="inspector-desc">{inspected.desc || ''}</div>
-              </>
-            ) : (
-              <div className="inspector-desc">悬停任意卡牌查看详情，双击查看大图。</div>
-            )}
-          </div>
-        </div>
-
-        <div className="deck-zones-container">
-          {/* 编辑器三键（deck_con.cpp:172-191 BUTTON_CLEAR/SORT/SHUFFLE_DECK） */}
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button id="deck-clear-btn" className="btn btn-secondary" onClick={clearDeck}>清空</button>
-            <button id="deck-sort-btn" className="btn btn-secondary" onClick={sortDeck}>排序</button>
-            <button id="deck-shuffle-btn" className="btn btn-secondary" onClick={shuffleDeck}>打乱</button>
-          </div>
-          <div>
-            <div className="deck-section-title">
-              <span>主卡组：</span>
-              <span className="badge badge-attr">{currentDeck.main.length} / 60</span>
-            </div>
-            {renderSection(currentDeck.main, 'main')}
-          </div>
-          <div>
-            <div className="deck-section-title">
-              <span>额外卡组：</span>
-              <span className="badge badge-type">{currentDeck.extra.length} / 15</span>
-            </div>
-            {renderSection(currentDeck.extra, 'extra')}
-          </div>
-          <div>
-            <div className="deck-section-title">
-              <span>副卡组：</span>
-              <span className="badge badge-attr">{currentDeck.side.length} / 15</span>
-            </div>
-            {renderSection(currentDeck.side, 'side')}
-          </div>
-        </div>
-
-        <div className="deck-search-panel">
-          <h3 style={{ color: 'var(--primary)', fontSize: '16px' }}>卡牌搜索</h3>
-          <input
-            id="deck-search-input"
-            className="form-input"
-            type="text"
-            placeholder="名称/效果/编号；$卡名 @系列名"
-            value={searchKeyword}
-            onChange={(e) => setSearchKeyword(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') performSearch(); }}
-          />
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <select className="form-select" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-              <option value="0">（无）</option>
-              <option value="1">怪兽</option>
-              <option value="2">魔法</option>
-              <option value="4">陷阱</option>
-              <option value="32">效果怪兽</option>
-              <option value="64">融合</option>
-              <option value="128">仪式</option>
-              <option value="8192">同调</option>
-              <option value="8388608">超量</option>
-              <option value="16777216">灵摆</option>
-              <option value="4194304">连接</option>
-            </select>
-            <select id="deck-filter-race" className="form-select" value={raceFilter} onChange={(e) => setRaceFilter(e.target.value)}>
-              <option value="0">（无）</option>
-              {RACES.map(([v, name]) => <option key={v} value={String(v)}>{name}</option>)}
-            </select>
-            <select id="deck-filter-attr" className="form-select" value={attrFilter} onChange={(e) => setAttrFilter(e.target.value)}>
-              <option value="0">（无）</option>
-              {ATTRS.map(([v, name]) => <option key={v} value={String(v)}>{name}</option>)}
-            </select>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
-            {statInput('deck-filter-star', '等级（如 8 / >=7）', starFilter, setStarFilter)}
-            {statInput('deck-filter-scale', '灵摆刻度（如 4 / <=3）', scaleFilter, setScaleFilter)}
-            {statInput('deck-filter-atk', '攻击力（如 1900 / >=2500 / ?）', atkFilter, setAtkFilter)}
-            {statInput('deck-filter-def', '守备力（如 2000 / <1000）', defFilter, setDefFilter)}
-          </div>
-          {/* 效果类型过滤（wCategories 32 复选框）+ 链接箭头（wLinkMarks） */}
-          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-            <button
-              id="deck-filter-effect-btn"
-              className="btn btn-secondary"
-              style={{ flex: 1 }}
-              onClick={() => setShowEffectPanel((v) => !v)}
-            >
-              效果过滤{effectBits.size > 0 ? `（${effectBits.size}）` : ''}
-            </button>
-          </div>
-          {showEffectPanel ? (
-            <div id="deck-effect-panel" style={{
-              border: '1px solid var(--primary)', borderRadius: 6, padding: '6px',
-              marginTop: '4px', maxHeight: '180px', overflowY: 'auto',
-              display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '2px', fontSize: '11px',
-            }}>
-              {EFFECT_CATEGORIES.map(([bit, label]) => (
-                <label key={bit} style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={effectBits.has(bit)} onChange={() => toggleEffectBit(bit)} />
-                  {label}
-                </label>
-              ))}
-              <button
-                className="btn btn-primary"
-                style={{ gridColumn: '1 / -1', marginTop: '4px' }}
-                onClick={() => setShowEffectPanel(false)}
+      {/* 右侧工作区 = 顶部横条（wDeckEdit 管理 + wFilter 过滤）+ 主体（左卡组/右结果） */}
+      <div className="deck-workspace">
+        <div className="deck-toolbar">
+          {/* wDeckEdit（game.cpp:656-718）：分类/卡组下拉 + 保存/另存为/删除 + 打乱/排序/清空 */}
+          <div className="deck-header">
+            <h2>卡组构筑{isModified ? ' *' : ''}</h2>
+            <div className="deck-header-row">
+              <label className="gfw-label">卡组分类</label>
+              {/* 分类下拉（gframe cbDBCategory：未分类卡组 + ./deck/ 子目录）
+                  与当前分类下的卡组下拉；名字含 '/' 时只显示最后一段 */}
+              <select
+                id="deck-category-select"
+                className="form-select"
+                style={{ width: '130px' }}
+                value={category}
+                onChange={(e) => {
+                  const cat = e.target.value;
+                  if (!discardGuard()) { setCategory(cat); }
+                }}
               >
-                确定
-              </button>
+                <option value="">未分类卡组</option>
+                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <label className="gfw-label">卡组</label>
+              <select
+                id="deck-select"
+                className="form-select"
+                style={{ width: '180px' }}
+                value={decksInCategory.includes(loadedDeck) ? loadedDeck : ''}
+                onChange={(e) => { if (e.target.value && !discardGuard()) loadDeck(e.target.value); }}
+              >
+                {decksInCategory.map((n) => <option key={n} value={n}>{n.split('/').pop()}</option>)}
+              </select>
             </div>
-          ) : null}
-          <div id="deck-linkmarks-panel" style={{ marginTop: '8px' }}>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '2px' }}>
-              连接标记{linkMarks > 0 ? `（掩码 ${linkMarks}）` : ''}
+            <div className="deck-header-row">
+              <label className="gfw-label">卡组名</label>
+              <input className="form-input" style={{ width: '180px' }} value={deckName} onChange={(e) => setDeckName(e.target.value)} />
+              <button className="btn btn-primary" onClick={saveDeckOverwrite}>保存</button>
+              <button className="btn btn-secondary" onClick={saveDeck}>另存为</button>
+              <button className="btn btn-secondary" onClick={() => { if (!discardGuard()) newDeck(); }}>新建卡组</button>
+              <button className="btn btn-danger" onClick={deleteDeck}>删除</button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 32px)', gap: '2px', justifyItems: 'center' }}>
-              {LINK_MARKS.map(([bit, arrow], i) => (
-                <React.Fragment key={bit}>
-                  {/* 3x3 网格中央留空（原版中心是确定按钮，我们即时生效无需它） */}
-                  {i === 4 ? <span /> : null}
-                  <button
-                    className={`btn ${((linkMarks & bit) !== 0) ? 'btn-gold' : 'btn-secondary'}`}
-                    style={{ width: 32, height: 26, padding: 0, fontSize: 13 }}
-                    title="按住的箭头方向都要命中（子集语义）"
-                    onClick={() => toggleLinkMark(bit)}
-                  >
-                    {arrow}
-                  </button>
-                </React.Fragment>
-              ))}
+            <div className="deck-header-row">
+              {/* 编辑器三键（deck_con.cpp:172-191 BUTTON_CLEAR/SORT/SHUFFLE_DECK） */}
+              <button id="deck-shuffle-btn" className="btn btn-secondary" onClick={shuffleDeck}>打乱</button>
+              <button id="deck-sort-btn" className="btn btn-secondary" onClick={sortDeck}>排序</button>
+              <button id="deck-clear-btn" className="btn btn-secondary" onClick={clearDeck}>清空</button>
+              <button className="btn btn-gold" onClick={simulateSampleHand}>测试起手 5 张</button>
+              <button className="btn btn-secondary" onClick={() => { if (!discardGuard()) onNavigate('menu'); }}>退出编辑</button>
             </div>
-          </div>
-          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-            <button className="btn btn-primary" style={{ flex: 1 }} onClick={performSearch}>搜索</button>
-            <button id="deck-filter-clear" className="btn btn-secondary" onClick={clearFilters}>清空</button>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-            <label style={{ fontSize: '12px', color: 'var(--text-muted)' }}>点击加入：</label>
-            <select id="deck-add-target" className="form-select" value={addTarget} onChange={(e) => setAddTarget(e.target.value as 'main' | 'side')}>
-              <option value="main">主卡组</option>
-              <option value="side">副卡组</option>
-            </select>
           </div>
 
-          <div id="deck-result-count" style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            搜索结果（{sortedResults.length} 张，点击添加，双击看大图）：
-          </div>
-          <div className="search-results-grid">
-            {sortedResults.map((card, i) => (
-              <SearchResultChip
-                key={`${card.code}-${i}`}
-                card={card}
-                onInspect={setInspected}
-                onAdd={() => addCardToDeck(card)}
-                onZoom={setZoomCode}
+          {/* wFilter（game.cpp:740-795）：全部过滤控件 + 开始搜索/清空 */}
+          <div className="deck-search-panel">
+            <div className="deck-filter-row">
+              <input
+                id="deck-search-input"
+                className="form-input"
+                type="text"
+                placeholder="名称/效果/编号；$卡名 @系列名"
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') performSearch(); }}
               />
-            ))}
+              <select className="form-select" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+                <option value="0">（无）</option>
+                <option value="1">怪兽</option>
+                <option value="2">魔法</option>
+                <option value="4">陷阱</option>
+                <option value="32">效果怪兽</option>
+                <option value="64">融合</option>
+                <option value="128">仪式</option>
+                <option value="8192">同调</option>
+                <option value="8388608">超量</option>
+                <option value="16777216">灵摆</option>
+                <option value="4194304">连接</option>
+              </select>
+              <select id="deck-filter-race" className="form-select" value={raceFilter} onChange={(e) => setRaceFilter(e.target.value)}>
+                <option value="0">（无）</option>
+                {RACES.map(([v, name]) => <option key={v} value={String(v)}>{name}</option>)}
+              </select>
+              <select id="deck-filter-attr" className="form-select" value={attrFilter} onChange={(e) => setAttrFilter(e.target.value)}>
+                <option value="0">（无）</option>
+                {ATTRS.map(([v, name]) => <option key={v} value={String(v)}>{name}</option>)}
+              </select>
+            </div>
+            <div className="deck-filter-row">
+              {statInput('deck-filter-star', '等级', starFilter, setStarFilter)}
+              {statInput('deck-filter-scale', '刻度', scaleFilter, setScaleFilter)}
+              {statInput('deck-filter-atk', '攻', atkFilter, setAtkFilter)}
+              {statInput('deck-filter-def', '守', defFilter, setDefFilter)}
+              {/* 效果类型过滤（wCategories 32 复选框） */}
+              <button
+                id="deck-filter-effect-btn"
+                className="btn btn-secondary"
+                onClick={() => setShowEffectPanel((v) => !v)}
+              >
+                效果过滤{effectBits.size > 0 ? `（${effectBits.size}）` : ''}
+              </button>
+              <button className="btn btn-primary" onClick={performSearch}>搜索</button>
+              <button id="deck-filter-clear" className="btn btn-secondary" onClick={clearFilters}>清空</button>
+            </div>
+            {showEffectPanel ? (
+              <div id="deck-effect-panel" style={{
+                border: '1px solid var(--primary)', borderRadius: 6, padding: '6px',
+                marginTop: '4px', maxHeight: '180px', overflowY: 'auto',
+                display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '2px', fontSize: '11px',
+              }}>
+                {EFFECT_CATEGORIES.map(([bit, label]) => (
+                  <label key={bit} style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={effectBits.has(bit)} onChange={() => toggleEffectBit(bit)} />
+                    {label}
+                  </label>
+                ))}
+                <button
+                  className="btn btn-primary"
+                  style={{ gridColumn: '1 / -1', marginTop: '4px' }}
+                  onClick={() => setShowEffectPanel(false)}
+                >
+                  确定
+                </button>
+              </div>
+            ) : null}
+            {/* 链接箭头（wLinkMarks） */}
+            <div id="deck-linkmarks-panel" className="deck-linkmarks">
+              <div className="deck-linkmarks-label">
+                连接标记{linkMarks > 0 ? `（掩码 ${linkMarks}）` : ''}
+              </div>
+              <div className="deck-linkmarks-grid">
+                {LINK_MARKS.map(([bit, arrow], i) => (
+                  <React.Fragment key={bit}>
+                    {/* 3x3 网格中央留空（原版中心是确定按钮，我们即时生效无需它） */}
+                    {i === 4 ? <span /> : null}
+                    <button
+                      className={`btn ${((linkMarks & bit) !== 0) ? 'btn-gold' : 'btn-secondary'}`}
+                      style={{ width: 30, height: 24, padding: 0, fontSize: 12 }}
+                      title="按住的箭头方向都要命中（子集语义）"
+                      onClick={() => toggleLinkMark(bit)}
+                    >
+                      {arrow}
+                    </button>
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="deck-workspace-body">
+          {/* 主体·左：主/额外/副 三个卡组区（DrawDeckBd drawing.cpp:1228-1295） */}
+          <div className="deck-zones-container">
+            <div>
+              <div className="deck-section-title">
+                <span>主卡组：</span>
+                <span className="badge badge-attr">{currentDeck.main.length} / 60</span>
+              </div>
+              {renderSection(currentDeck.main, 'main')}
+            </div>
+            <div>
+              <div className="deck-section-title">
+                <span>额外卡组：</span>
+                <span className="badge badge-type">{currentDeck.extra.length} / 15</span>
+              </div>
+              {renderSection(currentDeck.extra, 'extra')}
+            </div>
+            <div>
+              <div className="deck-section-title">
+                <span>副卡组：</span>
+                <span className="badge badge-attr">{currentDeck.side.length} / 15</span>
+              </div>
+              {renderSection(currentDeck.side, 'side')}
+            </div>
+          </div>
+
+          {/* 主体·右：搜索结果纵向列表（DrawDeckBd drawing.cpp:1296-1360） */}
+          <div className="deck-results">
+            <div id="deck-result-count" style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+              搜索结果（{sortedResults.length} 张，点击添加，双击看大图）：
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <label style={{ fontSize: '12px', color: 'var(--text-muted)' }}>点击加入：</label>
+              <select id="deck-add-target" className="form-select" value={addTarget} onChange={(e) => setAddTarget(e.target.value as 'main' | 'side')}>
+                <option value="main">主卡组</option>
+                <option value="side">副卡组</option>
+              </select>
+            </div>
+            <div className="search-results-grid">
+              {sortedResults.map((card, i) => (
+                <SearchResultChip
+                  key={`${card.code}-${i}`}
+                  card={card}
+                  onInspect={setInspected}
+                  onAdd={() => addCardToDeck(card)}
+                  onZoom={setZoomCode}
+                />
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
       {zoomCode ? <ZoomOverlay code={zoomCode} onClose={() => setZoomCode(0)} /> : null}
+
+      {/* 右键上下文菜单（deck_con.cpp:1129-1195 的 pop_* / 移副语义） */}
+      {ctxMenu ? (
+        <>
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 2099 }}
+            onClick={() => setCtxMenu(null)}
+            onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }}
+          />
+          <div id="deck-context-menu" style={{
+            position: 'fixed', left: ctxMenu.x, top: ctxMenu.y, zIndex: 2100,
+            background: '#1e293b', border: '1px solid var(--primary)', borderRadius: 6,
+            padding: '4px', minWidth: 132, boxShadow: '0 4px 12px rgba(0,0,0,0.6)',
+            display: 'flex', flexDirection: 'column', gap: '3px',
+          }}>
+            {ctxMenu.section !== 'main' && (
+              <button className="btn btn-secondary" style={{ textAlign: 'left' }}
+                onClick={() => { moveCard(ctxMenu.section, ctxMenu.index, 'main', currentDeck.main.length); setCtxMenu(null); }}>
+                移到主卡组
+              </button>
+            )}
+            {ctxMenu.section !== 'extra' && (
+              <button className="btn btn-secondary" style={{ textAlign: 'left' }}
+                onClick={() => { moveCard(ctxMenu.section, ctxMenu.index, 'extra', currentDeck.extra.length); setCtxMenu(null); }}>
+                移到额外卡组
+              </button>
+            )}
+            {ctxMenu.section !== 'side' && (
+              <button className="btn btn-secondary" style={{ textAlign: 'left' }}
+                onClick={() => { moveCard(ctxMenu.section, ctxMenu.index, 'side', currentDeck.side.length); setCtxMenu(null); }}>
+                移到副卡组
+              </button>
+            )}
+            <button className="btn btn-danger" style={{ textAlign: 'left' }}
+              onClick={() => { removeCardFromDeck(ctxMenu.section, ctxMenu.index); setCtxMenu(null); }}>
+              移出卡组
+            </button>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

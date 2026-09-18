@@ -194,37 +194,38 @@ body, html {
   justify-content: space-between;
 }
 
-/* Card Inspector (Left Panel) */
+/* Card Inspector (Left Panel) — 波 N：原版 wCardImg + wInfos 银灰卡片预览框 */
 .card-inspector {
   pointer-events: auto;
   position: absolute;
-  top: 20px;
-  left: 20px;
-  width: 260px;
-  bottom: 20px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-cyan);
-  border-radius: 12px;
-  backdrop-filter: blur(16px);
+  top: 16px;
+  left: 16px;
+  width: 276px;
+  bottom: 16px;
+  background: linear-gradient(180deg, #d0d0d0 0%, #c0c0c0 100%);
+  border: 2px solid #808080;
+  border-radius: 0;
+  backdrop-filter: none;
   display: flex;
   flex-direction: column;
-  padding: 16px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  padding: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   z-index: 10;
   overflow: hidden;
+  color: #222;
 }
 
 .inspector-pic-box {
   width: 100%;
   height: 240px;
-  border-radius: 8px;
+  border-radius: 0;
   overflow: hidden;
   background: #000;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border-color);
-  margin-bottom: 12px;
+  border: 1px solid #888;
+  margin-bottom: 10px;
   position: relative;
 }
 
@@ -239,14 +240,21 @@ body, html {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  gap: 8px;
+  gap: 6px;
   padding-right: 4px;
 }
 
 .inspector-name {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
-  color: var(--primary);
+  color: #1a3a6a;
+}
+
+/* 卡详情元信息（id deck-inspector-type/stats/setnames）在银灰面板上要深色 */
+.inspector-meta {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #222;
 }
 
 .inspector-badges {
@@ -282,7 +290,7 @@ body, html {
 .inspector-desc {
   font-size: 12px;
   line-height: 1.5;
-  color: var(--text-muted);
+  color: #333;
   user-select: text;
   white-space: pre-wrap;
 }
@@ -625,57 +633,168 @@ body, html {
   padding: 20px 40px;
 }
 
-.deck-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.deck-main-layout {
-  display: grid;
-  grid-template-columns: 280px 1fr 340px;
-  gap: 20px;
-  flex: 1;
-  overflow: hidden;
-}
-
-.deck-zones-container {
-  background: var(--bg-card);
-  border: 1px solid var(--border-cyan);
-  border-radius: 12px;
-  padding: 16px;
+/* 顶部/右侧工作区（波 N：wDeckEdit + wFilter 横条 + 主体左卡组/右结果） */
+.deck-workspace {
+  position: absolute;
+  left: 306px;
+  right: 16px;
+  top: 16px;
+  bottom: 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  overflow-y: auto;
-  backdrop-filter: blur(12px);
+  gap: 12px;
 }
 
-.deck-section-title {
+.deck-toolbar {
+  display: flex;
+  gap: 12px;
+}
+.deck-header,
+.deck-search-panel {
+  background: linear-gradient(180deg, #d8d8d8 0%, #c4c4c4 100%);
+  border: 2px solid #808080;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  padding: 8px 10px;
+  border-radius: 0;
+  color: #222;
+}
+.deck-header {
+  flex: 0 0 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.deck-header h2 {
   font-size: 14px;
+  color: #1a3a6a;
+  margin-bottom: 2px;
+}
+.deck-header-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.deck-search-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.deck-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* 顶部横条内的银灰控件（覆盖全局 .btn/.form-input/.form-select 霓虹） */
+#deck-screen .btn {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 2px;
+  border: 1px solid #888;
+  color: #222;
+  font-size: 12px;
+  font-weight: normal;
+  letter-spacing: normal;
+  background: linear-gradient(180deg, #e8e8e8 0%, #c8c8c8 50%, #b0b0b0 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 1px 2px rgba(0, 0, 0, 0.15);
+  transform: none;
+  text-shadow: none;
+  text-transform: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+#deck-screen .btn:hover {
+  background: linear-gradient(180deg, #f0f0f0 0%, #d8d8d8 50%, #c0c0c0 100%);
+  transform: none;
+}
+#deck-screen .btn:active {
+  background: linear-gradient(180deg, #b0b0b0 0%, #c8c8c8 50%, #e0e0e0 100%);
+}
+#deck-screen .btn-gold {
+  background: linear-gradient(180deg, #e6d4a0 0%, #d4bc80 50%, #b89e60 100%);
+  color: #5a4a20;
+}
+#deck-screen .btn-danger {
+  background: linear-gradient(180deg, #e8b0a8 0%, #d89088 50%, #c07870 100%);
+  color: #4a1a1a;
+}
+#deck-screen .form-input,
+#deck-screen .form-select {
+  height: 22px;
+  background: #fff;
+  border: 1px solid #888;
+  border-radius: 0;
+  color: #222;
+  padding: 0 4px;
+  font-size: 12px;
+  width: auto;
+  box-shadow: none;
+}
+#deck-screen .form-input:focus,
+#deck-screen .form-select:focus {
+  border-color: #4a6fa5;
+  box-shadow: none;
+}
+#deck-screen .gfw-label {
+  font-size: 12px;
+  color: #222;
+  white-space: nowrap;
+  line-height: 22px;
+}
+
+/* 主体：左卡组区（半透明蓝 0x400000ff）+ 右结果列表 */
+.deck-workspace-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+}
+.deck-zones-container {
+  flex: 1;
+  min-width: 0;
+  background: rgba(40, 60, 160, 0.28);
+  border: 2px solid #808080;
+  border-radius: 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+.deck-section-title {
+  font-size: 13px;
   font-weight: 700;
-  color: var(--primary);
+  color: #ffd966;
   display: flex;
   justify-content: space-between;
 }
-
 .deck-grid {
   display: grid;
-  grid-template-columns: repeat(10, 1fr);
-  gap: 6px;
-  min-height: 100px;
-  background: rgba(0, 0, 0, 0.3);
-  padding: 8px;
-  border-radius: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 5px;
+  min-height: 90px;
+  background: rgba(0, 0, 20, 0.35);
+  padding: 6px;
+  border-radius: 0;
+  align-content: start;
+}
+/* 卡组区的缩略格把 .select-card-item 的固定 90x130 让位给网格，
+   按 grid 单元自适应，aspect-ratio 59/86 保持卡面比例 */
+.deck-grid .select-card-item {
+  width: auto;
+  height: auto;
+  border-radius: 2px;
 }
 
-/* 卡图缩略格子（deck-grid 与 search-results-grid 共用）：59x86 与原版
-   CARD_IMG 177x254 同比例缩放 */
+/* 卡图缩略格子（deck-grid 内）：59x86 与原版 CARD_IMG 177x254 同比例 */
 .deck-card-chip {
   aspect-ratio: 59 / 86;
-  border-radius: 4px;
-  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  border: 1px solid #555;
   padding: 0;
 }
 .deck-card-chip:hover {
@@ -701,28 +820,106 @@ body, html {
 
 /* 攻守/等级区间小输入框 */
 .deck-filter-num {
-  padding: 4px 6px;
+  padding: 0 4px;
   font-size: 12px;
+  width: 56px;
 }
 
-.deck-search-panel {
-  background: var(--bg-card);
-  border: 1px solid var(--border-cyan);
-  border-radius: 12px;
-  padding: 16px;
+/* 链接箭头（wLinkMarks）：内联 3x3 簇 */
+.deck-linkmarks { margin-top: 2px; }
+.deck-linkmarks-label { font-size: 11px; color: #444; margin-bottom: 2px; }
+.deck-linkmarks-grid { display: grid; grid-template-columns: repeat(3, 30px); gap: 2px; justify-items: center; }
+
+/* 搜索结果纵向列表（DrawDeckBd drawing.cpp:1296-1360）：listbox 风格 */
+.deck-results {
+  flex: 0 0 250px;
+  min-width: 0;
+  background: rgba(40, 60, 160, 0.28);
+  border: 2px solid #808080;
+  border-radius: 0;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  backdrop-filter: blur(12px);
+  gap: 6px;
 }
-
 .search-results-grid {
   flex: 1;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
-  gap: 6px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   overflow-y: auto;
-  padding: 6px;
+  background: #f5f5f5;
+  border: 1px solid #aaa;
+  padding: 4px;
+}
+/* 结果行：横向「缩略图 + 文本」，覆盖 .deck-card-chip 的 59/86 比例 */
+.search-results-grid .deck-card-chip {
+  aspect-ratio: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.search-results-grid .deck-card-chip:hover {
+  background: #b8c4dc;
+  border-color: #88a0c8;
+  box-shadow: none;
+}
+.deck-result-thumb {
+  flex: 0 0 32px;
+  height: 44px;
+  background: #000;
+  border: 1px solid #888;
+  overflow: hidden;
+  border-radius: 2px;
+}
+.deck-result-thumb-fallback {
+  width: 100%;
+  height: 100%;
+  background: #0f172a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  color: #38bdf8;
+  text-align: center;
+  padding: 2px;
+  overflow: hidden;
+}
+.deck-result-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+.deck-result-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #222;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.deck-result-sub {
+  font-size: 10px;
+  color: #555;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.deck-result-stats {
+  font-size: 10px;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Scrollbar Customization */

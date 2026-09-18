@@ -1,6 +1,6 @@
 # 重构目标与完成情况
 
-> 更新时间：2026-09-16。本文档跟踪本轮"前后端整理重构"的目标、执行顺序与完成状态。
+> 更新时间：2026-09-17。本文档跟踪本轮"前后端整理重构"的目标、执行顺序与完成状态。
 > 验证基线命令：`go build ./... && go vet ./... && go test -count=1 ./...`、`cd frontend && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build && ./node_modules/.bin/vite build --config vite.smoke.config.js`，外加 12 个浏览器冒烟页。
 
 ## 总览
@@ -15,8 +15,8 @@
 | P3a | wails STOC/config 表驱动化 | ✅ 完成 | duel_client.go 529→330 行 |
 | P3b | Analyze 分发表驱动化（single/tag 各 77 case） | ✅ 完成 | 收尾修正测试 mock，见下方明细 |
 | P4 | 并发收口（锁/race/错误码/重连/句柄泄漏） | ✅ 完成 | 见明细 |
-| P5 | 前端结构重构 | 🔄 进行中（1-2/5） | PromptHost 拆分 + useCardSelection 完成，3-5 待做 |
-| — | 全量回归验证 | ⬜ 未开始 | 所有阶段完成后的最终门禁 |
+| P5 | 前端结构重构 | ✅ 完成（5/5） | PromptHost 拆分 + useCardSelection + reducer 拆表 + field3d 拆分 + field3D strict 化 |
+| — | 全量回归验证 | ✅ 完成 | Go 门禁 + 前端 tsc/双构建 + 12 冒烟页（344 项检查）全绿 |
 
 ## 已完成明细
 
@@ -112,21 +112,46 @@
 2. **抽 `useCardSelection(min,max)`** — 收敛 CardSelectModal/SumSelectModal/SortModal 三处重复的「点选/取消、到 max 上限不再新增」状态机；`selected` 保持点击顺序（SortModal 依赖它生成置换），返回 `minMet`（CardSelect 确认钮 disabled、SumSelect 的 countOk 都复用）。
 3. **验证** — `tsc --noEmit` + `vite build` + `vite build --config vite.smoke.config.js` 全绿；无头冒烟 `prompts_smoke` 67/67、`practice_smoke` 25/25、`stage_smoke` 32/32（重点页）。
 
-## 未开始
+### P5（第 3 项）reducer applyEvent 拆 handler 表（验证：tsc + 双构建 + 冒烟全绿）
+
+- `domain/reducer.ts` 的 `applyEvent`（约 60 个 case 的 switch）拆成 8 张按事件族分组的 handler 表：`lifecycleHandlers`（开局/进房/终局/计时/win）、`lpHandlers`、`boardHandlers`（召唤/盖卡/移动/update_* 等 board 同步）、`counterHandlers`、`phaseHandlers`（阶段/回合/按钮提示）、`singleModeHandlers`（AI/谜题/提示）、`cardHandlers`（抽卡/确认/洗切/选中/装备）、`logHandlers`（连锁/战斗/掷币等纯日志）。
+- `applyEvent` 收缩为：拼 `event` 字段 → `HINT_CLEARING` clearHint → `HANDLERS[ev.event]` 查表分发（未命中返回原 state，等价原 `default`）。handler 签名 `(state, ev)` 中 `ev: any`（跨 handler 不再享受 switch 逐 case 的收窄），原 `update_data` 里的 `ev.cards.map((q) => …)` 补 `q: CardQuery | null` 显式标注。
+- 每个 case body 逐字保留（含注释与 `withLog` 调用）；共享 handler 收敛（三种召唤 → `applySummoning`、增删指示物 → `applyCounter`、连锁结束/卡角标 → `noop`）。
+- **验证** — `tsc --noEmit` + 双构建全绿；无头冒烟 `practice_smoke` 25/25、`prompts_smoke` 67/67、`stage_smoke` 32/32 全绿。
+
+### P5（第 4 项）field3d 拆 geometry/textures/anim（验证：tsc + 双构建 + 冒烟全绿）
+
+- `duel/field3d.ts` 1383 行拆成 3 个伴生文件，主文件降到 ~600 行：
+  - `field3d_geometry.ts`：`CARD_WIDTH/HEIGHT/DEPTH` + `ZONE_COORDS`（区域坐标与卡尺寸的单一事实源）。抽出成独立模块是为了让 anim 侧能无循环地引用 `ZONE_COORDS`。
+  - `field3d_textures.ts`：`generateCardTexture(self, code, info)`（程序化卡面绘制 + 异步真卡图叠层 + 纹理缓存）。
+  - `field3d_anim.ts`：9 个卡动画/粒子特效（`animateDrawCard/Summon/SetCard/Reposition/Attack/Destroy`、`createShockwave/createHitSparks/cameraShake`）。
+- 抽出去的实现一律以 `DuelField3D` 实例为第一参 `self`，只 `import type` 主类（textures 与 anim 都只对主类用类型导入、anim 再 `ZONE_COORDS` 从 geometry 引入），**不构成运行时循环导入**；主类保留同名 public 方法做薄委托，`duel_manager.ts` / `chain_visualizer.ts` 的调用契约（含 `createShockwave(x,z,color)`、`cameraShake(intensity,duration)`）逐字不变。
+- 每个方法体逐字搬移（含注释、`if (!targetCoord) return` 边界守卫、`soundManager`/`TWEEN` 调用），仅 `this.` → `self.`。
+- **验证** — `tsc --noEmit` + 双构建全绿（prod 150 模块，+3 新文件）；无头冒烟 `stage_smoke` 32/32、`practice_smoke` 25/25、`prompts_smoke` 67/67 全绿。
+
+### P5（第 5 项）field3D strict 化（验证：tsc + 双构建 + 冒烟全绿）
+
+- `duel_manager.ts` 的 `field3D: any` → `field3D: DuelField3D`（`import type { DuelField3D } from './field3d.ts'`，仅类型导入、不构成运行时循环）；构造参数 `constructor(field3D: DuelField3D, …)` 同改。棘轮最后一步的 stale 桥接注释一并删除。
+- 连带收敛：`chainVisualizer` 在 `DuelField3D` 上声明为 `ChainVisualizer | null`，`duel_manager.ts` 里 4 处 `this.field3D.chainVisualizer.*`（`addChainLink`/`highlightSolvingLink`/`removeSolvingLink`/`clearChain`）调用补 `?.`——运行期恒非空、行为不变，仅满足 strict null-check。
+- 此前被 `any` 掩盖的 `this.field3D.*` 全部方法（`setOpponentHandCount`/`animateDrawCard`/`animateSummon`/`animateSetCard`/`placeCard`/`moveCard`/`removeFromSlot`/`meshAt`/`addRelationLine`/`removeRelationLine`/`applyCounterDelta`/`flashCards`/`clearBoard`/`cameraShake`/`flipSzoneCard`/`cardRotationFor`/`positionStateFor` 等）经 tsc 逐一对上 `DuelField3D` 的公开签名，无一需回退 `any`。
+- **验证** — `tsc --noEmit` + 双构建全绿；无头冒烟 `stage_smoke` 32/32、`practice_smoke` 25/25、`prompts_smoke` 67/67 全绿。
+
+## 执行清单（全部完成）
 
 ### P5 前端结构重构（按性价比排序）
 
 1. ✅ `PromptHost.tsx`（779 行，9 个内嵌 Modal）拆 `components/prompts/` 子文件
 2. ✅ 抽 `useCardSelection(min,max)` hook，收敛 CardSelect/SumSelect/Sort 三处重复状态机（约 60 行）
-3. `domain/reducer.ts` 的 422 行 `applyEvent` switch 按事件族拆 handler 表
-4. `duel/field3d.ts`（1383 行）拆 `field3d_textures.ts` + `field3d_anim.ts`
-5. （最后）消灭 `duel_manager.ts` 的 `field3D: any`
+3. ✅ `domain/reducer.ts` 的 `applyEvent` switch 按事件族拆成 8 张 handler 表（见下方明细）
+4. ✅ `duel/field3d.ts`（1383 行）拆 `field3d_geometry.ts` + `field3d_textures.ts` + `field3d_anim.ts`（见下方明细）
+5. ✅ 消灭 `duel_manager.ts` 的 `field3D: any`（typed 为 `DuelField3D`，见下方明细）
 - 每步验证：tsc + 双构建 + 12 冒烟页（重点 prompts/practice/stage）
 
-### 最终门禁
+### 最终门禁（✅ 2026-09-17 全绿）
 
-- `go build ./... && go vet ./... && go test -count=1 ./...` 全绿
-- 前端 tsc + 双构建 + 12 冒烟页全绿
+- `go build ./... && go vet ./... && go test -count=1 ./...` 全绿（cmd/wails 21.6s、core/duel 21.4s、protocol 0.5s，余者无测试文件）
+- 前端 `tsc --noEmit` + `vite build` + `vite build --config vite.smoke.config.js` 全绿
+- 12 冒烟页全绿（344 项检查）：prompts 67、practice 25、stage 32、spec 11、settings 17、theater 38、single 19、menu 7、deck 34、lobby 33、widgets 49、replay 12
 - （建议）整理后提交一个 commit 批次
 
 ## 备注
