@@ -188,7 +188,7 @@ if (wailsEvents && wailsEvents.On) {
 export const WailsBridge = {
   isWails,
   _cardCache: new Map<number, any>(),
-  _picCache: new Map<number, { url: string; full: boolean } | null>(),
+  _picCache: new Map<number, { url: string } | null>(),
 
   async connectServer(addr: string, username: string, pass: string) {
     if (isWails) {
@@ -409,22 +409,20 @@ export const WailsBridge = {
     return info;
   },
 
-  // Card picture lookup. Returns { url, full } or null:
-  //   - full=false: raw card art (pics/<code>.jpg from the YGOPro layout on
-  //     disk) — the renderer frames it inside its procedural card face.
-  //   - full=true: a complete card face (YGOProDeck CDN, fetched whenever no
-  //     local art is installed) — the renderer draws it over the whole card.
+  // Card picture lookup. Returns { url } or null — the URL is a complete card
+  // face (pics/<code>.jpg on disk via Go GetCardImage, or the YGOProDeck CDN
+  // whenever no local art is installed), drawn full-card by every consumer.
   // Results (including misses) are cached per code.
   async getCardImage(code: number) {
     if (!code) return null;
     if (!WailsBridge._picCache) WailsBridge._picCache = new Map();
     const cached = WailsBridge._picCache.get(code);
     if (cached !== undefined) return cached;
-    let result: { url: string; full: boolean } | null = null;
+    let result: { url: string } | null = null;
     if (isWails) {
       const data = await callWails("GetCardImage", code);
       if (data) {
-        result = { url: data as string, full: false };
+        result = { url: data as string };
       }
     }
     if (!result) {
@@ -445,7 +443,7 @@ export const WailsBridge = {
         reader.onerror = () => resolve(null);
         reader.readAsDataURL(blob);
       });
-      return url ? { url, full: true } : null;
+      return url ? { url } : null;
     } catch {
       return null;
     }

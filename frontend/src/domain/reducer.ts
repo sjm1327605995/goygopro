@@ -353,429 +353,443 @@ export function applyInspectInfo(
   return { ...state, inspection: { code, info } };
 }
 
+// ---- 事件族 handler 表（P5-3：原 applyEvent 的 422 行 switch 按事件族拆表） ----
+// 每个 handler 只收 (state, ev)；ev 已拼上 event 字段，字段语义同 events.ts。
+// 同族内多个事件名可指向同一 handler（如三种召唤、增删指示物、连锁结束）。
+
+type EventHandler = (state: DuelState, ev: any) => DuelState;
+
+const noop: EventHandler = (state) => state;
+
+function applySummoning(state: DuelState, ev: any): DuelState {
+  const label = ev.event === 'duel:spsummoning' ? '特殊召唤'
+    : ev.event === 'duel:flipsummoning' ? '反转召唤' : '通常召唤';
+  let next = boardPlace(state, ev.cc, LOC_MZONE, ev.cs, { code: ev.code, pos: ev.cp });
+  return withLog(next, `${label}：${cardName(ev.code)}`, 'log-summon');
+}
+
+function applyCounter(state: DuelState, ev: any): DuelState {
+  const key = `${ev.c}:${ev.l}:${ev.s}:${ev.type}`;
+  const counters = { ...state.counters };
+  const v = (counters[key] || 0) + (ev.event === 'duel:add_counter' ? ev.count : -ev.count);
+  if (v > 0) counters[key] = v;
+  else delete counters[key];
+  return { ...state, counters };
+}
+
+/** 决斗会话生命周期与 scope 级状态（开局/进房/终局/计时/猜拳结果） */
+const lifecycleHandlers: Record<string, EventHandler> = {
+  'duel:start': (state, ev) => {
+    const playerSlot = (ev.playerType || 0) & 0x0f;
+    let next: DuelState = {
+      ...state,
+      started: true,
+      playerSlot,
+      lp: [0, 0],
+      turn: 0,
+      turnPlayer: 0,
+      phase: 0,
+      phasePrompt: null,
+      hand: [],
+      piles: [
+        { deck: 0, grave: 0, banish: 0, extra: 0 },
+        { deck: 0, grave: 0, banish: 0, extra: 0 },
+      ],
+      timer: [null, null],
+      timeLimit: 0,
+      isObserver: ((ev.playerType || 0) & 0xf0) !== 0,
+      cantCheckGrave: false,
+      win: null,
+      matchKill: null,
+      fieldDisabled: 0,
+      counters: {},
+    };
+    // MSG_START 的 lp0/lp1、deck0/…按引擎 seat 给值，换到显示座
+    next = setLP(next, 0, ev.lp0 || 8000);
+    next = setLP(next, 1, ev.lp1 || 8000);
+    const seed = (seat: number, deck: number, extra: number) => {
+      const disp = localSeat(next, seat);
+      const piles: [PileCounts, PileCounts] = [...next.piles];
+      piles[disp] = { ...piles[disp], deck: deck || 0, extra: extra || 0 };
+      return { ...next, piles };
+    };
+    next = seed(0, ev.deck0, ev.extra0);
+    next = seed(1, ev.deck1, ev.extra1);
+    // LP 条的归一基准 = 自己的初始基本分（drawing.cpp:591 maxLP = start_lp）
+    next = { ...next, startLP: (playerSlot === 1 ? ev.lp1 : ev.lp0) || 8000 };
+    return withLog(next, '决斗开始！', 'log-action');
+  },
+
+  'stoc:player_enter': (state, ev) => {
+    // STOC_HS_PLAYER_ENTER 的 pos 是引擎 seat（0/1=决斗者，7=观战者）
+    if (ev.pos > 1) return state;
+    const disp = localSeat(state, ev.pos);
+    const names: [string, string] = [...state.names];
+    names[disp] = ev.name || names[disp];
+    return { ...state, names };
+  },
+
+  'stoc:deck_count': (state, ev) => {
+    // 服务器已按接收方交换前后半（自己在前）：初始化双方卡组/额外计数。
+    // 仅在决斗未真正开始（piles 还是 0）时生效，避免覆盖 MSG_START 的种子值。
+    if (state.started) return state;
+    const piles: [PileCounts, PileCounts] = [...state.piles];
+    piles[0] = { ...piles[0], deck: ev.deck0 || 0, extra: ev.extra0 || 0 };
+    piles[1] = { ...piles[1], deck: ev.deck1 || 0, extra: ev.extra1 || 0 };
+    return { ...state, piles };
+  },
+
+  'stoc:hand_result': (state, ev) => {
+    // STOC_HAND_RESULT：双方猜拳结果（0=剪刀 1=石头 2=布）
+    const names = ['剪刀', '石头', '布'];
+    const mine = names[ev.res1] ?? String(ev.res1);
+    const theirs = names[ev.res2] ?? String(ev.res2);
+    return withLog(state, `猜拳结果：你出了${mine}，对方出了${theirs}。`);
+  },
+
+  // 三局两胜局间，等待对方调整副卡组（sysString 1409）
+  'stoc:waiting_side': (state) => ({ ...state, hint: '等待更换副卡组中...' }),
+
+  'stoc:duel_end': (state) => withLog(state, '决斗结束。'),
+
+  'stoc:time_limit': (state, ev) => {
+    // 剩余秒 + 时限条归一基准（dInfo.time_limit 来自建房 host_info；
+    // 首个 time_limit 包即满额值，取历史最大防御乱序）
+    const disp = localSeat(state, ev.player);
+    const timer: [number | null, number | null] = [...state.timer];
+    timer[disp] = ev.leftTime;
+    return { ...state, timer, timeLimit: Math.max(state.timeLimit, ev.leftTime || 0) };
+  },
+
+  'duel:win': (state, ev) => withLog(
+    { ...state, win: { winner: localSeat(state, ev.winner), type: ev.type } },
+    ev.winner === state.playerSlot ? '你赢了！' : '对方获胜。',
+    'log-damage',
+  ),
+};
+
+/** LP 变化（差值事件按显示座累加，绝对值事件覆盖） */
+const lpHandlers: Record<string, EventHandler> = {
+  'duel:lp_update': (state, ev) => setLP(state, ev.player, ev.lp),
+
+  'duel:damage': (state, ev) => withLog(
+    setLP(state, ev.player, state.lp[localSeat(state, ev.player)] - ev.amount),
+    `玩家 ${localSeat(state, ev.player) === 0 ? '你' : '对方'} 受到 ${ev.amount} 点伤害！`,
+    'log-damage',
+  ),
+
+  'duel:recover': (state, ev) => withLog(
+    setLP(state, ev.player, state.lp[localSeat(state, ev.player)] + ev.amount),
+    `回复了 ${ev.amount} 点 LP！`,
+  ),
+
+  'duel:pay_lpcost': (state, ev) => withLog(
+    setLP(state, ev.player, state.lp[localSeat(state, ev.player)] - ev.amount),
+    `支付了 ${ev.amount} 点 LP 作为代价。`,
+    'log-damage',
+  ),
+};
+
+/** 场地区同步（唯一事实：summoning/set/move/pos_change/update_* 等） */
+const boardHandlers: Record<string, EventHandler> = {
+  'duel:summoning': applySummoning,
+  'duel:spsummoning': applySummoning,
+  'duel:flipsummoning': applySummoning,
+
+  'duel:set': (state, ev) => {
+    const next = boardPlace(state, ev.cc, ev.cl, ev.cs, { code: ev.code, pos: ev.cp });
+    return withLog(next, `玩家 ${ev.cc} 盖下了一张卡。`);
+  },
+
+  'duel:pos_change': (state, ev) => withLog(
+    boardReposition(state, ev.cc, ev.cl, ev.cs, ev.cp),
+    `玩家 ${ev.cc} 改变了槽位 ${ev.cs} 卡片的表示形式。`,
+  ),
+
+  'duel:move': (state, ev) => {
+    const locLabel = (l: number) => (LOC_LABELS as Record<number, string>)[l] || String(l);
+    let next = syncHandOnMove(state, ev);
+    next = adjustPile(next, ev.pc, ev.pl, -1);
+    next = adjustPile(next, ev.cc, ev.cl, +1);
+    next = boardMove(next, ev);
+    return withLog(next, `卡牌移动（${locLabel(ev.pl)} → ${locLabel(ev.cl)}）。`);
+  },
+
+  'duel:shuffle_set_card': (state, ev) => {
+    // 同区盖卡互相换位：按服务端给的新排列重建该区条目
+    let next = state;
+    for (const e of ev.cards || []) {
+      const board = cloneBoard(next);
+      const zone = zoneOf(board[localSeat(next, e.c)], e.l);
+      if (!zone || e.s < 0 || e.s >= zone.length) continue;
+      zone[e.s] = { code: e.code, pos: e.p || 0 };
+      next = { ...next, board };
+    }
+    return next === state ? state : withLog(next, '盖卡互相换位。');
+  },
+
+  'duel:swap': (state, ev) => {
+    // MSG_SWAP（精神操作类控制权交换）：两张场上卡互换槽位
+    const board = cloneBoard(state);
+    const zone1 = zoneOf(board[localSeat(state, ev.cc1)], ev.cl1);
+    const zone2 = zoneOf(board[localSeat(state, ev.cc2)], ev.cl2);
+    if (!zone1 || !zone2 || !zone1[ev.cs1] || !zone2[ev.cs2]) return state;
+    const tmp = zone1[ev.cs1];
+    zone1[ev.cs1] = { code: ev.code2, pos: zone2[ev.cs2]!.pos };
+    zone2[ev.cs2] = { code: ev.code1, pos: tmp!.pos };
+    return withLog({ ...state, board }, '卡片控制权被交换了。');
+  },
+
+  'duel:field_disabled': (state, ev) => ({ ...state, fieldDisabled: ev.zones }),
+
+  'duel:update_data': (state, ev) => {
+    // MSG_UPDATE_DATA：cards[i] 按序对应 location 区的第 i 张卡
+    if (!ev.cards || !ev.cards.length) return state;
+    // 本方手牌的整表刷新：谜题脚本布的手牌没有 draw 事件，只能从这里来
+    // （在线路径服务器同样会对本方发 HAND 的 update_data，覆盖即权威）
+    if (ev.location === LOC_HAND && ev.player === state.playerSlot) {
+      const hand = ev.cards.map((q: CardQuery | null) => (q && q.code ? { code: q.code } : null));
+      return { ...state, hand };
+    }
+    const board = cloneBoard(state);
+    const zone = zoneOf(board[localSeat(state, ev.player)], ev.location);
+    if (!zone) return state;
+    let changed = false;
+    (ev.cards as (CardQuery | null)[]).forEach((q, seq) => {
+      if (seq >= zone.length) return;
+      const cur = zone[seq];
+      if (!q) {
+        // LEN_EMPTY 空槽标记：引擎说这个槽没卡
+        if (cur) {
+          zone[seq] = null;
+          changed = true;
+        }
+        return;
+      }
+      const card: BoardCard = {
+        code: q.code ?? cur?.code ?? 0,
+        pos: q.position?.p ?? cur?.pos ?? 0,
+      };
+      if (!cur || cur.code !== card.code || cur.pos !== card.pos) {
+        zone[seq] = card;
+        changed = true;
+      }
+    });
+    return changed ? { ...state, board } : state;
+  },
+
+  'duel:update_card': (state, ev) => {
+    // MSG_UPDATE_CARD：只带变化字段的 query blob；缺的字段沿用旧值
+    const board = cloneBoard(state);
+    const zone = zoneOf(board[localSeat(state, ev.player)], ev.location);
+    if (!zone || ev.sequence < 0 || ev.sequence >= zone.length) return state;
+    const cur = zone[ev.sequence];
+    const card: BoardCard = {
+      code: ev.code ?? cur?.code ?? 0,
+      pos: ev.position?.p ?? cur?.pos ?? 0,
+    };
+    if (cur && cur.code === card.code && cur.pos === card.pos) return state;
+    zone[ev.sequence] = card;
+    return { ...state, board };
+  },
+};
+
+/** 指示物计数（add/remove_counter；键 c:l:s:type） */
+const counterHandlers: Record<string, EventHandler> = {
+  'duel:add_counter': applyCounter,
+  'duel:remove_counter': applyCounter,
+};
+
+/** 阶段/回合/阶段按钮提示（phasePrompt 生命周期） */
+const phaseHandlers: Record<string, EventHandler> = {
+  'duel:select_idlecmd': (state, ev) => ({
+    ...state,
+    phasePrompt: { mode: 'idle', canBP: !!ev.toBP, canM2: false, canEP: !!ev.toEP },
+  }),
+
+  'duel:select_battlecmd': (state, ev) => ({
+    ...state,
+    phasePrompt: { mode: 'battle', canBP: false, canM2: !!ev.toM2, canEP: !!ev.toEP },
+  }),
+
+  'duel:new_turn': (state, ev) => withLog({
+    ...state,
+    turn: state.turn + 1,
+    turnPlayer: localSeat(state, ev.player),
+    // 新回合意味着上一条阶段按钮提示已作废
+    phasePrompt: null,
+  }, `—— 玩家 ${localSeat(state, ev.player) === 0 ? '你' : '对方'} 的回合 ——`, 'log-action'),
+
+  'duel:new_phase': (state, ev) => withLog(
+    { ...state, phase: ev.phase, phasePrompt: null },
+    `进入${PHASE_LABELS[ev.phase] || '未知阶段'}`,
+    'log-action',
+  ),
+};
+
+/** 单人模式（谜题脚本 / AI 与提示类事件） */
+const singleModeHandlers: Record<string, EventHandler> = {
+  'duel:ai_name': (state, ev) => {
+    // MSG_AI_NAME：单机谜题的 AI 对手名（引擎 seat 1，playerSlot 恒 0）
+    const names: [string, string] = [...state.names];
+    names[localSeat(state, 1)] = ev.name || names[localSeat(state, 1)];
+    return { ...state, names };
+  },
+
+  // MSG_SHOW_HINT：谜题脚本的提示文本（原版弹提示窗，这里走提示条 + 日志）
+  'duel:show_hint': (state, ev) => withLog({ ...state, hint: ev.text }, ev.text),
+
+  'duel:reload_field': (state, ev) => {
+    // MSG_RELOAD_FIELD：完整布场快照。先落 LP 与堆计数；场上卡的细节
+    // 由紧随其后的 update_data 刷新（SinglePlayRefresh）补齐。
+    let next = state;
+    for (const seat of [0, 1] as const) {
+      const p = ev.players && ev.players[seat];
+      if (!p) continue;
+      next = setLP(next, seat, p.lp);
+      const disp = localSeat(next, seat);
+      const piles: [PileCounts, PileCounts] = [...next.piles];
+      piles[disp] = { ...piles[disp], deck: p.deck, grave: p.grave, banish: p.removed, extra: p.extra };
+      next = { ...next, piles };
+    }
+    return next;
+  },
+
+  // 原版 SysString 1390（MSG_WAITING → stHintMsg）
+  'duel:waiting': (state) => ({ ...state, hint: '等待行动中...' }),
+
+  'duel:player_hint': (state, ev) => {
+    // MSG_PLAYER_HINT（duelclient.cpp:3757-3768）：CARD_QUESTION 加/删到
+    // 本方 → 全场墓地禁查（drawing.cpp:564-575 在双方墓地上叠禁查图标）。
+    if (ev.data === CARD_QUESTION && ev.player === state.playerSlot) {
+      return { ...state, cantCheckGrave: ev.type === PHINT_DESC_ADD };
+    }
+    return state;
+  },
+
+  // 效果角标是 3D 浮层素材，reducer 不消费
+  'duel:card_hint': noop,
+};
+
+/** 抽卡与卡信息揭示（draw/confirm/shuffle/deck_top/选中/装备/对象） */
+const cardHandlers: Record<string, EventHandler> = {
+  'duel:draw': (state, ev) => {
+    let next = adjustPile(state, ev.player, LOC_DECK, -ev.count);
+    if (ev.player === next.playerSlot && ev.cards && ev.cards.length) {
+      const hand = [...next.hand];
+      for (const code of ev.cards) {
+        if (code) hand.push({ code });
+      }
+      next = { ...next, hand };
+    }
+    return { ...next, log: [...next.log, { id: ++logSeq, text: `玩家 ${ev.player} 抽了 ${ev.count} 张卡。`, cls: '' }].slice(-200) };
+  },
+
+  'duel:confirm_decktop': (state, ev) => withLog(
+    state,
+    `玩家 ${ev.player} 卡组顶端：${(ev.cards || []).map((c: { code: number }) => cardName(c.code)).join('、')}`,
+  ),
+
+  'duel:confirm_cards': (state, ev) => {
+    const names = (ev.cards || []).map((c: { code: number }) => cardName(c.code)).join('、');
+    return withLog(state, `翻开确认：${names}`);
+  },
+
+  'duel:shuffle_hand': (state, ev) => {
+    // 对方收到的 code 已被服务端归零，只有本方能按新序重建手牌
+    if (ev.player === state.playerSlot && ev.cards) {
+      const hand = ev.cards.filter((code: number) => code).map((code: number) => ({ code }));
+      return withLog({ ...state, hand }, '手牌重新洗切。');
+    }
+    return withLog(state, '对方洗切了手牌。');
+  },
+
+  'duel:shuffle_extra': (state) => withLog(state, '额外卡组重新洗切。'),
+
+  'duel:refresh_deck': (state) => withLog(state, '卡组被洗切。'),
+
+  'duel:deck_top': (state, ev) => {
+    // 0x80000000 位 = 卡组顶朝向反转标记，卡号取低 31 位
+    const code = ev.code & 0x7fffffff;
+    const reversed = ev.code >= 0x80000000;
+    return withLog(state, `玩家 ${ev.player} 卡组顶端${reversed ? '（反转）' : ''}：${cardName(code)}`);
+  },
+
+  'duel:card_selected': (state, ev) => withLog(state, `有 ${(ev.cards || []).length} 张卡被选中。`),
+  'duel:random_selected': (state, ev) => withLog(state, `有 ${(ev.cards || []).length} 张卡被选中。`),
+
+  'duel:equip': (state) => withLog(state, '一张卡装备到了对象卡上。'),
+
+  'duel:card_target': (state) => withLog(state, '一张卡成为了对象。'),
+
+  // 目标线清理，3D 层消费，无日志
+  'duel:cancel_target': noop,
+
+  'duel:unequip': (state) => withLog(state, '装备关系被解除。'),
+};
+
+/** 连锁/战斗/掷币/无效等纯日志与视觉事件 */
+const logHandlers: Record<string, EventHandler> = {
+  'duel:chaining': (state, ev) => withLog(state, `连锁发动：${cardName(ev.code)}！`, 'log-action'),
+
+  // 连锁环视觉事件，3D 层消费，无日志
+  'duel:chain_solving': noop,
+  'duel:chain_solved': noop,
+  'duel:chain_end': noop,
+
+  'duel:attack': (state, ev) => withLog(state, `宣告攻击！槽位 ${ev.attacker.s} → 槽位 ${ev.target.s}`, 'log-damage'),
+
+  'duel:hand_res': (state, ev) => {
+    // 出拳值 1=石头 2=剪刀 3=布（gframe f1/f2/f3 按钮语义）
+    const handName = (v: number) => ['石头', '剪刀', '布'][v - 1] || String(v);
+    return withLog(state, `猜拳结果已确定（${handName(ev.res & 3)} vs ${handName((ev.res >> 2) & 3)}）。`);
+  },
+
+  'duel:toss_coin': (state, ev) => {
+    const faces = (ev.results || []).map((r: number) => (r ? '正' : '反')).join('、');
+    return withLog(state, `玩家 ${ev.player} 掷硬币：${faces}`);
+  },
+
+  'duel:toss_dice': (state, ev) => {
+    const faces = (ev.results || []).map((r: number) => r + 1).join('、');
+    return withLog(state, `玩家 ${ev.player} 掷骰子：${faces}`);
+  },
+
+  'duel:attack_disabled': (state) => withLog(state, '攻击被无效了！', 'log-damage'),
+
+  'duel:chain_negated': (state, ev) => withLog(state, `连锁 ${ev.count} 被无效。`, 'log-damage'),
+
+  'duel:become_target': (state, ev) => withLog(state, `${(ev.targets || []).length} 张卡被选为对象。`),
+
+  'duel:missed_effect': (state, ev) =>
+    // 原版 SysString 1622「错过时点」
+    withLog(state, `${cardName(ev.code)} 错过了发动时点。`, 'log-damage'),
+
+  'duel:match_kill': (state, ev) => withLog(
+    { ...state, matchKill: ev.code },
+    `比赛击杀！${cardName(ev.code)}`,
+    'log-damage',
+  ),
+
+  // 26 字节结算体由 3D 层/攻守浮层直接消费，reducer 不落盘
+  'duel:battle': noop,
+};
+
+/** 合并所有事件族进一张查表（事件名在 events.ts 中全局唯一） */
+const HANDLERS: Record<string, EventHandler> = {
+  ...lifecycleHandlers,
+  ...lpHandlers,
+  ...boardHandlers,
+  ...counterHandlers,
+  ...phaseHandlers,
+  ...singleModeHandlers,
+  ...cardHandlers,
+  ...logHandlers,
+};
+
 export function applyEvent(state: DuelState, name: string, data: any): DuelState {
   const ev = { event: name, ...data } as GameEvent;
   if (HINT_CLEARING.has(ev.event)) state = clearHint(state);
-  switch (ev.event) {
-    case 'duel:start': {
-      const playerSlot = (ev.playerType || 0) & 0x0f;
-      let next: DuelState = {
-        ...state,
-        started: true,
-        playerSlot,
-        lp: [0, 0],
-        turn: 0,
-        turnPlayer: 0,
-        phase: 0,
-        phasePrompt: null,
-        hand: [],
-        piles: [
-          { deck: 0, grave: 0, banish: 0, extra: 0 },
-          { deck: 0, grave: 0, banish: 0, extra: 0 },
-        ],
-        timer: [null, null],
-        timeLimit: 0,
-        isObserver: ((ev.playerType || 0) & 0xf0) !== 0,
-        cantCheckGrave: false,
-        win: null,
-        matchKill: null,
-        fieldDisabled: 0,
-        counters: {},
-      };
-      // MSG_START 的 lp0/lp1、deck0/…按引擎 seat 给值，换到显示座
-      next = setLP(next, 0, ev.lp0 || 8000);
-      next = setLP(next, 1, ev.lp1 || 8000);
-      const seed = (seat: number, deck: number, extra: number) => {
-        const disp = localSeat(next, seat);
-        const piles: [PileCounts, PileCounts] = [...next.piles];
-        piles[disp] = { ...piles[disp], deck: deck || 0, extra: extra || 0 };
-        return { ...next, piles };
-      };
-      next = seed(0, ev.deck0, ev.extra0);
-      next = seed(1, ev.deck1, ev.extra1);
-      // LP 条的归一基准 = 自己的初始基本分（drawing.cpp:591 maxLP = start_lp）
-      next = { ...next, startLP: (playerSlot === 1 ? ev.lp1 : ev.lp0) || 8000 };
-      return withLog(next, '决斗开始！', 'log-action');
-    }
-
-    case 'stoc:player_enter': {
-      // STOC_HS_PLAYER_ENTER 的 pos 是引擎 seat（0/1=决斗者，7=观战者）
-      if (ev.pos > 1) return state;
-      const disp = localSeat(state, ev.pos);
-      const names: [string, string] = [...state.names];
-      names[disp] = ev.name || names[disp];
-      return { ...state, names };
-    }
-
-    case 'stoc:deck_count': {
-      // 服务器已按接收方交换前后半（自己在前）：初始化双方卡组/额外计数。
-      // 仅在决斗未真正开始（piles 还是 0）时生效，避免覆盖 MSG_START 的种子值。
-      if (state.started) return state;
-      const piles: [PileCounts, PileCounts] = [...state.piles];
-      piles[0] = { ...piles[0], deck: ev.deck0 || 0, extra: ev.extra0 || 0 };
-      piles[1] = { ...piles[1], deck: ev.deck1 || 0, extra: ev.extra1 || 0 };
-      return { ...state, piles };
-    }
-
-    case 'stoc:hand_result': {
-      // STOC_HAND_RESULT：双方猜拳结果（0=剪刀 1=石头 2=布）
-      const names = ['剪刀', '石头', '布'];
-      const mine = names[ev.res1] ?? String(ev.res1);
-      const theirs = names[ev.res2] ?? String(ev.res2);
-      return withLog(state, `猜拳结果：你出了${mine}，对方出了${theirs}。`);
-    }
-
-    case 'stoc:waiting_side':
-      // 三局两胜局间，等待对方调整副卡组（sysString 1409）
-      return { ...state, hint: '等待更换副卡组中...' };
-
-    case 'stoc:duel_end':
-      return withLog(state, '决斗结束。');
-
-    case 'duel:lp_update':
-      // 绝对值事件
-      return setLP(state, ev.player, ev.lp);
-
-    case 'duel:damage':
-      return withLog(
-        setLP(state, ev.player, state.lp[localSeat(state, ev.player)] - ev.amount),
-        `玩家 ${localSeat(state, ev.player) === 0 ? '你' : '对方'} 受到 ${ev.amount} 点伤害！`,
-        'log-damage',
-      );
-
-    case 'duel:recover':
-      return withLog(
-        setLP(state, ev.player, state.lp[localSeat(state, ev.player)] + ev.amount),
-        `回复了 ${ev.amount} 点 LP！`,
-      );
-
-    case 'duel:pay_lpcost':
-      return withLog(
-        setLP(state, ev.player, state.lp[localSeat(state, ev.player)] - ev.amount),
-        `支付了 ${ev.amount} 点 LP 作为代价。`,
-        'log-damage',
-      );
-
-    case 'duel:draw': {
-      let next = adjustPile(state, ev.player, LOC_DECK, -ev.count);
-      if (ev.player === next.playerSlot && ev.cards && ev.cards.length) {
-        const hand = [...next.hand];
-        for (const code of ev.cards) {
-          if (code) hand.push({ code });
-        }
-        next = { ...next, hand };
-      }
-      return { ...next, log: [...next.log, { id: ++logSeq, text: `玩家 ${ev.player} 抽了 ${ev.count} 张卡。`, cls: '' }].slice(-200) };
-    }
-
-    // ---- 场上事件：board 同步 + 日志（原 duel_manager 的 appendLog 全部收编） ----
-
-    case 'duel:summoning':
-    case 'duel:spsummoning':
-    case 'duel:flipsummoning': {
-      const label = ev.event === 'duel:spsummoning' ? '特殊召唤'
-        : ev.event === 'duel:flipsummoning' ? '反转召唤' : '通常召唤';
-      let next = boardPlace(state, ev.cc, LOC_MZONE, ev.cs, { code: ev.code, pos: ev.cp });
-      return withLog(next, `${label}：${cardName(ev.code)}`, 'log-summon');
-    }
-
-    case 'duel:set': {
-      const next = boardPlace(state, ev.cc, ev.cl, ev.cs, { code: ev.code, pos: ev.cp });
-      return withLog(next, `玩家 ${ev.cc} 盖下了一张卡。`);
-    }
-
-    case 'duel:pos_change':
-      return withLog(
-        boardReposition(state, ev.cc, ev.cl, ev.cs, ev.cp),
-        `玩家 ${ev.cc} 改变了槽位 ${ev.cs} 卡片的表示形式。`,
-      );
-
-    case 'duel:move': {
-      const locLabel = (l: number) => (LOC_LABELS as Record<number, string>)[l] || String(l);
-      let next = syncHandOnMove(state, ev);
-      next = adjustPile(next, ev.pc, ev.pl, -1);
-      next = adjustPile(next, ev.cc, ev.cl, +1);
-      next = boardMove(next, ev);
-      return withLog(next, `卡牌移动（${locLabel(ev.pl)} → ${locLabel(ev.cl)}）。`);
-    }
-
-    case 'duel:chaining':
-      return withLog(state, `连锁发动：${cardName(ev.code)}！`, 'log-action');
-
-    case 'duel:chain_solving':
-    case 'duel:chain_solved':
-    case 'duel:chain_end':
-      return state; // 连锁环视觉事件，3D 层消费，无日志
-
-    case 'duel:attack':
-      return withLog(state, `宣告攻击！槽位 ${ev.attacker.s} → 槽位 ${ev.target.s}`, 'log-damage');
-
-    case 'duel:hand_res': {
-      // 出拳值 1=石头 2=剪刀 3=布（gframe f1/f2/f3 按钮语义）
-      const handName = (v: number) => ['石头', '剪刀', '布'][v - 1] || String(v);
-      return withLog(state, `猜拳结果已确定（${handName(ev.res & 3)} vs ${handName((ev.res >> 2) & 3)}）。`);
-    }
-
-    case 'duel:toss_coin': {
-      const faces = (ev.results || []).map((r: number) => (r ? '正' : '反')).join('、');
-      return withLog(state, `玩家 ${ev.player} 掷硬币：${faces}`);
-    }
-
-    case 'duel:toss_dice': {
-      const faces = (ev.results || []).map((r: number) => r + 1).join('、');
-      return withLog(state, `玩家 ${ev.player} 掷骰子：${faces}`);
-    }
-
-    case 'duel:attack_disabled':
-      return withLog(state, '攻击被无效了！', 'log-damage');
-
-    case 'duel:chain_negated':
-      return withLog(state, `连锁 ${ev.count} 被无效。`, 'log-damage');
-
-    case 'duel:become_target':
-      return withLog(state, `${(ev.targets || []).length} 张卡被选为对象。`);
-
-    case 'duel:confirm_decktop':
-      return withLog(state, `玩家 ${ev.player} 卡组顶端：${(ev.cards || []).map((c: { code: number }) => cardName(c.code)).join('、')}`);
-
-    // ---- 波 B：过程展示/标记消息 ----
-
-    case 'duel:confirm_cards': {
-      const names = (ev.cards || []).map((c: { code: number }) => cardName(c.code)).join('、');
-      return withLog(state, `翻开确认：${names}`);
-    }
-
-    case 'duel:shuffle_hand':
-      // 对方收到的 code 已被服务端归零，只有本方能按新序重建手牌
-      if (ev.player === state.playerSlot && ev.cards) {
-        const hand = ev.cards.filter((code: number) => code).map((code: number) => ({ code }));
-        return withLog({ ...state, hand }, '手牌重新洗切。');
-      }
-      return withLog(state, '对方洗切了手牌。');
-
-    case 'duel:shuffle_extra':
-      return withLog(state, '额外卡组重新洗切。');
-
-    case 'duel:refresh_deck':
-      return withLog(state, '卡组被洗切。');
-
-    case 'duel:shuffle_set_card': {
-      // 同区盖卡互相换位：按服务端给的新排列重建该区条目
-      let next = state;
-      for (const e of ev.cards || []) {
-        const board = cloneBoard(next);
-        const zone = zoneOf(board[localSeat(next, e.c)], e.l);
-        if (!zone || e.s < 0 || e.s >= zone.length) continue;
-        zone[e.s] = { code: e.code, pos: e.p || 0 };
-        next = { ...next, board };
-      }
-      return next === state ? state : withLog(next, '盖卡互相换位。');
-    }
-
-    case 'duel:deck_top': {
-      // 0x80000000 位 = 卡组顶朝向反转标记，卡号取低 31 位
-      const code = ev.code & 0x7fffffff;
-      const reversed = ev.code >= 0x80000000;
-      return withLog(state, `玩家 ${ev.player} 卡组顶端${reversed ? '（反转）' : ''}：${cardName(code)}`);
-    }
-
-    case 'duel:swap': {
-      // MSG_SWAP（精神操作类控制权交换）：两张场上卡互换槽位
-      const board = cloneBoard(state);
-      const zone1 = zoneOf(board[localSeat(state, ev.cc1)], ev.cl1);
-      const zone2 = zoneOf(board[localSeat(state, ev.cc2)], ev.cl2);
-      if (!zone1 || !zone2 || !zone1[ev.cs1] || !zone2[ev.cs2]) return state;
-      const tmp = zone1[ev.cs1];
-      zone1[ev.cs1] = { code: ev.code2, pos: zone2[ev.cs2]!.pos };
-      zone2[ev.cs2] = { code: ev.code1, pos: tmp!.pos };
-      return withLog({ ...state, board }, '卡片控制权被交换了。');
-    }
-
-    case 'duel:field_disabled':
-      return { ...state, fieldDisabled: ev.zones };
-
-    case 'duel:card_selected':
-    case 'duel:random_selected':
-      return withLog(state, `有 ${(ev.cards || []).length} 张卡被选中。`);
-
-    case 'duel:equip':
-      return withLog(state, '一张卡装备到了对象卡上。');
-
-    case 'duel:card_target':
-      return withLog(state, '一张卡成为了对象。');
-
-    case 'duel:cancel_target':
-      return state; // 目标线清理，3D 层消费，无日志
-
-    case 'duel:unequip':
-      return withLog(state, '装备关系被解除。');
-
-    case 'duel:add_counter':
-    case 'duel:remove_counter': {
-      const key = `${ev.c}:${ev.l}:${ev.s}:${ev.type}`;
-      const counters = { ...state.counters };
-      const v = (counters[key] || 0) + (ev.event === 'duel:add_counter' ? ev.count : -ev.count);
-      if (v > 0) counters[key] = v;
-      else delete counters[key];
-      return { ...state, counters };
-    }
-
-    case 'duel:missed_effect':
-      // 原版 SysString 1622「错过时点」
-      return withLog(state, `${cardName(ev.code)} 错过了发动时点。`, 'log-damage');
-
-    case 'duel:card_hint':
-      // 效果角标是 3D 浮层素材，reducer 不消费
-      return state;
-
-    case 'duel:player_hint': {
-      // MSG_PLAYER_HINT（duelclient.cpp:3757-3768）：CARD_QUESTION 加/删到
-      // 本方 → 全场墓地禁查（drawing.cpp:564-575 在双方墓地上叠禁查图标）。
-      if (ev.data === CARD_QUESTION && ev.player === state.playerSlot) {
-        return { ...state, cantCheckGrave: ev.type === PHINT_DESC_ADD };
-      }
-      return state;
-    }
-
-    case 'duel:match_kill':
-      return withLog(
-        { ...state, matchKill: ev.code },
-        `比赛击杀！${cardName(ev.code)}`,
-        'log-damage',
-      );
-
-    case 'duel:battle':
-      // 26 字节结算体由 3D 层/攻守浮层直接消费，reducer 不落盘
-      return state;
-
-    case 'duel:update_data': {
-      // MSG_UPDATE_DATA：cards[i] 按序对应 location 区的第 i 张卡
-      if (!ev.cards || !ev.cards.length) return state;
-      // 本方手牌的整表刷新：谜题脚本布的手牌没有 draw 事件，只能从这里来
-      // （在线路径服务器同样会对本方发 HAND 的 update_data，覆盖即权威）
-      if (ev.location === LOC_HAND && ev.player === state.playerSlot) {
-        const hand = ev.cards.map((q) => (q && q.code ? { code: q.code } : null));
-        return { ...state, hand };
-      }
-      const board = cloneBoard(state);
-      const zone = zoneOf(board[localSeat(state, ev.player)], ev.location);
-      if (!zone) return state;
-      let changed = false;
-      (ev.cards as (CardQuery | null)[]).forEach((q, seq) => {
-        if (seq >= zone.length) return;
-        const cur = zone[seq];
-        if (!q) {
-          // LEN_EMPTY 空槽标记：引擎说这个槽没卡
-          if (cur) {
-            zone[seq] = null;
-            changed = true;
-          }
-          return;
-        }
-        const card: BoardCard = {
-          code: q.code ?? cur?.code ?? 0,
-          pos: q.position?.p ?? cur?.pos ?? 0,
-        };
-        if (!cur || cur.code !== card.code || cur.pos !== card.pos) {
-          zone[seq] = card;
-          changed = true;
-        }
-      });
-      return changed ? { ...state, board } : state;
-    }
-
-    case 'duel:update_card': {
-      // MSG_UPDATE_CARD：只带变化字段的 query blob；缺的字段沿用旧值
-      const board = cloneBoard(state);
-      const zone = zoneOf(board[localSeat(state, ev.player)], ev.location);
-      if (!zone || ev.sequence < 0 || ev.sequence >= zone.length) return state;
-      const cur = zone[ev.sequence];
-      const card: BoardCard = {
-        code: ev.code ?? cur?.code ?? 0,
-        pos: ev.position?.p ?? cur?.pos ?? 0,
-      };
-      if (cur && cur.code === card.code && cur.pos === card.pos) return state;
-      zone[ev.sequence] = card;
-      return { ...state, board };
-    }
-
-    // ---- 波 J：单人模式（谜题脚本驱动的事件）----
-
-    case 'duel:ai_name': {
-      // MSG_AI_NAME：单机谜题的 AI 对手名（引擎 seat 1，playerSlot 恒 0）
-      const names: [string, string] = [...state.names];
-      names[localSeat(state, 1)] = ev.name || names[localSeat(state, 1)];
-      return { ...state, names };
-    }
-
-    case 'duel:show_hint':
-      // MSG_SHOW_HINT：谜题脚本的提示文本（原版弹提示窗，这里走提示条 + 日志）
-      return withLog({ ...state, hint: ev.text }, ev.text);
-
-    case 'duel:reload_field': {
-      // MSG_RELOAD_FIELD：完整布场快照。先落 LP 与堆计数；场上卡的细节
-      // 由紧随其后的 update_data 刷新（SinglePlayRefresh）补齐。
-      let next = state;
-      for (const seat of [0, 1] as const) {
-        const p = ev.players && ev.players[seat];
-        if (!p) continue;
-        next = setLP(next, seat, p.lp);
-        const disp = localSeat(next, seat);
-        const piles: [PileCounts, PileCounts] = [...next.piles];
-        piles[disp] = { ...piles[disp], deck: p.deck, grave: p.grave, banish: p.removed, extra: p.extra };
-        next = { ...next, piles };
-      }
-      return next;
-    }
-
-    case 'duel:waiting':
-      return { ...state, hint: '等待行动中...' }; // 原版 SysString 1390（MSG_WAITING → stHintMsg）
-
-    case 'duel:select_idlecmd':
-      return {
-        ...state,
-        phasePrompt: { mode: 'idle', canBP: !!ev.toBP, canM2: false, canEP: !!ev.toEP },
-      };
-
-    case 'duel:select_battlecmd':
-      return {
-        ...state,
-        phasePrompt: { mode: 'battle', canBP: false, canM2: !!ev.toM2, canEP: !!ev.toEP },
-      };
-
-    case 'duel:new_turn':
-      return withLog({
-        ...state,
-        turn: state.turn + 1,
-        turnPlayer: localSeat(state, ev.player),
-        // 新回合意味着上一条阶段按钮提示已作废
-        phasePrompt: null,
-      }, `—— 玩家 ${localSeat(state, ev.player) === 0 ? '你' : '对方'} 的回合 ——`, 'log-action');
-
-    case 'duel:new_phase':
-      return withLog(
-        { ...state, phase: ev.phase, phasePrompt: null },
-        `进入${PHASE_LABELS[ev.phase] || '未知阶段'}`,
-        'log-action',
-      );
-
-    case 'duel:win':
-      return withLog(
-        { ...state, win: { winner: localSeat(state, ev.winner), type: ev.type } },
-        ev.winner === state.playerSlot ? '你赢了！' : '对方获胜。',
-        'log-damage',
-      );
-
-    case 'stoc:time_limit': {
-      // 剩余秒 + 时限条归一基准（dInfo.time_limit 来自建房 host_info；
-      // 首个 time_limit 包即满额值，取历史最大防御乱序）
-      const disp = localSeat(state, ev.player);
-      const timer: [number | null, number | null] = [...state.timer];
-      timer[disp] = ev.leftTime;
-      return { ...state, timer, timeLimit: Math.max(state.timeLimit, ev.leftTime || 0) };
-    }
-
-    default:
-      return state;
-  }
+  const handler = HANDLERS[ev.event];
+  return handler ? handler(state, ev) : state;
 }
