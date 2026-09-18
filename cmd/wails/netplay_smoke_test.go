@@ -104,6 +104,9 @@ func TestTwoClientsDuelEachOther(t *testing.T) {
 	}
 	a.SetReady(true)
 	b.SetReady(true)
+	// 跨连接无顺序保证：等双方 ready 的广播都到达 A（说明两人的准备都已被
+	// 服务器处理）再开始决斗，否则 HS_START 可能先于 B 的准备到达而空转。
+	recA.waitFor(t, func() bool { return recA.count("stoc:player_change") >= 2 }, "both ready broadcast")
 
 	// 房主开始决斗 → 双方都应走到 duel:start（中间猜拳/先后手由回调代答）
 	a.StartDuel()
