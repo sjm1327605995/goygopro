@@ -159,3 +159,9 @@
 - 全程未 git commit，所有改动在工作区；smoke-dist 已从索引移除（`git rm -r --cached`）
 - 本机无 cgo，`go test -race` 不可用；锁语义靠人工比对 `RoomLockMiddleware` 确认
 - 审计发现的"房间生命周期语义"（去单房限制、host 离开不关服、空房回收）改动产品行为较大，未纳入 P4，建议单独立项并配双客户端 e2e 验证
+
+## 追加：双客户端完整对战 e2e（2026-09-19）
+
+- 新增 `cmd/wails/netplay_duel_test.go::TestTwoClientsAutoPlayFullDuel`：两个真实 TCP 客户端（WailsDuelClient 全事件链）经 `StartLocalServer` 建房/加入后，由自动驾驶按前端事件语义逐一应答引擎提示（time_limit 心跳、idlecmd 召唤、select_place 落点、battlecmd 攻击、select_chain 放弃等），用 40 张 4 星白板（基因狼人 69247929）打完一整局：通常召唤→战斗→伤害扣 LP→一方 LP 归零 MSG_WIN，断言双方看到一致的胜者且收到 duel_end/replay。`-count=5` 连跑稳定。
+- 顺带修复真实 bug：`engine_bindings.go` 的 `decorateSelectPlace` 此前把引擎的**禁用区域**位掩码（`selectable_field = ~flag`）当成可选区域列表发出，前端自动落点会选中 EMZ/SZONE 等非法区域 → MSG_RETRY 被静默跳过 → 对局卡死。现已取反为真正的可选区域，并按 SELECT_DISFIELD 需要给每个 zone 带上归属方 `player`（含对手区域高位段）；前端 `duel_manager.ts` 的自动落点改用 `zone.player ?? data.player`。
+- 验证：`go build/vet/test ./...` 全绿（含 netplay 两个 e2e），前端 `tsc --noEmit` + 双 vite 构建全绿。

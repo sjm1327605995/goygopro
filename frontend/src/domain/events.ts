@@ -446,8 +446,8 @@ export interface DuelSelectPlaceEvent {
   count: number;
   /** 0x7f 主怪兽区 / 0x3f00 魔法陷阱区 / 0xc000 灵摆（MR2020 位域） */
   flag: number;
-  /** Go decorateSelectPlace 解码好的可选落点（engine_bindings.go） */
-  zones?: { loc: number; seq: number }[];
+  /** Go decorateSelectPlace 解码好的可选落点（含区域归属 player） */
+  zones?: { player?: number; loc: number; seq: number }[];
   /** P1 落点是否交换左右（引擎对对手 seat 的镜像标记） */
   puttingPlayer?: number;
 }

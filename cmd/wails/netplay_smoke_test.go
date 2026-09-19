@@ -87,6 +87,36 @@ func TestTwoClientsDuelEachOther(t *testing.T) {
 	recB.waitFor(t, func() bool { return recB.count("stoc:type_change") > 0 }, "B stoc:type_change")
 	recA.waitFor(t, func() bool { return recA.count("stoc:player_enter") > 0 }, "A stoc:player_enter (B entered)")
 
+	// 座位分配（「两个玩家跑到同一位置」回归）：B 是 player2（pos=1、非宿主），
+	// A 是 player1+宿主；B 依次收到 pos 0（A）、pos 1（自己）两条 PLAYER_ENTER，
+	// A 收到 pos 1（B）一条。
+	tcB := recB.last("stoc:type_change").(map[string]interface{})
+	if pos, _ := tcB["pos"].(uint8); pos != 1 {
+		t.Fatalf("B type_change pos = %v, want 1", tcB["pos"])
+	}
+	if isHost, _ := tcB["isHost"].(bool); isHost {
+		t.Fatal("B should not be host")
+	}
+	tcA := recA.last("stoc:type_change").(map[string]interface{})
+	if pos, _ := tcA["pos"].(uint8); pos != 0 {
+		t.Fatalf("A type_change pos = %v, want 0", tcA["pos"])
+	}
+	if isHost, _ := tcA["isHost"].(bool); !isHost {
+		t.Fatal("A should be host")
+	}
+	entersB := recB.all("stoc:player_enter")
+	if len(entersB) != 2 {
+		t.Fatalf("B got %d player_enter, want 2", len(entersB))
+	}
+	for i, want := range []uint8{0, 1} {
+		if pos, _ := entersB[i].(map[string]interface{})["pos"].(uint8); pos != want {
+			t.Fatalf("B player_enter[%d] pos = %v, want %d", i, pos, want)
+		}
+	}
+	if pos, _ := recA.last("stoc:player_enter").(map[string]interface{})["pos"].(uint8); pos != 1 {
+		t.Fatalf("A player_enter pos = %v, want 1 (B joined)", pos)
+	}
+
 	// 聊天连通性冒烟：A 发言，B 应收到
 	a.SendChat("hello from A")
 	recB.waitFor(t, func() bool { return recB.count("stoc:chat") > 0 }, "B stoc:chat")
