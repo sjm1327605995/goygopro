@@ -582,35 +582,49 @@ func decorateAnnounceCard(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg an
 }
 
 // decorateSelectPlace 在透传原始 flag 位域之外，附上解码好的语义化可选区域
-// 列表 zones:[{loc,seq}]（MR2020 布局：0x7f 主怪兽区 seq0-6、0x3f00 魔法陷阱区
-// seq0-5、0xc000 灵摆区 seq6/7）。前端不再做位运算。
+// 列表 zones:[{player,loc,seq}]。注意引擎的 flag 是「禁用区域」位掩码
+// （gframe duelclient.cpp:1832 selectable_field = ~flag），可选区域要取反：
+// 低 16 位是当前操作玩家的 0x7f 主怪兽区 seq0-6、0x3f00 魔法陷阱区 seq0-5、
+// 0xc000 灵摆区 seq6/7；高 16 位（0x7f0000/0x3f000000/0xc0000000）是对手的
+// 同构区域（SELECT_DISFIELD 会用到），响应时 player 字节须带区域归属方。
 func decorateSelectPlace(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error {
 	m := msg.(*protocol.SelectPlaceMsg)
-	flag := uint32(m.Flag)
+	avail := ^uint32(m.Flag)
 	type zoneRef struct {
-		loc int
-		seq int
+		player int
+		loc    int
+		seq    int
 	}
 	var zones []zoneRef
-	for seq := 0; seq < 7; seq++ {
-		if flag&(1<<seq) != 0 {
-			zones = append(zones, zoneRef{loc: 0x04, seq: seq}) // LOC_MZONE
+	own, opp := int(m.Player), 1-int(m.Player)
+	scan := func(player, loc int, base uint32, seqs []int) {
+		for _, seq := range seqs {
+			if avail&(base<<uint(seq)) != 0 {
+				zones = append(zones, zoneRef{player: player, loc: loc, seq: seq})
+			}
 		}
 	}
-	for seq := 0; seq < 6; seq++ {
-		if flag&(0x100<<seq) != 0 {
-			zones = append(zones, zoneRef{loc: 0x08, seq: seq}) // LOC_SZONE
-		}
+	mzoneSeqs := []int{0, 1, 2, 3, 4, 5, 6}
+	szoneSeqs := []int{0, 1, 2, 3, 4, 5}
+	scan(own, 0x04, 0x1, mzoneSeqs)   // 己方主怪兽区
+	scan(own, 0x08, 0x100, szoneSeqs) // 己方魔法陷阱区
+	if avail&0x4000 != 0 {
+		zones = append(zones, zoneRef{player: own, loc: 0x08, seq: 6})
 	}
-	if flag&0x4000 != 0 {
-		zones = append(zones, zoneRef{loc: 0x08, seq: 6})
+	if avail&0x8000 != 0 {
+		zones = append(zones, zoneRef{player: own, loc: 0x08, seq: 7})
 	}
-	if flag&0x8000 != 0 {
-		zones = append(zones, zoneRef{loc: 0x08, seq: 7})
+	scan(opp, 0x04, 0x10000, mzoneSeqs)   // 对手主怪兽区
+	scan(opp, 0x08, 0x1000000, szoneSeqs) // 对手魔法陷阱区
+	if avail&0x40000000 != 0 {
+		zones = append(zones, zoneRef{player: opp, loc: 0x08, seq: 6})
+	}
+	if avail&0x80000000 != 0 {
+		zones = append(zones, zoneRef{player: opp, loc: 0x08, seq: 7})
 	}
 	zoneMaps := make([]map[string]interface{}, len(zones))
 	for i, z := range zones {
-		zoneMaps[i] = map[string]interface{}{"loc": z.loc, "seq": z.seq}
+		zoneMaps[i] = map[string]interface{}{"player": z.player, "loc": z.loc, "seq": z.seq}
 	}
 	c.emit("duel:select_place", map[string]interface{}{
 		"player": m.Player,

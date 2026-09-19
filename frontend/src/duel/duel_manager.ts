@@ -254,21 +254,20 @@ export class DuelManager {
     });
 
     // MSG_SELECT_PLACE：无 UI 的自动落点（gframe 自动选择语义：优先空区）。
-    // Go 已把 flag 位域解码成语义化 zones:[{loc,seq}]（engine_bindings.go
-    // decorateSelectPlace）。
+    // Go decorateSelectPlace 已把禁用位掩码取反、解码成可选 zones
+    // （含区域归属 player；对手区域见于 SELECT_DISFIELD）。
     sub('duel:select_place', (data) => {
       if (!this.interactive) return;
-      const owner = data.player;
       const zones = data.zones || [];
-      const target = this.field3D.cardsOnField[owner];
       const locName: Record<number, string> = { 0x04: 'mzone', 0x08: 'szone' };
-      const occupied = (z: { loc: number; seq: number }) => {
+      const occupied = (z: { player?: number; loc: number; seq: number }) => {
+        const target = this.field3D.cardsOnField[z.player ?? data.player];
         const arr = target && target[locName[z.loc]];
         return !!(arr && arr[z.seq]);
       };
       const zone = zones.find((z: any) => !occupied(z)) || zones[0];
       if (!zone) return;
-      WailsBridge.respondSelectPlace(owner, zone.loc, zone.seq);
+      WailsBridge.respondSelectPlace(zone.player ?? data.player, zone.loc, zone.seq);
     });
 
     // ---- 波 B：过程展示消息 → field3d 原语（回放同样消费，无协议响应）----
