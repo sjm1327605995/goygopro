@@ -245,7 +245,9 @@ window.__practiceSmoke = { field, manager, aiSimulator, store: duelStore, transc
 
   window.__practiceSmoke.checks = checks;
   window.__practiceSmoke.ready = true;
+  document.title = 'SMOKE:' + JSON.stringify(checks);
 })().catch((err) => {
   window.__practiceSmoke.checks = { fatal: String(err && err.stack || err) };
   window.__practiceSmoke.ready = true;
+  document.title = 'SMOKE:' + JSON.stringify(window.__practiceSmoke.checks);
 });

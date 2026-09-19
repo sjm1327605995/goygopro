@@ -21,6 +21,10 @@ WailsBridge.createGame = async (req, roomName, pass) => {
   createGameReqs.push({ req, roomName, pass });
   return { success: true };
 };
+// createRoom 现在未连接时会先自动连接（生产语义）；这里换成静默 mock，
+// 默认 mock 会在 200ms 后伪造 host 身份的 type_change/player_enter，
+// 落到流程中途会干扰后续身份断言。
+WailsBridge.connectServer = async () => ({ success: true });
 const updateDeckSends = [];
 WailsBridge.updateDeck = (mainCards, sideCards) => updateDeckSends.push({ main: mainCards, side: sideCards });
 const readySends = [];
@@ -220,5 +224,7 @@ try {
   record('fatal', false);
 } finally {
   window.__lobbySmoke.ready = true;
+  // 无头运行时经 document.title 外露结果（chrome --headless --dump-dom 可读）
+  document.title = 'SMOKE:' + JSON.stringify(window.__lobbySmoke.checks);
 }
 })();
