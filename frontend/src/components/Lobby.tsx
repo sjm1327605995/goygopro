@@ -327,6 +327,8 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
     return () => { alive = false; };
   }, []);
 
+  // 连接并直接加入房间（原版 ygopro「加入游戏」一键语义：Connect +
+  // CTOS_JOIN_GAME）。密码错误等失败由服务端 STOC_ERROR_MSG 弹窗呈现。
   const connectServer = async (): Promise<void> => {
     const addr = `${joinHost.trim() || '127.0.0.1'}:${joinPort.trim() || '7911'}`;
     const res = await WailsBridge.connectServer(addr, username.trim() || 'Duelist', password.trim());
@@ -341,6 +343,8 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
       settingsStore.set('lasthost', joinHost.trim() || '127.0.0.1');
       settingsStore.set('lastport', joinPort.trim() || '7911');
       settingsStore.set('nickname', username.trim() || 'Duelist');
+      const join = await WailsBridge.joinGame(password.trim());
+      if (join.success) setInRoom(true);
     } else {
       setErrMsg(`连接失败：${res.error}`);
     }
@@ -352,13 +356,14 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
     if (res.success) {
       setJoinHost('127.0.0.1');
       setJoinPort(String(port));
-      setConnected(true);
       settingsStore.set('serverport', port);
     } else {
       setErrMsg(`启动本地服务器失败：${res.error}`);
     }
   };
 
+  // 建立主机（原版 wCreateHost 语义：本机开服并自己入座）。未连接时自动
+  // 完成「连接本地服务器（没在跑就先启动）」再建房，失败弹错误。
   const createRoom = async (): Promise<void> => {
     // duelRule/mode 来自界面下拉（此前硬编码 duelRule:5，两个下拉纯装饰）。
     // 其余高级参数同样来自界面（gframe wCreateHost 的 ebStartLP 等控件）；
@@ -371,12 +376,34 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
       timeLimit: Number(timeLimit) || 180,
       noCheckDeck, noShuffleDeck,
     };
+    if (!connected) {
+      const port = parseInt(localPort, 10) || 7911;
+      const addr = `127.0.0.1:${port}`;
+      let conn = await WailsBridge.connectServer(addr, username.trim() || 'Duelist', '');
+      if (!conn.success) {
+        // 本地服务器没在跑：先启动再连
+        const srv = await WailsBridge.startLocalServer(port);
+        if (!srv.success) { setErrMsg(`启动本地服务器失败：${srv.error}`); return; }
+        settingsStore.set('serverport', port);
+        conn = await WailsBridge.connectServer(addr, username.trim() || 'Duelist', '');
+        if (!conn.success) { setErrMsg(`连接本地服务器失败：${conn.error}`); return; }
+      }
+      setConnected(true);
+      setSeats((prev) => {
+        const next = [...prev];
+        next[0] = { ...next[0], name: username.trim() || 'Duelist' };
+        return next;
+      });
+      settingsStore.set('nickname', username.trim() || 'Duelist');
+    }
     const res = await WailsBridge.createGame(req, roomName.trim() || 'Duel Room', roomPass.trim());
     if (res.success) {
       setIsHost(true);
       setInRoom(true);
       setCreateOpen(false); // 建房成功 → 进等候区窗
       settingsStore.set('gamename', roomName.trim() || 'Duel Room');
+    } else {
+      setErrMsg(`建立主机失败：${res.error}`);
     }
   };
 
@@ -384,10 +411,11 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
   const joinRoom = async (): Promise<void> => {
     const res = await WailsBridge.joinGame(joinPass.trim());
     if (res.success) setInRoom(true);
-    // 失败时服务端回 STOC_ERROR_MSG（JOINERROR），由 error_msg 弹窗呈现
+    else if (res.error) setErrMsg(`加入房间失败：${res.error}`);
+    // 密码错误等失败时服务端回 STOC_ERROR_MSG（JOINERROR），由 error_msg 弹窗呈现
   };
 
-  // 离开房间：CTOS_LEAVE_GAME，重置等候区状态
+  // 离开房间：CTOS_LEAVE_GAME，重置等候区状态（连接保留，可随即再加入）
   const leaveRoom = (): void => {
     WailsBridge.leaveGame();
     setInRoom(false);
@@ -541,7 +569,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
           </div>
           {/* 房间列表（原版 lstHostList 220px；本地服务器暂无房间发现协议，占位） */}
           <div id="lobby-host-list" className="gfw-list" style={{ height: '220px' }}>
-            <div className="gfw-list-item" style={{ color: '#888' }}>（本地服务器：点下方「启动服务器」后加入，或直接「建立主机」）</div>
+            <div className="gfw-list-item" style={{ color: '#888' }}>（「建立主机」= 本机开服并建房；「加入游戏」= 按主机信息+密码连接并入房）</div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'center' }}>
             <button className="gfw-btn btn" style={{ width: '100px' }} onClick={() => { /* 原版刷新主机列表；本地无发现协议 */ }}>
@@ -744,6 +772,9 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
                   onKeyDown={(e) => { if (e.key === 'Enter') joinRoom(); }}
                 />
                 <button id="lobby-join-btn" className="gfw-btn btn" onClick={joinRoom}>加入房间</button>
+                {/* 已连接但不在房间时的建房入口（联机模式窗在 connected 后隐藏，
+                    没有它房主连上服务器后反而无法建房） */}
+                <button id="lobby-create-btn" className="gfw-btn btn" onClick={() => setCreateOpen(true)}>建立主机</button>
               </div>
               {inRoom && roomRuleInfo ? (
                 <div id="lobby-room-rule" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>

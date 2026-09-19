@@ -235,5 +235,6 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     record('fatal', false);
   } finally {
     window.__stageSmoke.ready = true;
+    document.title = 'SMOKE:' + JSON.stringify(window.__stageSmoke.checks);
   }
 })();
