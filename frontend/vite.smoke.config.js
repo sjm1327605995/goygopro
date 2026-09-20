@@ -35,6 +35,7 @@ export default defineConfig({
         prompts_smoke: resolve(root, 'prompts_smoke.html'),
         widgets_smoke: resolve(root, 'widgets_smoke.html'),
         lobby_smoke: resolve(root, 'lobby_smoke.html'),
+        netplay_lobby_smoke: resolve(root, 'netplay_lobby_smoke.html'),
         deck_smoke: resolve(root, 'deck_smoke.html'),
         spec_smoke: resolve(root, 'spec_smoke.html'),
         stage_smoke: resolve(root, 'stage_smoke.html'),
