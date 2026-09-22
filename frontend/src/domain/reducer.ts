@@ -184,14 +184,19 @@ function withLog(state: DuelState, text: string, cls = 'log-action'): DuelState 
   return { ...state, log: [...state.log, entry].slice(-200) };
 }
 
-/** 阶段码 → 中文名（原版 phase_labels；hud.js 的表收编于此） */
+/** 阶段码 → 中文名（原版 phase_labels；hud.js 的表收编于此）。
+ *  键值必须是 ocgcore PHASE_*：0x10=战斗步骤、0x20=伤害步骤、
+ *  0x40=伤害计算、0x80=主要阶段 2、0x100=结束阶段 */
 const PHASE_LABELS: Record<number, string> = {
   0x01: '抽卡阶段',
   0x02: '准备阶段',
   0x04: '主要阶段 1',
   0x08: '战斗阶段',
-  0x10: '主要阶段 2',
-  0x20: '结束阶段',
+  0x10: '战斗步骤',
+  0x20: '伤害步骤',
+  0x40: '伤害计算',
+  0x80: '主要阶段 2',
+  0x100: '结束阶段',
 };
 
 function setLP(state: DuelState, seat: number, lp: number): DuelState {

@@ -1,3 +1,9 @@
+/* Tailwind 工具类（preflight 已关，见 tailwind.config.js；directives 放在最前，
+   gfw 复古皮肤在 gframe-window.css 中后加载、优先级更高） */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* YGOPro 3D Client - Master Duel Aesthetic Theme */
 :root {
   --bg-dark: #0a0e17;
@@ -247,7 +253,56 @@ body, html {
 .inspector-name {
   font-size: 14px;
   font-weight: 700;
-  color: #1a3a6a;
+  color: #1a1a1a;
+  /* 原版 stName (10,10,287,32)：白底、居中、带边框 */
+  text-align: center;
+  background: #ffffff;
+  border: 1px solid #808080;
+  padding: 4px 6px;
+}
+
+/* 原版 stInfo：蓝色 [类型] 种族/属性 行 */
+.inspector-type-line {
+  color: #0000c0;
+  font-weight: 600;
+}
+
+/* Card info / Log 页签（原版 wInfos 的 TabCtrl） */
+.inspector-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 8px 0 6px;
+}
+
+.inspector-tab {
+  flex: 1;
+  padding: 3px 0;
+  font-size: 12px;
+  background: linear-gradient(180deg, #e8e8e8 0%, #c8c8c8 100%);
+  border: 1px solid #808080;
+  border-radius: 2px 2px 0 0;
+  color: #333;
+  cursor: pointer;
+}
+
+.inspector-tab.active {
+  background: #ffffff;
+  border-bottom-color: #ffffff;
+  color: #000;
+  font-weight: 700;
+}
+
+.inspector-log {
+  background: #ffffff;
+  border: 1px solid #808080;
+  padding: 6px;
+}
+
+.inspector-log-line {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #222;
+  border-bottom: 1px dotted #ccc;
 }
 
 /* 卡详情元信息（id deck-inspector-type/stats/setnames）在银灰面板上要深色 */
@@ -411,7 +466,7 @@ body, html {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 30px;
+  bottom: 36px;
   width: 100%;
   display: flex;
   justify-content: center;
@@ -507,45 +562,6 @@ body, html {
   background: var(--primary);
   color: #000;
 }
-
-/* Duel Combat Log & Chat Drawer */
-.duel-log-drawer {
-  pointer-events: auto;
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  width: 280px;
-  height: 360px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-cyan);
-  border-radius: 12px;
-  backdrop-filter: blur(16px);
-  display: flex;
-  flex-direction: column;
-  z-index: 10;
-  padding: 12px;
-}
-
-.log-messages {
-  flex: 1;
-  overflow-y: auto;
-  font-size: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-right: 4px;
-}
-
-.log-entry {
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.3);
-  line-height: 1.4;
-}
-
-.log-entry.log-action { color: var(--primary); }
-.log-entry.log-damage { color: var(--accent-red); }
-.log-entry.log-summon { color: var(--accent-gold); }
 
 /* ------------------------------------------------------------------
    MODAL DIALOGS

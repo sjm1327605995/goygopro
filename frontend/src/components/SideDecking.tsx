@@ -9,6 +9,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { eventBus, WailsBridge } from '../wails_bridge.ts';
+import GfwSelect from './ui/GfwSelect.tsx';
 
 export default function SideDecking() {
   const [visible, setVisible] = useState(false);
@@ -62,14 +63,12 @@ export default function SideDecking() {
       <div className="side-decking-box">
         <div className="side-decking-title">换副卡组</div>
         <div className="side-decking-hint">选择下一局使用的卡组（主+副需与上局数量一致）</div>
-        <select
+        <GfwSelect
           id="side-deck-select"
-          className="form-select"
           value={picked}
-          onChange={(e) => setPicked(e.target.value)}
-        >
-          {decks.map((d) => <option key={d} value={d}>{d}</option>)}
-        </select>
+          onValueChange={setPicked}
+          options={decks.map((d) => ({ value: d, label: d }))}
+        />
         {error && <div className="side-decking-error">{error}</div>}
         <button id="side-deck-confirm" className="btn btn-gold" disabled={waiting || !picked} onClick={confirm}>
           {waiting ? '等待更换副卡组中...' : '副卡组更换完成'}

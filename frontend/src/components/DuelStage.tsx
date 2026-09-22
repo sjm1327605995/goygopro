@@ -9,7 +9,6 @@ import PhaseStrip from './PhaseStrip.tsx';
 import RightControls from './RightControls.tsx';
 import ChatOverlay from './ChatOverlay.tsx';
 import HintBar from './HintBar.tsx';
-import LogDrawer from './LogDrawer.tsx';
 import HandDock from './HandDock.tsx';
 import ActionPopup from './ActionPopup.tsx';
 import PromptHost from './PromptHost.tsx';
@@ -112,7 +111,6 @@ export default function DuelStage({
 
       {/* P5：全部 2D HUD 走 store（hud.js 已删）；compact 下全部藏起，只留 LP 面板 */}
       {!compact && <HintBar />}
-      {!compact && <LogDrawer />}
       {/* 手牌坞在剧场也保留：回放里自己的手牌要从这里看（对手手背由 3D 场地渲染） */}
       <HandDock interactive={interactive} />
       {!compact && <ActionPopup />}

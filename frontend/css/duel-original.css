@@ -346,7 +346,7 @@
 
 .phase-buttons {
   display: flex;
-  gap: 44px;
+  gap: 20px;
   pointer-events: auto;
 }
 
@@ -362,6 +362,22 @@
   font-weight: 700;
   cursor: not-allowed;
   box-sizing: border-box;
+}
+
+/* DP/SP/M1 当前阶段指示位（原版 btnPhaseStatus 按压态，drawing.cpp 的
+   wPhase 状态显示）：亮起表示当前所处阶段，不可点击 */
+.phase-btn.phase-display {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.phase-btn.phase-display.current,
+.phase-btn.current-phase {
+  opacity: 1;
+  color: #ffffff;
+  border-color: #cfd6e6;
+  background: rgba(60, 72, 100, 0.95);
+  box-shadow: inset 0 0 6px rgba(255, 255, 255, 0.35);
 }
 
 .phase-btn.actionable {
@@ -598,17 +614,6 @@
 
 /* ==================== P4：右控组 / 聊天浮层 / 换副卡组 ==================== */
 
-/* ---- 决斗日志抽屉（原版无此浮层；收窄贴边、去毛玻璃贴近原版面板） ---- */
-.duel-log-drawer {
-  backdrop-filter: none;
-  border-radius: 2px;
-  background: rgba(13, 17, 32, 0.92);
-  border-color: #3a4a6a;
-  width: 250px;
-  height: 300px;
-  top: 72px; /* 挪到对手 LP 条与计数行下方，不再压住顶栏 */
-}
-
 /* ---- 手牌：原版手牌就是纯卡图（名字/信息看左栏预览或悬浮提示） ---- */
 .hand-card-img > div {
   display: none;
@@ -723,11 +728,14 @@
 
 /* ---- 聊天（原版 wChat (307,615)-(1024,640)：底部全宽输入条，
      消息条目浮在输入条上方，最近 8 条按身份着色） ---- */
+/* ---- 聊天区（原版 wChat (307,615)-(1024,640) + drawing.cpp:1031-1074
+   代码绘制的聊天气泡）：输入条贴窗口底、白底黑字；消息行向上堆叠、
+   黑底白字、按身份着色 ---- */
 .chat-overlay {
   position: absolute;
   left: 32%;
-  right: 4px;
-  bottom: 4px;
+  right: 0;
+  bottom: 0;
   z-index: 55;
   pointer-events: none; /* 消息区不挡场地点击 */
 }
@@ -738,6 +746,8 @@
   align-items: flex-start;
   gap: 3px;
   margin-bottom: 4px;
+  max-height: 30vh;
+  overflow-y: auto;
 }
 
 .chat-line {
@@ -760,19 +770,22 @@
 
 .chat-input-row { pointer-events: auto; }
 
+/* 原版 ebChatInput 是 irrlicht 默认白底编辑框，整条横贯窗口底部；
+   深色底会直接融进 3D 场地的暗区看起来像"缺了一条输入框" */
 .chat-overlay input {
   width: 100%;
   box-sizing: border-box;
-  height: 26px;
-  background: rgba(10, 14, 28, 0.9);
-  border: 1px solid #6a7a9a;
-  border-radius: 2px;
-  color: #e8e8d0;
+  height: 28px;
+  background: #f2f2f2;
+  border: 1px solid #8a8a8a;
+  border-radius: 0;
+  color: #111;
   padding: 3px 10px;
   font-size: 13px;
 }
 
-.chat-overlay input:focus { border-color: #ffe66a; outline: none; }
+.chat-overlay input::placeholder { color: #777; }
+.chat-overlay input:focus { border-color: #444; outline: none; }
 
 /* ---- 换副卡组（STOC_CHANGE_SIDE 后，三局两胜局间） ---- */
 .side-decking {

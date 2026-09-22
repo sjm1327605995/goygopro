@@ -30,9 +30,12 @@ export default defineConfig({
   plugins: [react(), copyTextures()],
   base: './',
   build: {
+    target: 'es2022', // 顶层 await（wails runtime 动态 import）
     outDir: 'dist',
     emptyOutDir: true,
     rollupOptions: {
+      // /wails/runtime.js 由 Wails 资产服务器在运行时提供，构建期不存在
+      external: [/^\/wails\//],
       output: {
         manualChunks(id) {
           if (id.includes('libs/three.module.js')) return 'three';

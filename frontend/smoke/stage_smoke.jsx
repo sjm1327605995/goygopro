@@ -222,7 +222,7 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     // 图标在双方墓地坐标上空（不是只有自己一侧）
     const lockPos = f.graveLockSprites.map((s) => `${s.position.x},${s.position.z}`);
     record('grave-lock-over-both-graves',
-      lockPos.includes('6.6,1.4') && lockPos.includes('-6.8,-1.4'), JSON.stringify(lockPos));
+      lockPos.includes('6.6,4') && lockPos.includes('-6.8,-4'), JSON.stringify(lockPos));
     eventBus.emit('duel:player_hint', { player: 1, type: 7, data: 38723936 });
     await waitFor(() => f.graveLockSprites.every((s) => !s.visible), 'grave lock off');
     record('player-hint-grave-lock-off', f.graveLockSprites.every((s) => !s.visible));

@@ -42,9 +42,11 @@ export const ZONE_COORDS: Record<number, Record<string, any>> = {
       { x: -6.8, y: 0.02, z: 4.0 },
       { x: 6.6,  y: 0.02, z: 4.0 }
     ],
-    field:     { x: -6.8, y: 0.02, z: 1.4 },
-    grave:     { x: 6.6,  y: 0.02, z: 1.4 },
-    banish:    { x: 8.6,  y: 0.02, z: 1.4 },
+    field:     { x: -6.8, y: 0.02, z: 4.0 },
+    // MR2020（rule>=4）布局：墓地与场地魔法同列相邻（vFieldGrave[0][1]），
+    // 除外叠在墓地正下方（vFieldRemove[0][1]，与墓地同 x）
+    grave:     { x: 6.6,  y: 0.02, z: 4.0 },
+    banish:    { x: 6.6,  y: 0.02, z: 1.4 },
     deck:      { x: 6.6,  y: 0.02, z: 6.6 },
     extra:     { x: -6.8, y: 0.02, z: 6.6 },
     emz_left:  { x: -2.3, y: 0.02, z: 0.0 },
@@ -68,15 +70,15 @@ export const ZONE_COORDS: Record<number, Record<string, any>> = {
       { x: -0.1, y: 0.02, z: -5.2 },
       { x: -2.3, y: 0.02, z: -5.2 },
       { x: -4.5, y: 0.02, z: -5.2 },
-      // seq 5 = 场地魔法区；seq 6/7 = 两侧灵摆区
-      // （vFieldSzone[1][5..7] 原值；原版左右两半有 0.1 的固有不对称）
-      { x: 6.6,  y: 0.02, z: -1.4 },
+      // seq 5 = 场地魔法区（MR4: vFieldSzone[1][5][1]）；
+      // seq 6/7 = 两侧灵摆区（与场地/墓地共用四边形，原版即重叠）
+      { x: 6.6,  y: 0.02, z: -4.0 },
       { x: 6.6,  y: 0.02, z: -4.0 },
       { x: -6.8, y: 0.02, z: -4.0 }
     ],
-    field:     { x: 6.6,  y: 0.02, z: -1.4 },
-    grave:     { x: -6.8, y: 0.02, z: -1.4 },
-    banish:    { x: -8.8, y: 0.02, z: -1.4 },
+    field:     { x: 6.6,  y: 0.02, z: -4.0 },
+    grave:     { x: -6.8, y: 0.02, z: -4.0 },
+    banish:    { x: -6.8, y: 0.02, z: -1.4 },
     deck:      { x: -6.8, y: 0.02, z: -6.6 },
     extra:     { x: 6.6,  y: 0.02, z: -6.6 },
     emz_left:  { x: -2.3, y: 0.02, z: 0.0 },

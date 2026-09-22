@@ -12,11 +12,13 @@ export default function ReplaySavePrompt() {
   const [name, setName] = useState('');
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
+  const [mode, setMode] = useState<'net' | 'single'>('net');
   const settingsSnap = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
   const autoSaveRef = useRefLatest(!!settingsSnap.auto_save_replay);
 
   useEffect(() => {
     const onReplay = (data: any): void => {
+      setMode('net');
       const suggestedName = (data && data.name) || '';
       if (autoSaveRef.current) {
         // 原版自动保存路径：不弹窗直接落盘
@@ -29,13 +31,32 @@ export default function ReplaySavePrompt() {
       setStatus('');
       setSuggested(suggestedName);
     };
+    const onSingleReplay = (data: any): void => {
+      setMode('single');
+      const suggestedName = (data && data.name) || '';
+      // 单机录像由服务端录制；auto_save 时 Go 已直接落盘，只提示结果、不再二次保存。
+      if (data && data.autoSaved) {
+        setSuggested(null);
+        setStatus(`已自动保存录像 ${suggestedName}`);
+        return;
+      }
+      setName(suggestedName);
+      setStatus('');
+      setSuggested(suggestedName);
+    };
     eventBus.on('stoc:replay', onReplay);
-    return () => { eventBus.off('stoc:replay', onReplay); };
+    eventBus.on('single:replay', onSingleReplay);
+    return () => {
+      eventBus.off('stoc:replay', onReplay);
+      eventBus.off('single:replay', onSingleReplay);
+    };
   }, [autoSaveRef]);
 
   const save = async (): Promise<void> => {
     setSaving(true);
-    const res = await WailsBridge.saveLastReplay(name);
+    const res = mode === 'single'
+      ? await WailsBridge.saveSingleReplay(name)
+      : await WailsBridge.saveLastReplay(name);
     setSaving(false);
     if (res && res.success) {
       setStatus(`已保存录像 ${res.name}`);

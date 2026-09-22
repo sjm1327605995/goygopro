@@ -73,6 +73,18 @@ const waitFor = (predicate, timeoutMs = 5000) => new Promise((resolve, reject) =
 });
 
 const overlay = () => document.getElementById('modal-overlay');
+// 日志收在左侧预览面板的「消息记录」页签（右侧 LogDrawer 已删）：Radix Tabs
+// 触发用 mousedown 激活，需先点开页签内容才挂载。
+const openLogTab = async () => {
+  const btn = [...document.querySelectorAll('.preview-tab')]
+    .find((b) => b.textContent.includes('消息记录'));
+  if (btn) {
+    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  }
+  await waitFor(() => document.getElementById('duel-log-list'), 'log tab content');
+};
 const waitForModal = (selector) => waitFor(() => overlay().querySelector(selector));
 // React unmounts modal children on close; waiting for the overlay to go
 // inert keeps later waitForModal calls from racing the previous modal.
@@ -99,8 +111,8 @@ const run = async () => {
 
   // React 18 createRoot commits the initial mount asynchronously — wait for
   // the widgets to exist before emitting events at them.
-  await waitFor(() => overlay() && document.getElementById('hint-bar')
-    && document.getElementById('duel-log-list'));
+  await waitFor(() => overlay() && document.getElementById('hint-bar'));
+  await openLogTab();
 
   eventBus.emit('duel:start', { playerType: 0, lp0: 8000, lp1: 8000 });
 

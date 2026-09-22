@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { WailsBridge } from '../wails_bridge.ts';
 import { settingsStore } from '../domain/settings.ts';
+import GfwSelect from './ui/GfwSelect.tsx';
 import {
   EXTRA_TYPES, TYPE_MONSTER, TYPE_SPELL, TYPE_TRAP,
   TYPE_NORMAL, TYPE_EFFECT, TYPE_FUSION, TYPE_RITUAL, TYPE_SYNCHRO, TYPE_XYZ,
@@ -140,12 +141,13 @@ function SearchResultChip({ card, onInspect, onAdd, onZoom }: {
       <div className="deck-result-text">
         <div className="deck-result-name">{card.name}</div>
         <div className="deck-result-sub">
-          {isMonster ? `${kind}｜${attrName}｜${raceName}` : kind}
+          {isMonster
+            ? `${attrName}/${raceName} ${(t & TYPE_LINK) ? `LINK-${card.level}` : `★${card.level}`}`
+            : kind}
         </div>
         {isMonster ? (
           <div className="deck-result-stats">
-            {(t & TYPE_LINK) ? `LINK-${card.level}` : `星 ${card.level}`}
-            {' ｜ ATK '}{fmtStat(card.attack)}{' / DEF '}{fmtStat(card.defense)}
+            {fmtStat(card.attack)}/{fmtStat(card.defense)}
           </div>
         ) : null}
       </div>
@@ -214,6 +216,10 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   const [inspected, setInspected] = useState<any>(null);
   const [inspectedPic, setInspectedPic] = useState<string | null>(null);
   const [zoomCode, setZoomCode] = useState(0);
+  // 原版 wInfos 的 Card info / Log 页签：Log 记录本次编辑的增删操作
+  const [inspectorTab, setInspectorTab] = useState<'info' | 'log'>('info');
+  const [editLog, setEditLog] = useState<string[]>([]);
+  const logEdit = (msg: string) => setEditLog((prev) => [...prev.slice(-99), msg]);
   // 拖拽源（dragstart 存 ref，dragover/drop 读回，不动 state 免得整页重渲染）
   const draggedRef = React.useRef<{ section: DeckSection; index: number } | null>(null);
   // 右键上下文菜单状态（卡组卡片：移到主/额外/副卡组 + 移出）
@@ -396,11 +402,15 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
       if (deck.main.length >= 60) { alert('主卡组已满（最多 60 张）。'); return; }
       deck.main.push(card.code);
     }
+    logEdit(`加入 ${card.name || card.code} → ${isExtra ? '额外卡组' : addTarget === 'side' ? '副卡组' : '主卡组'}`);
     applyDeck(deck);
   };
 
   const removeCardFromDeck = (section: DeckSection, index: number): void => {
     const deck = { ...currentDeck, main: [...currentDeck.main], extra: [...currentDeck.extra], side: [...currentDeck.side] };
+    const code = deck[section][index];
+    const info = WailsBridge._cardCache.get(code);
+    logEdit(`移出 ${(info && info.name) || code} ← ${{ main: '主卡组', extra: '额外卡组', side: '副卡组' }[section]}`);
     deck[section].splice(index, 1);
     applyDeck(deck);
   };
@@ -563,7 +573,8 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
 
   return (
     <div id="deck-screen" className="screen active">
-      {/* 左侧固定卡图预览区（原版 wCardImg + wInfos，game.cpp:335/356） */}
+      {/* 左侧固定卡图预览区（原版 wCardImg + wInfos，game.cpp:335/356：
+          卡图 + Card info/Log 页签 + 白底信息文本） */}
       <div className="card-inspector">
         <div className="inspector-pic-box">
           {inspectedPic
@@ -575,25 +586,43 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
                 fontSize: '11px', color: '#38bdf8',
               }}>{inspected ? '卡图加载中……' : '卡牌详情'}</div>}
         </div>
+        <div className="inspector-tabs" role="tablist">
+          <button
+            role="tab"
+            className={`inspector-tab${inspectorTab === 'info' ? ' active' : ''}`}
+            onClick={() => setInspectorTab('info')}
+          >卡片信息</button>
+          <button
+            role="tab"
+            className={`inspector-tab${inspectorTab === 'log' ? ' active' : ''}`}
+            onClick={() => setInspectorTab('log')}
+          >日志</button>
+        </div>
+        {inspectorTab === 'log' ? (
+          <div className="inspector-details inspector-log" id="deck-inspector-log">
+            {editLog.length === 0 ? (
+              <div className="inspector-desc">本次编辑还没有操作记录。</div>
+            ) : editLog.slice().reverse().map((entry, i) => (
+              <div key={`${editLog.length - i}`} className="inspector-log-line">{entry}</div>
+            ))}
+          </div>
+        ) : (
         <div className="inspector-details">
-          <div className="inspector-name">{inspected ? inspected.name : '卡牌详情'}</div>
+          <div className="inspector-name">{inspected ? `${inspected.name}[${inspected.code}]` : '卡牌详情'}</div>
           {inspected ? (
             <>
-              <div className="inspector-meta" id="deck-inspector-type">
-                {[cardKind(inspected.type || 0), ...cardSubtypes(inspected.type || 0)].filter(Boolean).join('｜')}
+              <div className="inspector-meta inspector-type-line" id="deck-inspector-type">
+                {`[${[cardKind(inspected.type || 0), ...cardSubtypes(inspected.type || 0)].filter(Boolean).join('/')}]`}
+                {(inspected.type & TYPE_MONSTER) !== 0
+                  ? ` ${(RACES.find((r) => r[0] === inspected.race) || [0, ''])[1] as string}/${(ATTRS.find((a) => a[0] === inspected.attribute) || [0, ''])[1] as string}`
+                  : ''}
               </div>
               {(inspected.type & TYPE_MONSTER) !== 0 ? (
                 <div className="inspector-meta" id="deck-inspector-stats">
-                  {(inspected.type & TYPE_LINK) ? `LINK-${inspected.level}` : `星数 ${inspected.level}`}
-                  {' ｜ '}
-                  {(RACES.find((r) => r[0] === inspected.race) || [0, ''])[1] as string}
-                  {' ｜ '}
-                  {(ATTRS.find((a) => a[0] === inspected.attribute) || [0, ''])[1] as string}
-                </div>
-              ) : null}
-              {(inspected.type & TYPE_MONSTER) !== 0 ? (
-                <div className="inspector-meta">
-                  攻击 {fmtStat(inspected.attack)} / 守备 {fmtStat(inspected.defense)}
+                  {(inspected.type & TYPE_LINK)
+                    ? `LINK-${inspected.level}`
+                    : '★'.repeat(Math.min(inspected.level || 0, 13))}
+                  {' '}{fmtStat(inspected.attack)}/{fmtStat(inspected.defense)}
                 </div>
               ) : null}
               {!settingsSnap.hide_setname && inspected.setNames && inspected.setNames.length > 0 ? (
@@ -607,6 +636,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
             <div className="inspector-desc">悬停任意卡牌查看详情，双击查看大图。</div>
           )}
         </div>
+        )}
       </div>
 
       {/* 右侧工作区 = 顶部横条（wDeckEdit 管理 + wFilter 过滤）+ 主体（左卡组/右结果） */}
@@ -619,29 +649,30 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
               <label className="gfw-label">卡组分类</label>
               {/* 分类下拉（gframe cbDBCategory：未分类卡组 + ./deck/ 子目录）
                   与当前分类下的卡组下拉；名字含 '/' 时只显示最后一段 */}
-              <select
+              {/* 分类下拉（gframe cbDBCategory：未分类卡组 + ./deck/ 子目录）
+                  与当前分类下的卡组下拉；名字含 '/' 时只显示最后一段。
+                  Radix Item 不允许空串 value：未分类 '' 用哨兵 '__root__' 表示 */}
+              <GfwSelect
                 id="deck-category-select"
-                className="form-select"
-                style={{ width: '130px' }}
-                value={category}
-                onChange={(e) => {
-                  const cat = e.target.value;
+                width={130}
+                value={category || '__root__'}
+                onValueChange={(v) => {
+                  const cat = v === '__root__' ? '' : v;
                   if (!discardGuard()) { setCategory(cat); }
                 }}
-              >
-                <option value="">未分类卡组</option>
-                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+                options={[
+                  { value: '__root__', label: '未分类卡组' },
+                  ...categories.map((c) => ({ value: c, label: c })),
+                ]}
+              />
               <label className="gfw-label">卡组</label>
-              <select
+              <GfwSelect
                 id="deck-select"
-                className="form-select"
-                style={{ width: '180px' }}
+                width={180}
                 value={decksInCategory.includes(loadedDeck) ? loadedDeck : ''}
-                onChange={(e) => { if (e.target.value && !discardGuard()) loadDeck(e.target.value); }}
-              >
-                {decksInCategory.map((n) => <option key={n} value={n}>{n.split('/').pop()}</option>)}
-              </select>
+                onValueChange={(v) => { if (v && !discardGuard()) loadDeck(v); }}
+                options={decksInCategory.map((n) => ({ value: n, label: n.split('/').pop() || n }))}
+              />
             </div>
             <div className="deck-header-row">
               <label className="gfw-label">卡组名</label>
@@ -673,27 +704,33 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
                 onChange={(e) => setSearchKeyword(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') performSearch(); }}
               />
-              <select className="form-select" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-                <option value="0">（无）</option>
-                <option value="1">怪兽</option>
-                <option value="2">魔法</option>
-                <option value="4">陷阱</option>
-                <option value="32">效果怪兽</option>
-                <option value="64">融合</option>
-                <option value="128">仪式</option>
-                <option value="8192">同调</option>
-                <option value="8388608">超量</option>
-                <option value="16777216">灵摆</option>
-                <option value="4194304">连接</option>
-              </select>
-              <select id="deck-filter-race" className="form-select" value={raceFilter} onChange={(e) => setRaceFilter(e.target.value)}>
-                <option value="0">（无）</option>
-                {RACES.map(([v, name]) => <option key={v} value={String(v)}>{name}</option>)}
-              </select>
-              <select id="deck-filter-attr" className="form-select" value={attrFilter} onChange={(e) => setAttrFilter(e.target.value)}>
-                <option value="0">（无）</option>
-                {ATTRS.map(([v, name]) => <option key={v} value={String(v)}>{name}</option>)}
-              </select>
+              <GfwSelect
+                aria-label="卡片种类过滤"
+                value={typeFilter}
+                onValueChange={setTypeFilter}
+                options={[
+                  { value: '0', label: '（无）' }, { value: '1', label: '怪兽' },
+                  { value: '2', label: '魔法' }, { value: '4', label: '陷阱' },
+                  { value: '32', label: '效果怪兽' }, { value: '64', label: '融合' },
+                  { value: '128', label: '仪式' }, { value: '8192', label: '同调' },
+                  { value: '8388608', label: '超量' }, { value: '16777216', label: '灵摆' },
+                  { value: '4194304', label: '连接' },
+                ]}
+              />
+              <GfwSelect
+                id="deck-filter-race"
+                aria-label="种族过滤"
+                value={raceFilter}
+                onValueChange={setRaceFilter}
+                options={[{ value: '0', label: '（无）' }, ...RACES.map(([v, name]) => ({ value: String(v), label: String(name) }))]}
+              />
+              <GfwSelect
+                id="deck-filter-attr"
+                aria-label="属性过滤"
+                value={attrFilter}
+                onValueChange={setAttrFilter}
+                options={[{ value: '0', label: '（无）' }, ...ATTRS.map(([v, name]) => ({ value: String(v), label: String(name) }))]}
+              />
             </div>
             <div className="deck-filter-row">
               {statInput('deck-filter-star', '等级', starFilter, setStarFilter)}
@@ -788,12 +825,14 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
             <div id="deck-result-count" style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
               搜索结果（{sortedResults.length} 张，点击添加，双击看大图）：
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-              <label style={{ fontSize: '12px', color: 'var(--text-muted)' }}>点击加入：</label>
-              <select id="deck-add-target" className="form-select" value={addTarget} onChange={(e) => setAddTarget(e.target.value as 'main' | 'side')}>
-                <option value="main">主卡组</option>
-                <option value="side">副卡组</option>
-              </select>
+            <div className="mb-1.5 flex items-center gap-2">
+              <label className="text-[12px] text-[var(--text-muted)]">点击加入：</label>
+              <GfwSelect
+                id="deck-add-target"
+                value={addTarget}
+                onValueChange={(v) => setAddTarget(v as 'main' | 'side')}
+                options={[{ value: 'main', label: '主卡组' }, { value: 'side', label: '副卡组' }]}
+              />
             </div>
             <div className="search-results-grid">
               {sortedResults.map((card, i) => (

@@ -58,6 +58,15 @@ export class DuelField3D {
   fieldSpellCode = 0;      // code currently displayed (0 = plain board)
   fieldSpellPending = 0;   // code of the in-flight art load, 0 if none
   chainVisualizer: ChainVisualizer | null = null;
+  // 原版战斗标记（textures/*.png 角标，drawing.cpp:443-562）：
+  // attackMarks = 战阶可攻击怪兽头顶的剑形标记（上下浮动）；
+  // actMarks = 可发动区域的旋转黄圈图标（每帧 +0.02 rad，同原版 act_rot）
+  attackMarks: any[] = [];
+  actMarks: any[] = [];
+  attackTexture: any = null;
+  actTexture: any = null;
+  chainMarkTexture: any = null;
+  numberTexture: any = null;
   // 装备/目标关系线（duel:equip / card_target / cancel_target / unequip）
   relationLines: any[] = [];
   disposed = false;
@@ -119,6 +128,13 @@ export class DuelField3D {
     this.container.appendChild(this.renderer.domElement);
     this.cardBackTexture = this.textureLoader.load('textures/cover.jpg');
     this.negatedTexture = this.textureLoader.load('textures/negated.png');
+    // 原版卡片状态角标贴图（drawing.cpp）：
+    // attack.png 可攻击标记 :464、act.png 可发动旋转图标 :483、
+    // chain.png + number.png 连锁序号角标 :541
+    this.attackTexture = this.textureLoader.load('textures/attack.png');
+    this.actTexture = this.textureLoader.load('textures/act.png');
+    this.chainMarkTexture = this.textureLoader.load('textures/chain.png');
+    this.numberTexture = this.textureLoader.load('textures/number.png');
   }
 
   initLights(): void {
@@ -141,11 +157,14 @@ export class DuelField3D {
     // drawing.cpp:183 以贴图四边形 vField 直接画 10×8 的 field2.png）。
     // 这里用同一个 field2.png 作为半透明 overlay 铺在 y=0，卡牌投其上；
     // 区域框线就是贴图自带的白描边，不再额外画槽位网格。
-    const matTex = this.textureLoader.load('textures/field2.png', (tex: any) => {
+    // MR2020 场地皮肤 field3.png（gframe/image_manager.cpp:42 rule>=4 时用
+    // field3 / field-transparent3，与下方 MR4 ZONE_COORDS 的墓地/除外位一致）；
+    // 有表侧场地魔法时换透明版露出场地大图
+    const matTex = this.textureLoader.load('textures/field3.png', (tex: any) => {
       tex.colorSpace = THREE.SRGBColorSpace;
     });
     this.matTexture = matTex;
-    this.transparentMatTexture = this.textureLoader.load('textures/field-transparent2.png', (tex: any) => {
+    this.transparentMatTexture = this.textureLoader.load('textures/field-transparent3.png', (tex: any) => {
       tex.colorSpace = THREE.SRGBColorSpace;
     });
 
@@ -179,6 +198,80 @@ export class DuelField3D {
       return pos ? { ...pos } : { x: 0, y: 0.02, z: 0 };
     }
     return { ...zone };
+  }
+
+  /** 某槽位当前渲染着的卡片 mesh（chain_visualizer 贴卡角标用） */
+  getCardMesh(player: number, loc: string, seq: number): any | null {
+    const stack = this.cardsOnField[player] && this.cardsOnField[player][loc];
+    if (!stack) return null;
+    return Array.isArray(stack) ? (stack[seq] || null) : null;
+  }
+
+  // ---- 可攻击标记（textures/attack.png，原版 drawing.cpp:464-472） ----
+  // battleCmd 到来时在每只可攻击怪兽头顶放一柄剑，上下正弦浮动
+  // （原版 atkdy 波动），响应战斗指令后由 duel_manager 调 clearAttackable。
+  setAttackable(list: { c: number; s: number }[]): void {
+    this.clearAttackable();
+    for (const e of list || []) {
+      const mesh = this.getCardMesh(e.c, 'mzone', e.s);
+      const coord = mesh
+        ? mesh.position
+        : this.getZonePosition(e.c, 'mzone', e.s);
+      const sprite: any = new (THREE as any).Sprite(new (THREE as any).SpriteMaterial({
+        map: this.attackTexture, transparent: true, depthTest: false,
+      }));
+      sprite.scale.set(0.85, 0.85, 1);
+      sprite.userData.baseY = coord.y + 1.7;
+      sprite.userData.phase = Math.random() * Math.PI * 2;
+      sprite.position.set(coord.x, sprite.userData.baseY, coord.z);
+      sprite.renderOrder = 10;
+      this.scene.add(sprite);
+      this.attackMarks.push(sprite);
+    }
+  }
+
+  clearAttackable(): void {
+    for (const m of this.attackMarks) {
+      this.scene.remove(m);
+      m.material.dispose();
+    }
+    this.attackMarks = [];
+  }
+
+  // ---- 可发动标记（textures/act.png，原版 drawing.cpp:483-522） ----
+  // idleCmd/battleCmd/chain 询问期间在可发动的卡/堆上放旋转黄圈
+  // （原版 act_rot.Z 每帧 +0.02，见 animate()）。手牌无场上落点，跳过。
+  setActivatable(list: { c: number; l: number; s?: number }[]): void {
+    this.clearActivatable();
+    for (const e of list || []) {
+      const locName = LOC_NAMES[e.l];
+      if (!locName || locName === 'hand') continue;
+      const mesh = this.getCardMesh(e.c, locName, e.s || 0);
+      const coord = mesh
+        ? mesh.position
+        : this.getZonePosition(e.c, locName, e.s || 0);
+      const stack = this.cardsOnField[e.c] && this.cardsOnField[e.c][locName];
+      const stackTop = Array.isArray(stack)
+        ? (stack.length ? 0.02 + stack.length * 0.02 : 0.04)
+        : 0.04;
+      const sprite: any = new (THREE as any).Sprite(new (THREE as any).SpriteMaterial({
+        map: this.actTexture, transparent: true, depthTest: false,
+      }));
+      sprite.scale.set(0.9, 0.9, 1);
+      sprite.userData.isActMark = true;
+      sprite.position.set(coord.x, coord.y + stackTop + 0.55, coord.z);
+      sprite.renderOrder = 10;
+      this.scene.add(sprite);
+      this.actMarks.push(sprite);
+    }
+  }
+
+  clearActivatable(): void {
+    for (const m of this.actMarks) {
+      this.scene.remove(m);
+      m.material.dispose();
+    }
+    this.actMarks = [];
   }
 
   // Board-facing rotation for a card in `position` (ocgcore position bits:
@@ -852,6 +945,16 @@ export class DuelField3D {
     if (this.disposed) return;
     requestAnimationFrame(() => this.animate());
     this.tweenGroup.update();
+    // 原版 attack.png 标记上下浮动（drawing.cpp atkdy 正弦）、
+    // act.png 图标匀速自旋（原版 act_rot.Z 每帧 +0.02）
+    const t = performance.now();
+    for (const m of this.attackMarks) {
+      m.position.y = m.userData.baseY + Math.sin(t / 320 + m.userData.phase) * 0.16;
+    }
+    for (const m of this.actMarks) {
+      m.material.rotation += 0.02;
+    }
+    this.chainVisualizer?.tick();
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -877,6 +980,8 @@ export class DuelField3D {
         sprite.material.dispose();
       });
       this.graveLockSprites = [];
+      this.clearAttackable();
+      this.clearActivatable();
     }
     this.cardTextureCache.forEach((tex) => tex.dispose());
     this.cardTextureCache.clear();

@@ -112,9 +112,13 @@ export default function CardPreviewPanel() {
           </Tabs.Content>
         ) : (
           <Tabs.Content value="log" id="preview-log" className="preview-log">
-            {state.log.slice(-50).map((e) => (
-              <div key={e.id} className={`preview-log-line ${e.cls}`}>{e.text}</div>
-            ))}
+            {/* duel-log-list：日志条目的稳定锚点（旧右侧 LogDrawer 已删，
+                原版 wInfos 只有这一个 Log 页签） */}
+            <div id="duel-log-list">
+              {state.log.slice(-50).map((e) => (
+                <div key={e.id} className={`preview-log-line ${e.cls}`}>{e.text}</div>
+              ))}
+            </div>
           </Tabs.Content>
         )}
       </Tabs.Root>
