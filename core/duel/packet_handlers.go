@@ -38,15 +38,15 @@ func HandleCreateGame(c *PacketContext) {
 
 	// 校验禁卡表
 	var found bool
-	for _, lfList := range DeckManger.LFList {
+	for _, lfList := range DeckManager.LFList {
 		if pkt.Info.LFList == lfList.Hash {
 			found = true
 			break
 		}
 	}
 	if !found {
-		if len(DeckManger.LFList) > 0 {
-			pkt.Info.LFList = DeckManger.LFList[0].Hash
+		if len(DeckManager.LFList) > 0 {
+			pkt.Info.LFList = DeckManager.LFList[0].Hash
 		} else {
 			pkt.Info.LFList = 0
 		}

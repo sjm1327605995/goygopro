@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"log"
+	"math/rand"
+	"time"
 
 	"github.com/duke-git/lancet/v2/condition"
 	"github.com/sjm1327605995/goygopro/core/utils"
@@ -32,10 +34,7 @@ type duelRoom interface {
 	zoneMaskedPair(player int) (first, second *DuelPlayer)
 	// handMaskedRecipients 返回刷新手牌时接收隐藏数据（非公开卡码抹除）的玩家。
 	handMaskedRecipients(player int) []*DuelPlayer
-	// skipCardQuery 报告查询块长度 clen 是否应跳过抹除处理
-	// （single: clen < LEN_HEADER；tag: clen <= LEN_HEADER，两种边界语义都必须原样保留）。
-	skipCardQuery(clen int32) bool
-	// waitingNotifyRecipients 返回 WaitforResponse 时需要收到 MSG_WAITING 的玩家
+	// waitingNotifyRecipients 返回 WaitForResponse 时需要收到 MSG_WAITING 的玩家
 	// （single: 仅对手 players[1-player]；tag: 除当前操作者外的所有玩家）。
 	waitingNotifyRecipients(player byte) []*DuelPlayer
 	// timeLimitToObservers 报告广播 STOC_TIME_LIMIT 时是否同时重发给观察者
@@ -64,16 +63,24 @@ type duelRoom interface {
 	onDuelEnded()
 	// leaveAsPlayer 处理决斗者（非房主、非观战者）的离开逻辑（single/tag 差异较大）。
 	leaveAsPlayer(dp *DuelPlayer)
-	// RefreshHand / RefreshExtra / RefreshMzone / RefreshSzone 供 Analyze 的
-	// 共享 handler 使用（两个模式均已实现，刷新参数随模式不同）。
+	// RefreshHand / RefreshExtra / RefreshMzone / RefreshSzone 由 DuelMode 基类
+	// 实现一次（见 duel_refresh.go），接口中保留声明有两个原因：共享 handler 经
+	// duelRoom 分发；测试桩（analyzeFakeRoom）需要覆写为空操作（真实刷新依赖引擎）。
 	RefreshHand(player int, flag uint32, useCache int)
 	RefreshExtra(player int, flag uint32, useCache int)
 	RefreshMzone(player int, flag uint32, useCache int)
 	RefreshSzone(player int, flag uint32, useCache int)
 	// onEngineWin 处理引擎判定的胜负（MSG_WIN；single: matchResult/tpPlayer 记账；tag: 无）。
 	onEngineWin(player uint8)
-	// refreshGraveAfterSwap 是 MSG_SWAP_GRAVE_DECK 后的墓地刷新
-	// （single: RefreshGraveDef 即 0x81fff/缓存；tag: RefreshGrave(player, 0x81fff4, 0)）。
+	// RefreshSingle 是单卡刷新（MSG_UPDATE_CARD），发送对象按模式不同
+	//（single: 本人+对手；tag: 队友/队伍分发），由模式实现；
+	// duelRoom 声明它供基类的 refreshSingleMoved / refreshSingleFlip 读表转发。
+	RefreshSingle(player uint8, location uint8, sequence uint8, flag int32)
+	// refreshGraveAfterSwap / refreshAfterSummon / refreshAfterChain /
+	// refreshAfterDamageStep / refreshAfterNewPhase / refreshSingleMoved /
+	// refreshSingleFlip 原本是两模式仅查询 flag/缓存常量不同的钩子，差异已收进
+	// DuelMode.refresh 参数表（refreshFlags），现由 DuelMode 基类读表实现一次；
+	// 接口中保留声明是为了让测试桩（analyzeFakeRoom）可以继续覆写为空操作。
 	refreshGraveAfterSwap(player int)
 	// refreshAfterSummon 是 MSG_SUMMONED/SPSUMMONED/FLIPSUMMONED 后的场地刷新。
 	refreshAfterSummon()
@@ -89,6 +96,25 @@ type duelRoom interface {
 	// refreshSingleFlip 是 MSG_FLIPSUMMONING 前置的单卡刷新
 	// （single: 0xf81fff；tag: 0x81fff4）。
 	refreshSingleFlip(cc, cl, cs uint8)
+	// seatCount 返回座位总数（single: 2；tag: 4），用于开局就绪检查与洗牌范围。
+	seatCount() int
+	// replayFlag 返回回放头标志（single: REPLAY_UNIFORM；tag: REPLAY_UNIFORM|REPLAY_TAG，
+	// 与原版 single_duel.cpp / tag_duel.cpp 的 rh.flag 一致）。
+	replayFlag() uint32
+	// extraDuelOpt 返回并入 start_duel opt 的模式特有引擎选项
+	// （single: 0；tag: DUEL_TAG_MODE）。
+	extraDuelOpt() uint32
+	// loadDecksToEngine 把本模式全部座位的卡组按原版顺序装入引擎并写入回放
+	// （含 Main 的 Reverse 与 AddCard/AddTagCard 的调用序列，逐字节对应
+	// 原版 TPResult 的 load 段；调用时 Duel 与回放已就绪）。
+	loadDecksToEngine(d *ocgcore.Duel, rp *Replay)
+	// refreshOnDuelStart 是 TPResult 末尾、Duel.Start 之前的开局额外卡组刷新
+	// （single: RefreshExtraDef(0)/(1)；tag: RefreshExtra(0/1, 0x81fff4, 0)）。
+	refreshOnDuelStart()
+	// armDuelTimer 在限时开启时武装决斗秒表（single: 每秒 SingleTimer 且
+	// 超时处理自行重新武装；tag: TagTimer，原版非超时路径不重新武装——
+	// 两种语义各自保留在模式的 timer 回调里，此处只做首次武装）。
+	armDuelTimer()
 }
 
 // broadcastData 把 proto+data 发送给所有玩家与观察者：首个玩家用
@@ -120,7 +146,7 @@ func broadcastProto(m duelRoom, proto byte) {
 	}
 }
 
-// waitForResponse 是 WaitforResponse 的公共实现：记录 lastResponse，
+// waitForResponse 是 WaitForResponse 的公共实现：记录 lastResponse，
 // 向 waitingNotifyRecipients（single 为对手，tag 为除当前操作者外的所有玩家）
 // 发送 MSG_WAITING；限时开启时广播 STOC_TIME_LIMIT 并把被等待玩家状态置为
 // CTOS_TIME_CONFIRM，否则直接置为 CTOS_RESPONSE。
@@ -267,10 +293,10 @@ func duelChat(m duelRoom, dp *DuelPlayer, pData []byte) {
 // sendHsWatchChangeAll 广播观战人数变化（STOC_HS_WATCH_CHANGE）给所有玩家与观察者。
 func sendHsWatchChangeAll(m duelRoom) {
 	base := m.BaseMode()
-	var scwc protocol.STOCHsWatchChange
-	scwc.WatchCount = uint16(len(base.Observers))
+	var watchChangePkt protocol.STOCHsWatchChange
+	watchChangePkt.WatchCount = uint16(len(base.Observers))
 	for _, p := range m.allPlayers() {
-		base.SendPacketDataToPlayer(p, network.STOC_HS_WATCH_CHANGE, scwc)
+		base.SendPacketDataToPlayer(p, network.STOC_HS_WATCH_CHANGE, watchChangePkt)
 	}
 	for _, v := range base.Observers {
 		base.ReSendToPlayer(v)
@@ -308,7 +334,7 @@ func playerReady(m duelRoom, dp *DuelPlayer, isReady bool) {
 			if base.DeckError[dp.Type] != 0 {
 				deckError = network.DECKERROR_UNKNOWNCARD<<28 | base.DeckError[dp.Type]
 			} else {
-				deckError = DeckManger.CheckDeck(base.pDeck[dp.Type], base.HostInfo.LFList, int(base.HostInfo.Rule))
+				deckError = DeckManager.CheckDeck(base.pDeck[dp.Type], base.HostInfo.LFList, int(base.HostInfo.Rule))
 			}
 		}
 		if deckError != 0 {
@@ -346,7 +372,7 @@ func leaveGame(m duelRoom, dp *DuelPlayer) {
 		if base.DuelStage == network.DUEL_STAGE_BEGIN {
 			sendHsWatchChangeAll(m)
 		}
-		_ = base.DisconnetPlayer(dp)
+		_ = base.DisconnectPlayer(dp)
 		return
 	}
 	m.leaveAsPlayer(dp)
@@ -373,21 +399,21 @@ func toObserver(m duelRoom, dp *DuelPlayer) {
 func toDuelListObserver(m duelRoom, dp *DuelPlayer) {
 	base := m.BaseMode()
 	delete(base.Observers, dp.ID)
-	var scpe protocol.STOCHsPlayerEnter
-	copy(scpe.Name[:], dp.Name[:])
+	var playerEnterPkt protocol.STOCHsPlayerEnter
+	copy(playerEnterPkt.Name[:], dp.Name[:])
 	pos := m.firstFreeSeat()
 	dp.Type = uint8(pos)
 	m.assignSeat(pos, dp)
-	scpe.Pos = uint8(pos)
-	var scwc protocol.STOCHsWatchChange
-	scwc.WatchCount = uint16(len(base.Observers))
+	playerEnterPkt.Pos = uint8(pos)
+	var watchChangePkt protocol.STOCHsWatchChange
+	watchChangePkt.WatchCount = uint16(len(base.Observers))
 	for _, p := range m.allPlayers() {
-		base.SendPacketDataToPlayer(p, network.STOC_HS_PLAYER_ENTER, scpe)
-		base.SendPacketDataToPlayer(p, network.STOC_HS_WATCH_CHANGE, scwc)
+		base.SendPacketDataToPlayer(p, network.STOC_HS_PLAYER_ENTER, playerEnterPkt)
+		base.SendPacketDataToPlayer(p, network.STOC_HS_WATCH_CHANGE, watchChangePkt)
 	}
 	for _, v := range base.Observers {
-		base.SendPacketDataToPlayer(v, network.STOC_HS_PLAYER_ENTER, scpe)
-		base.SendPacketDataToPlayer(v, network.STOC_HS_WATCH_CHANGE, scwc)
+		base.SendPacketDataToPlayer(v, network.STOC_HS_PLAYER_ENTER, playerEnterPkt)
+		base.SendPacketDataToPlayer(v, network.STOC_HS_WATCH_CHANGE, watchChangePkt)
 	}
 	base.SendPacketDataToPlayer(dp, network.STOC_TYPE_CHANGE, protocol.STOCTypeChange{Type: typeChangeType(m, dp)})
 }
@@ -415,17 +441,17 @@ func handResult(m duelRoom, dp *DuelPlayer, res byte) {
 	base.handResult[m.handResultIndex(dp.Type)] = res
 	if base.handResult[0] != 0 && base.handResult[1] != 0 {
 		a, a2, b, b2 := m.handSeats()
-		var schr protocol.STOCHandResult
-		schr.Res1 = base.handResult[0]
-		schr.Res2 = base.handResult[1]
-		base.SendPacketDataToPlayer(a, network.STOC_HAND_RESULT, schr)
+		var handResultPkt protocol.STOCHandResult
+		handResultPkt.Res1 = base.handResult[0]
+		handResultPkt.Res2 = base.handResult[1]
+		base.SendPacketDataToPlayer(a, network.STOC_HAND_RESULT, handResultPkt)
 		base.ReSendToPlayer(a2)
 		for _, v := range base.Observers {
 			base.ReSendToPlayer(v)
 		}
-		schr.Res1 = base.handResult[1]
-		schr.Res2 = base.handResult[0]
-		base.SendPacketDataToPlayer(b, network.STOC_HAND_RESULT, schr)
+		handResultPkt.Res1 = base.handResult[1]
+		handResultPkt.Res2 = base.handResult[0]
+		base.SendPacketDataToPlayer(b, network.STOC_HAND_RESULT, handResultPkt)
 		base.ReSendToPlayer(b2)
 		if base.handResult[0] == base.handResult[1] {
 			base.SendPacketToPlayer(a, network.STOC_SELECT_HAND)
@@ -484,12 +510,12 @@ func checkJoinAllowed(m duelRoom, dp *DuelPlayer, pkt *protocol.CTOSJoinGame, is
 	}
 	if dp.Game != nil && dp.Type != 0xff {
 		base.SendPacketDataToPlayer(dp, network.STOC_ERROR_MSG, protocol.STOCErrorMsg{Msg: network.ERRMSG_JOINERROR})
-		_ = base.DisconnetPlayer(dp)
+		_ = base.DisconnectPlayer(dp)
 		return false
 	}
 	if pkt.Version != PRO_VERSION {
 		base.SendPacketDataToPlayer(dp, network.STOC_ERROR_MSG, protocol.STOCErrorMsg{Msg: network.ERRMSG_VERERROR, Code: PRO_VERSION})
-		_ = base.DisconnetPlayer(dp)
+		_ = base.DisconnectPlayer(dp)
 		return false
 	}
 	var jpass [20]uint16
@@ -501,4 +527,148 @@ func checkJoinAllowed(m duelRoom, dp *DuelPlayer, pkt *protocol.CTOSJoinGame, is
 		return false
 	}
 	return true
+}
+
+// startDuelCommon 是 StartDuel 的公共实现（对应原版 single_duel.cpp /
+// tag_duel.cpp 的 StartDuel 逐字节一致段）：校验房主与全部座位就绪、停止监听、
+// 广播 STOC_DUEL_START（观察者同时被置为离开状态）、按猜拳队伍分组发送
+// STOC_DECK_COUNT——先手队（handSeats 的 a/a2）收前 6 字节、后手队（b/b2）收
+// 交换后的后 6 字节（single 的 a2/b2 为 nil，ReSendToPlayer(nil) 为空操作，
+// 与原版 single 只发两人完全一致）——最后广播 STOC_SELECT_HAND 进入猜拳。
+func startDuelCommon(m duelRoom, dp *DuelPlayer) {
+	base := m.BaseMode()
+	if dp != base.HostPlayer {
+		return
+	}
+	for i := 0; i < m.seatCount(); i++ {
+		if !base.ready[i] {
+			return
+		}
+	}
+	base.StopListen()
+	players := m.allPlayers()
+	base.SendPacketToPlayer(players[0], network.STOC_DUEL_START)
+	for _, p := range players[1:] {
+		base.ReSendToPlayer(p)
+	}
+	for _, v := range base.Observers {
+		v.State = network.CTOS_LEAVE_GAME
+		base.ReSendToPlayer(v)
+	}
+	a, a2, b, b2 := m.handSeats()
+	deckBuff := make([]byte, 12)
+	pBuf := utils.NewYGOBuffer(deckBuff, binary.LittleEndian)
+	pBuf.Write(
+		int16(len(base.pDeck[a.Type].Main)), int16(len(base.pDeck[a.Type].Extra)), int16(len(base.pDeck[a.Type].Side)),
+		int16(len(base.pDeck[b.Type].Main)), int16(len(base.pDeck[b.Type].Extra)), int16(len(base.pDeck[b.Type].Side)))
+	base.SendPacketDataToPlayer(a, network.STOC_DECK_COUNT, deckBuff)
+	base.ReSendToPlayer(a2)
+
+	// 交换前6字节和后6字节
+	temp := make([]byte, 6)
+	copy(temp, deckBuff[:6])
+	copy(deckBuff[:6], deckBuff[6:])
+	copy(deckBuff[6:], temp)
+	base.SendPacketDataToPlayer(b, network.STOC_DECK_COUNT, deckBuff)
+	base.ReSendToPlayer(b2)
+	base.SendPacketToPlayer(a, network.STOC_SELECT_HAND)
+	base.ReSendToPlayer(b)
+	base.handResult[0] = 0
+	base.handResult[1] = 0
+	a.State = network.CTOS_HAND_RESULT
+	b.State = network.CTOS_HAND_RESULT
+	base.DuelStage = network.DUEL_STAGE_FINGER
+}
+
+// beginDuel 是 TPResult 的公共实现（对应原版两个 TPResult 逐字节一致段）：
+// 置回应状态、生成种子与回放头（标志取 replayFlag）、按座位顺序写玩家名、
+// 洗牌（NoShuffleDeck 时跳过）、初始化引擎与开局参数（opt = DuelRule<<16 |
+// PSEUDO_SHUFFLE? | extraDuelOpt）、装载卡组（loadDecksToEngine）、广播
+// MSG_START（a/a2 收己方视角 0/1，b/b2 收对方视角，观察者收 0x10/0x11
+// 取决于 swapped）、开局刷新（refreshOnDuelStart）、Duel.Start、限时武装
+// （armDuelTimer），最后驱动引擎直至出现交互提示。
+// swapped 由各模式的换位逻辑得出，仅影响观察者收到的 MSG_START 标志字节。
+func beginDuel(m duelRoom, dp *DuelPlayer, swapped bool) {
+	base := m.BaseMode()
+	dp.State = network.CTOS_RESPONSE
+	seed := rand.Uint32()
+
+	rnd := rand.New(rand.NewSource(int64(seed)))
+	rh := ExtendedReplayHeader{}
+	rh.Base.ID = REPLAY_ID_YRP2
+	rh.Base.Version = PRO_VERSION
+	rh.Base.Flag = m.replayFlag()
+	rh.Base.Seed = seed
+	for i := 0; i < SEED_COUNT; i++ {
+		rh.SeedSequence[i] = rand.Uint32()
+	}
+	rh.Base.StartTime = uint32(time.Now().Unix())
+	base.lastReplay = NewReplay()
+	base.lastReplay.BeginRecord()
+	base.lastReplay.WriteHeader(rh)
+	for _, p := range m.allPlayers() {
+		name := make([]byte, 40)
+		for j := 0; j < 20; j++ {
+			binary.LittleEndian.PutUint16(name[j*2:], p.Name[j])
+		}
+		base.lastReplay.WriteData(name, false)
+	}
+	if base.HostInfo.NoShuffleDeck == 0 {
+		for seat := 0; seat < m.seatCount(); seat++ {
+			main := base.pDeck[seat].Main
+			rnd.Shuffle(len(main), func(x, y int) {
+				main[x], main[y] = main[y], main[x]
+			})
+		}
+	}
+	base.timeLimit[0], base.timeLimit[1] = int16(base.HostInfo.TimeLimit), int16(base.HostInfo.TimeLimit)
+
+	base.Duel = ocgcore.NewDuelV2(rh.SeedSequence)
+	base.Duel.InitPlayers(base.HostInfo.StartLp, int32(base.HostInfo.StartHand), int32(base.HostInfo.DrawCount))
+
+	opt := uint32(base.HostInfo.DuelRule) << 16
+	if base.HostInfo.NoShuffleDeck != 0 {
+		opt |= ocgcore.DUEL_PSEUDO_SHUFFLE
+	}
+	opt |= m.extraDuelOpt()
+	base.lastReplay.WriteInt32(base.HostInfo.StartLp, false)
+	base.lastReplay.WriteInt32(int32(base.HostInfo.StartHand), false)
+	base.lastReplay.WriteInt32(int32(base.HostInfo.DrawCount), false)
+	base.lastReplay.WriteInt32(int32(opt), false)
+	base.lastReplay.Flush()
+
+	m.loadDecksToEngine(base.Duel, base.lastReplay)
+
+	startBuf := make([]byte, 32)
+	pBuf := utils.NewYGOBuffer(startBuf, binary.LittleEndian)
+	pBuf.Write(
+		uint8(ocgcore.MSG_START), uint8(0), uint8(base.HostInfo.DuelRule),
+		base.HostInfo.StartLp, base.HostInfo.StartLp,
+		uint16(base.Duel.QueryFieldCount(0, ocgcore.LOCATION_DECK)),
+		uint16(base.Duel.QueryFieldCount(0, ocgcore.LOCATION_EXTRA)),
+		uint16(base.Duel.QueryFieldCount(1, ocgcore.LOCATION_DECK)),
+		uint16(base.Duel.QueryFieldCount(1, ocgcore.LOCATION_EXTRA)),
+	)
+	a, a2, b, b2 := m.handSeats()
+	base.SendPacketDataToPlayer(a, network.STOC_GAME_MSG, startBuf[:19])
+	base.ReSendToPlayer(a2)
+	startBuf[1] = 1
+	base.SendPacketDataToPlayer(b, network.STOC_GAME_MSG, startBuf[:19])
+	base.ReSendToPlayer(b2)
+	if !swapped {
+		startBuf[1] = 0x10
+	} else {
+		startBuf[1] = 0x11
+	}
+	for _, v := range base.Observers {
+		base.SendPacketDataToPlayer(v, network.STOC_GAME_MSG, startBuf[:19])
+	}
+	m.refreshOnDuelStart()
+	base.Duel.Start(int32(opt))
+	if base.HostInfo.TimeLimit != 0 {
+		base.timeElapsed = 0
+		m.armDuelTimer()
+	}
+
+	m.Process()
 }

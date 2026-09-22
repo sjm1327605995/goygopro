@@ -24,7 +24,7 @@ func InitServerData(dbPath, scriptDir, rootPath string) error {
 	if err := DefaultDataManager.LoadDB(dbPath); err != nil {
 		return err
 	}
-	DeckManger.LoadLFList()
+	DeckManager.LoadLFList()
 	if err := ocgcore.Init(
 		ocgcore.WithRootPath(rootPath),
 		ocgcore.WithScriptDirectory(scriptDir),

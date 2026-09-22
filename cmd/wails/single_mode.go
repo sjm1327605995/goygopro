@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sjm1327605995/goygopro/core/duel"
 	"github.com/sjm1327605995/goygopro/ocgcore"
@@ -128,6 +129,10 @@ func (a *App) StartSingle(name string, returnDeckTop bool) map[string]interface{
 	}
 
 	ss := duel.NewSingleSession(seed)
+	ss.HostName = a.loadConfig().Nickname
+	if ss.HostName == "" {
+		ss.HostName = "Duelist"
+	}
 	opt := int32(0)
 	if returnDeckTop {
 		opt = int32(ocgcore.DUEL_RETURN_DECK_TOP)
@@ -215,10 +220,10 @@ func (a *App) StartSingle(name string, returnDeckTop bool) map[string]interface{
 		}
 
 		// 初始场地同步（SinglePlayReload 的 mzone/szone/hand 部分）
-		a.singleRefreshLocations(run, collector)
+		refreshLocations(ss.Duel, collector)
 		// 每个 select 提示后再刷一次（single_mode.cpp:788-843）
 		ss.OnPrompt = func() {
-			a.singleRefreshLocations(run, collector)
+			refreshLocations(ss.Duel, collector)
 		}
 
 		err := ss.Run(func(msg []byte) {
@@ -226,7 +231,11 @@ func (a *App) StartSingle(name string, returnDeckTop bool) map[string]interface{
 				log.Printf("[App] single mode message parse error: %v", perr)
 			}
 		}, run.respCh, run.stopCh)
-		emit("single:ended", map[string]interface{}{"completed": err == nil})
+		completed := err == nil
+		emit("single:ended", map[string]interface{}{"completed": completed})
+		if completed {
+			a.finishSingleReplay(ss, emit)
+		}
 	}()
 
 	return map[string]interface{}{"success": true, "name": name}
@@ -248,36 +257,71 @@ func (a *App) StopSingle() {
 	}
 }
 
-// singleRefreshLocations 把双方 mzone/szone/hand 同步成 MSG_UPDATE_DATA 事件
+// finishSingleReplay 单机谜题正常完结后的录像处理（原版 single_mode.cpp:141-162）：
+// 建议名 = 当前时间 "%Y-%m-%d %H-%M-%S"；auto_save_replay=1 直接落盘并提示，
+// 否则保留句柄并 emit single:replay 供前端确认（前端调 SaveSingleReplay 落盘）。
+func (a *App) finishSingleReplay(ss *duel.SingleSession, emit func(string, interface{})) {
+	name := time.Now().Format("2006-01-02 15-04-05")
+	if a.loadConfig().AutoSaveReplay != 0 {
+		if ss.SaveReplay(name) {
+			emit("single:replay", map[string]interface{}{"name": name + ".yrp", "autoSaved": true})
+		}
+		return
+	}
+	a.singleMu.Lock()
+	a.lastSingleReplay = ss.Replay()
+	a.singleMu.Unlock()
+	emit("single:replay", map[string]interface{}{"name": name, "autoSaved": false})
+}
+
+// SaveSingleReplay 落盘最近一次完结的单机录像（前端确认弹窗 / auto_save 兜底）。
+func (a *App) SaveSingleReplay(name string) map[string]interface{} {
+	a.singleMu.Lock()
+	rp := a.lastSingleReplay
+	a.singleMu.Unlock()
+	if rp == nil {
+		return map[string]interface{}{"success": false, "error": "没有可保存的单机录像"}
+	}
+	if strings.TrimSpace(name) == "" {
+		name = time.Now().Format("2006-01-02 15-04-05")
+	}
+	if !rp.SaveReplay(name) {
+		return map[string]interface{}{"success": false, "error": "保存录像失败"}
+	}
+	return map[string]interface{}{"success": true, "name": name + ".yrp"}
+}
+
+// refreshLocations 把双方 mzone/szone/hand 同步成 MSG_UPDATE_DATA 事件
 // （single_mode.cpp SinglePlayRefresh：0,1 × mzone → 0,1 × szone → 0,1 × hand，
-// flag 0x681fff）。与原版一致不做遮码——谜题脚本布的卡对玩家可见。
+// flag 0x681fff）。与原版一致不做遮码 —— 单人/故事决斗只有一条事件流，
+// 前端只按 playerSlot 取用；遮码需要像服务器那样按座位分包发送。
 // 引擎查询与 Run 同 goroutine，无并发问题。
-func (a *App) singleRefreshLocations(run *singleRun, collector *WailsDuelClient) {
+func refreshLocations(d *ocgcore.Duel, collector *WailsDuelClient) {
 	for _, loc := range []uint8{ocgcore.LOCATION_MZONE, ocgcore.LOCATION_SZONE, ocgcore.LOCATION_HAND} {
 		for player := 0; player < 2; player++ {
-			a.singleRefreshLocation(run, collector, player, loc)
+			refreshLocation(d, collector, player, loc)
 		}
 	}
 }
 
-func (a *App) singleRefreshLocation(run *singleRun, collector *WailsDuelClient, player int, location uint8) {
+func refreshLocation(d *ocgcore.Duel, collector *WailsDuelClient, player int, location uint8) {
 	flag := uint32(0x681fff) | ocgcore.QUERY_CODE | ocgcore.QUERY_POSITION
 	buf := make([]byte, 3+ocgcore.SIZE_QUERY_BUFFER)
 	buf[0] = ocgcore.MSG_UPDATE_DATA
 	buf[1] = byte(player)
 	buf[2] = byte(location)
-	n := int(run.session.Duel.QueryFieldCard(uint8(player), location, flag, buf[3:], false))
+	n := int(d.QueryFieldCard(uint8(player), location, flag, buf[3:], false))
 	if n <= 0 {
 		return
 	}
 	if err := collector.handleGameMessage(buf[:3+n]); err != nil {
-		log.Printf("[App] single refresh (player %d, loc 0x%02x): %v", player, location, err)
+		log.Printf("[App] refresh (player %d, loc 0x%02x): %v", player, location, err)
 	}
 }
 
 // routeResponseB 把玩家的原始响应字节投给当前接收方：谜题进行中投给
-// SingleSession 的响应通道（等价 SingleMode::SetResponse）；否则走在线路径
-// 发给服务器。
+// SingleSession 的响应通道（等价 SingleMode::SetResponse）；故事决斗中
+// 投给 StorySession 的响应通道；否则走在线路径发给服务器。
 func (a *App) routeResponseB(data []byte) error {
 	a.singleMu.Lock()
 	run := a.single

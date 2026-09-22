@@ -30,7 +30,7 @@ func (s *Server) OnBoot(eng gnet.Engine) (action gnet.Action) {
 }
 
 func (s *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
-	if !AcceptingConnections {
+	if !AcceptingConnections.Load() {
 		return nil, gnet.Close
 	}
 	atomic.AddInt32(&s.connected, 1)

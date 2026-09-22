@@ -11,6 +11,11 @@ type YGOBuffer struct {
 	buff   []byte
 	offset int
 	order  binary.ByteOrder
+	// overflow 是粘性越界标记：任一次 Read/Next/Unpack/ReadNext 越界、
+	// 或 At 越界访问时置位，此后 Overflowed() 返回 true（Clone 会继承）。
+	// 解析引擎消息时由 runAnalyze 在 handler 返回后检查，把"字段读取失败被
+	// 吞掉后继续解析"（缓冲区错位、发出损坏数据）变为"记日志并终止本局"。
+	overflow bool
 }
 
 func NewYGOBuffer(buff []byte, order binary.ByteOrder) *YGOBuffer {
@@ -27,15 +32,27 @@ func (y *YGOBuffer) Read(list ...any) error {
 
 		n, err := binary.Decode(y.buff[y.offset:], y.order, list[i])
 		if err != nil {
+			y.overflow = true
 			return err
 		}
 		y.offset += n
 	}
 	return nil
 }
-func (y *YGOBuffer) At(pos int) byte {
+// Overflowed 报告缓冲区自构造/克隆以来是否发生过越界访问。
+func (y *YGOBuffer) Overflowed() bool {
+	return y.overflow
+}
 
-	return y.buff[y.offset+pos]
+// At 返回当前 offset 后第 pos 个字节；越界时置粘性越界标记并返回 0
+//（不 panic），由调用方在解析结束后统一检查 Overflowed。
+func (y *YGOBuffer) At(pos int) byte {
+	idx := y.offset + pos
+	if idx < 0 || idx >= len(y.buff) {
+		y.overflow = true
+		return 0
+	}
+	return y.buff[idx]
 }
 func (y *YGOBuffer) Write(list ...any) error {
 	for i := range list {
@@ -57,6 +74,7 @@ func (y *YGOBuffer) Bytes() []byte {
 
 func (y *YGOBuffer) Next(n int) error {
 	if y.offset+n > len(y.buff) {
+		y.overflow = true
 		return fmt.Errorf("out of range")
 	}
 	y.offset += n
@@ -64,9 +82,10 @@ func (y *YGOBuffer) Next(n int) error {
 }
 func (y *YGOBuffer) Clone() *YGOBuffer {
 	return &YGOBuffer{
-		buff:   y.buff,
-		order:  y.order,
-		offset: y.offset,
+		buff:     y.buff,
+		order:    y.order,
+		offset:   y.offset,
+		overflow: y.overflow,
 	}
 }
 
@@ -74,6 +93,7 @@ func (y *YGOBuffer) Clone() *YGOBuffer {
 func (y *YGOBuffer) Unpack(v interface{}) error {
 	err := restruct.Unpack(y.buff[y.offset:], binary.LittleEndian, v)
 	if err != nil {
+		y.overflow = true
 		return err
 	}
 	size, err := restruct.SizeOf(v)
@@ -99,6 +119,7 @@ func (y *YGOBuffer) SubSlices(clone *YGOBuffer) []byte {
 }
 func (y *YGOBuffer) ReadNext(n int) []byte {
 	if y.offset+n > len(y.buff) {
+		y.overflow = true
 		return nil
 	}
 	res := y.buff[y.offset : y.offset+n]

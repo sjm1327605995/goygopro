@@ -237,7 +237,7 @@ func TestTwoClientsAutoPlayFullDuel(t *testing.T) {
 	// 同时重置服务器的全局房间状态（上一轮对局会把 AcceptingConnections 落下）。
 	port := freeTCPPort(t)
 	duel.DefaultManager = duel.NewManager()
-	duel.AcceptingConnections = true
+	duel.AcceptingConnections.Store(true)
 
 	// 客户端 A：同时承担「启动服务器」的角色（与大厅「启动服务器」按钮同路径）。
 	a := testApp(t)
@@ -250,7 +250,7 @@ func TestTwoClientsAutoPlayFullDuel(t *testing.T) {
 	t.Cleanup(func() {
 		// 还原服务器全局状态，避免影响同包其他联机测试（对齐
 		// core/duel/two_client_test.go 的收尾语义）。
-		duel.AcceptingConnections = true
+		duel.AcceptingConnections.Store(true)
 		duel.DefaultManager = duel.NewManager()
 		if duel.NetServerEngine != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

@@ -333,9 +333,17 @@ func (r *Replay) ReadNextResponse(resp []byte) bool {
 }
 
 func (r *Replay) ReadName() string {
+	name, _ := r.readName()
+	return name
+}
+
+// readName 读一个 40 字节的 UTF-16LE 玩家名。返回值 ok 只区分「读取失败」
+// （数据越界/长度不足）；名称为空（全零，单机录相的 client_name 恒为空）
+// 是合法状态，ok 仍为 true —— 对齐 C++ replay.cpp ReadName（无空名拒绝）。
+func (r *Replay) readName() (string, bool) {
 	var buffer [20]uint16
 	if !r.ReadData(buffer[:], 40) {
-		return ""
+		return "", false
 	}
 	// Convert UTF-16 LE to string
 	runes := utf16.Decode(buffer[:])
@@ -344,7 +352,7 @@ func (r *Replay) ReadName() string {
 	for end > 0 && runes[end-1] == 0 {
 		end--
 	}
-	return string(runes[:end])
+	return string(runes[:end]), true
 }
 
 func (r *Replay) ReadHeader() ExtendedReplayHeader {
@@ -462,8 +470,8 @@ func (r *Replay) ReadInfo() bool {
 	}
 
 	for i := 0; i < playerCount; i++ {
-		name := r.ReadName()
-		if name == "" {
+		name, ok := r.readName()
+		if !ok {
 			return false
 		}
 		r.players = append(r.players, name)
