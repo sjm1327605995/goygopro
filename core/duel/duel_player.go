@@ -34,6 +34,9 @@ var (
 	MODE_TAG     uint8 = 2
 )
 
+// PRO_VERSION 是服务器支持的客户端协议版本（原版 COMMON 的 PRO_VERSION）。
+const PRO_VERSION = 0x1361
+
 func (d *DuelPlayer) HandleCTOSPacket(data []byte) {
 	// 使用全局路由器分发消息
 	// router 在包初始化时由 BuildRouter() 创建
@@ -55,3 +58,10 @@ func (d *DuelPlayer) leaveGameOnce() {
 
 // packetRouter 是全局路由器实例
 var packetRouter = BuildPacketRouter()
+
+// SetPacketRouter 替换全局 CTOS 路由器，供嵌入方/测试注入自定义路由表。
+// 只需在启动服务前调用一次（分发路径每次读取包级变量，但不做同步，
+// 运行期替换与并发分发不是受支持的用法）。
+func SetPacketRouter(r *PacketRouter) {
+	packetRouter = r
+}

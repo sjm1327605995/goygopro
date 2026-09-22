@@ -36,7 +36,7 @@ func TestTwoClientsCreateJoinAndDuel(t *testing.T) {
 	// Fresh manager + accept flag: other tests in this package may have
 	// touched the globals.
 	DefaultManager = NewManager()
-	AcceptingConnections = true
+	AcceptingConnections.Store(true)
 
 	port := freePort(t)
 	go func() {
@@ -45,7 +45,7 @@ func TestTwoClientsCreateJoinAndDuel(t *testing.T) {
 		_ = StartDuelServer(port, false)
 	}()
 	t.Cleanup(func() {
-		AcceptingConnections = true
+		AcceptingConnections.Store(true)
 		DefaultManager = NewManager()
 		if NetServerEngine != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

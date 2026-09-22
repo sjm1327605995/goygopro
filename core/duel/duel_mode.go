@@ -44,6 +44,7 @@ type DuelMode struct {
 	Name        [20]uint16
 	Pass        [20]uint16
 	RoomID      string // 在 RoomManager 中的索引ID
+	room        duelRoom // 构造时由 newSingleDuel/newTagDuel 二段设置为具体模式自身
 	buff        [protocol.SIZE_NETWORK_BUFFER]byte
 	buffOffset  int
 	Duel        *ocgcore.Duel
@@ -60,6 +61,9 @@ type DuelMode struct {
 	lastResponse uint8
 	timeLimit    [2]int16
 	timeElapsed  int16
+	// refresh 是两模式仅在查询 flag/缓存/边界常量上不同的刷新参数表，
+	// 由 newSingleDuel/newTagDuel 构造时填写（见 refreshFlags）。
+	refresh refreshFlags
 }
 
 const (
@@ -156,7 +160,9 @@ func (d *DuelMode) SendPacketToPlayer(dp *DuelPlayer, proto byte) {
 	binary.LittleEndian.PutUint16(d.buff[:], 1)
 	d.buff[2] = proto
 	if dp != nil {
-		_, _ = dp.Write(d.buff[:d.buffOffset])
+		if _, err := dp.Write(d.buff[:d.buffOffset]); err != nil {
+			log.Printf("[duel] send packet 0x%02x to player %d: %v", proto, dp.Type, err)
+		}
 	}
 }
 func (d *DuelMode) SendPacketDataToPlayer(dp *DuelPlayer, proto byte, data any) {
@@ -173,98 +179,103 @@ func (d *DuelMode) SendPacketDataToPlayer(dp *DuelPlayer, proto byte, data any) 
 		}
 	}
 }
-func (d *DuelMode) DisconnetPlayer(dp *DuelPlayer) error {
+func (d *DuelMode) DisconnectPlayer(dp *DuelPlayer) error {
 	return dp.Conn.Close()
 }
 func (d *DuelMode) ReSendToPlayer(dp *DuelPlayer) {
 	if dp != nil {
-		_, _ = dp.Write(d.buff[:d.buffOffset])
+		if _, err := dp.Write(d.buff[:d.buffOffset]); err != nil {
+			log.Printf("[duel] resend packet 0x%02x to player %d: %v", d.buff[2], dp.Type, err)
+		}
 	}
 }
 
-// Chat is an abstract method — SingleDuel / TagDuel must override.
+// 以下为 IDuelMode 中各模式行为一致的方法：实现为对 duel_common.go /
+// duel_refresh.go 包级公共函数的一次转发，room 为构造时设置的具体模式自身。
+// DuelMode 刻意不实现 JoinGame / UpdateDeck / StartDuel / TPResult / Analyze /
+// Surrender / GetResponse / ToDuelList（各模式逻辑不同），因此裸 *DuelMode
+// 不满足 IDuelMode——漏 override 会直接在嵌入它的模式类型上暴露为编译错误。
+
 func (d *DuelMode) Chat(dp *DuelPlayer, pData []byte) {
-	panic("DuelMode.Chat: abstract method not implemented")
+	duelChat(d.room, dp, pData)
 }
 
-// JoinGame is an abstract method — SingleDuel / TagDuel must override.
-func (d *DuelMode) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCreator bool) {
-	panic("DuelMode.JoinGame: abstract method not implemented")
-}
-
-// LeaveGame is an abstract method — SingleDuel / TagDuel must override.
 func (d *DuelMode) LeaveGame(dp *DuelPlayer) {
-	panic("DuelMode.LeaveGame: abstract method not implemented")
+	leaveGame(d.room, dp)
 }
 
-// ToDuelList is an abstract method — SingleDuel / TagDuel must override.
-func (d *DuelMode) ToDuelList(dp *DuelPlayer) {
-	panic("DuelMode.ToDuelList: abstract method not implemented")
-}
-
-// ToObserver is an abstract method — SingleDuel / TagDuel must override.
 func (d *DuelMode) ToObserver(dp *DuelPlayer) {
-	panic("DuelMode.ToObserver: abstract method not implemented")
+	toObserver(d.room, dp)
 }
 
-// PlayerReady is an abstract method — SingleDuel / TagDuel must override.
 func (d *DuelMode) PlayerReady(dp *DuelPlayer, isReady bool) {
-	panic("DuelMode.PlayerReady: abstract method not implemented")
+	playerReady(d.room, dp, isReady)
 }
 
-// PlayerKick is an abstract method — SingleDuel / TagDuel must override.
 func (d *DuelMode) PlayerKick(dp *DuelPlayer, pos byte) {
-	panic("DuelMode.PlayerKick: abstract method not implemented")
+	playerKick(d.room, dp, pos)
 }
 
-// UpdateDeck is an abstract method — SingleDuel / TagDuel must override.
-func (d *DuelMode) UpdateDeck(dp *DuelPlayer, pData []byte) {
-	panic("DuelMode.UpdateDeck: abstract method not implemented")
-}
-
-// StartDuel is an abstract method — SingleDuel / TagDuel must override.
-func (d *DuelMode) StartDuel(dp *DuelPlayer) {
-	panic("DuelMode.StartDuel: abstract method not implemented")
-}
-
-// HandResult is an abstract method — SingleDuel / TagDuel must override.
 func (d *DuelMode) HandResult(dp *DuelPlayer, res byte) {
-	panic("DuelMode.HandResult: abstract method not implemented")
+	handResult(d.room, dp, res)
 }
 
-// TPResult is an abstract method — SingleDuel / TagDuel must override.
-func (d *DuelMode) TPResult(dp *DuelPlayer, tp byte) {
-	panic("DuelMode.TPResult: abstract method not implemented")
-}
-
-// Process is an abstract method — SingleDuel / TagDuel must override.
 func (d *DuelMode) Process() {
-	panic("DuelMode.Process: abstract method not implemented")
+	processDuel(d.room)
 }
 
-// Analyze is an abstract method — SingleDuel / TagDuel must override.
-func (d *DuelMode) Analyze(msgBuffer []byte) int {
-	panic("DuelMode.Analyze: abstract method not implemented")
-}
-
-// Surrender is an abstract method — SingleDuel / TagDuel must override.
-func (d *DuelMode) Surrender(dp *DuelPlayer) {
-	panic("DuelMode.Surrender: abstract method not implemented")
-}
-
-// GetResponse is an abstract method — SingleDuel / TagDuel must override.
-func (d *DuelMode) GetResponse(dp *DuelPlayer, msgBuffer []byte) {
-	panic("DuelMode.GetResponse: abstract method not implemented")
-}
-
-// TimeConfirm is an abstract method — SingleDuel / TagDuel must override.
 func (d *DuelMode) TimeConfirm(dp *DuelPlayer) {
-	panic("DuelMode.TimeConfirm: abstract method not implemented")
+	timeConfirm(d.room, dp)
 }
 
 func (d *DuelMode) EndDuel() {
-	// 子类应重写此方法
+	endDuel(d.room)
 }
+
+func (d *DuelMode) WaitForResponse(player byte) {
+	waitForResponse(d.room, player)
+}
+
+func (d *DuelMode) RefreshMzone(player int, flag uint32, useCache int) {
+	refreshZone(d.room, player, int(ocgcore.LOCATION_MZONE), flag, useCache)
+}
+
+func (d *DuelMode) RefreshSzone(player int, flag uint32, useCache int) {
+	refreshZone(d.room, player, int(ocgcore.LOCATION_SZONE), flag, useCache)
+}
+
+func (d *DuelMode) RefreshHand(player int, flag uint32, useCache int) {
+	refreshHand(d.room, player, flag, useCache)
+}
+
+func (d *DuelMode) RefreshGrave(player int, flag uint32, useCache int) {
+	refreshGrave(d.room, player, flag, useCache)
+}
+
+func (d *DuelMode) RefreshExtra(player int, flag uint32, useCache int) {
+	refreshExtra(d.room, player, flag, useCache)
+}
+
+func (d *DuelMode) RefreshMzoneDef(player int) {
+	refreshMzoneDef(d.room, player)
+}
+
+func (d *DuelMode) RefreshSzoneDef(player int) {
+	refreshSzoneDef(d.room, player)
+}
+
+func (d *DuelMode) RefreshHandDef(player int) {
+	refreshHandDef(d.room, player)
+}
+
+func (d *DuelMode) RefreshGraveDef(player int) {
+	refreshGraveDef(d.room, player)
+}
+
+func (d *DuelMode) RefreshExtraDef(player int) {
+	refreshExtraDef(d.room, player)
+}
+
 func (d *DuelMode) StopServer() {
 	if NetServerEngine != nil {
 		_ = NetServerEngine.Stop(context.Background())
@@ -274,7 +285,7 @@ func (d *DuelMode) StopServer() {
 	}
 }
 func (d *DuelMode) StopListen() {
-	AcceptingConnections = false
+	AcceptingConnections.Store(false)
 	if BroadcastInstance != nil {
 		BroadcastInstance.Stop()
 	}

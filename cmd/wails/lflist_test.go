@@ -17,16 +17,16 @@ func TestListLFLists(t *testing.T) {
 	if err := os.WriteFile(conf, []byte("# comment\n!Test List\n"), 0o644); err != nil {
 		t.Fatalf("write conf: %v", err)
 	}
-	duel.DeckManger.LoadLFListSingle(conf)
+	duel.DeckManager.LoadLFListSingle(conf)
 	// 显式补上「N/A」（LoadLFList 尾部追加，哈希 0）
-	duel.DeckManger.LoadLFList()
+	duel.DeckManager.LoadLFList()
 
 	a := NewApp()
 	entries := a.ListLFLists()
 
 	var testList, nolimit *duel.LFList
-	for i := range duel.DeckManger.LFList {
-		l := &duel.DeckManger.LFList[i]
+	for i := range duel.DeckManager.LFList {
+		l := &duel.DeckManager.LFList[i]
 		switch l.ListName {
 		case "Test List":
 			testList = l

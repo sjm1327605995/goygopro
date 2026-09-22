@@ -2,7 +2,6 @@ package duel
 
 import (
 	"encoding/binary"
-	"math/rand"
 	"slices"
 	"time"
 
@@ -13,10 +12,29 @@ import (
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
 
-const PRO_VERSION = 0x1361
-
 func newSingleDuel(matchMode bool) *SingleDuel {
-	return &SingleDuel{MatchMode: matchMode, DuelMode: DuelMode{Observers: make(map[string]*DuelPlayer)}}
+	sd := &SingleDuel{MatchMode: matchMode, DuelMode: DuelMode{
+		Observers: make(map[string]*DuelPlayer),
+		// 刷新参数表：single 的取值即原 *Def 系列默认参数（带缓存）；
+		// newPhaseHand 留 0（single 的 MSG_NEW_PHASE 后不刷新手牌，与原版一致）；
+		// skipCardQueryLe 留 false（边界语义 clen < LEN_HEADER）。
+		refresh: refreshFlags{
+			summonMzone:     0x881fff,
+			summonSzone:     0x681fff,
+			chainMzone:      0x881fff,
+			chainSzone:      0x681fff,
+			chainHand:       0x681fff,
+			damageStepMzone: 0x881fff,
+			newPhaseMzone:   0x881fff,
+			newPhaseSzone:   0x681fff,
+			singleMoved:     0xf81fff,
+			singleFlip:      0xf81fff,
+			graveAfterSwap:  0x81fff,
+			useCache:        1,
+		},
+	}}
+	sd.room = sd
+	return sd
 }
 
 type SingleDuel struct {
@@ -31,10 +49,6 @@ type SingleDuel struct {
 	matchResult [3]uint8
 }
 
-func (s *SingleDuel) Chat(dp *DuelPlayer, pData []byte) {
-	duelChat(s, dp, pData)
-}
-
 func (s *SingleDuel) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCreator bool) {
 
 	if !checkJoinAllowed(s, dp, pkt, isCreator) {
@@ -45,94 +59,90 @@ func (s *SingleDuel) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCrea
 		s.HostPlayer = dp
 	}
 	var (
-		scjg = protocol.STOCJoinGame{Info: s.HostInfo}
-		sctc = protocol.STOCTypeChange{Type: condition.Ternary[bool, uint8](s.HostPlayer == dp, 0x10, 0)}
+		joinGamePkt = protocol.STOCJoinGame{Info: s.HostInfo}
+		typeChangePkt = protocol.STOCTypeChange{Type: condition.Ternary[bool, uint8](s.HostPlayer == dp, 0x10, 0)}
 	)
 	if s.players[0] == nil || s.players[1] == nil {
-		var scpe protocol.STOCHsPlayerEnter
-		copy(scpe.Name[:], dp.Name[:])
+		var playerEnterPkt protocol.STOCHsPlayerEnter
+		copy(playerEnterPkt.Name[:], dp.Name[:])
 		if s.players[0] == nil {
-			scpe.Pos = 0
+			playerEnterPkt.Pos = 0
 		} else {
-			scpe.Pos = 1
+			playerEnterPkt.Pos = 1
 		}
 		if s.players[0] != nil {
-			s.SendPacketDataToPlayer(s.players[0], network.STOC_HS_PLAYER_ENTER, scpe)
+			s.SendPacketDataToPlayer(s.players[0], network.STOC_HS_PLAYER_ENTER, playerEnterPkt)
 		}
 		if s.players[1] != nil {
-			s.SendPacketDataToPlayer(s.players[1], network.STOC_HS_PLAYER_ENTER, scpe)
+			s.SendPacketDataToPlayer(s.players[1], network.STOC_HS_PLAYER_ENTER, playerEnterPkt)
 		}
 		for _, v := range s.Observers {
-			s.SendPacketDataToPlayer(v, network.STOC_HS_PLAYER_ENTER, scpe)
+			s.SendPacketDataToPlayer(v, network.STOC_HS_PLAYER_ENTER, playerEnterPkt)
 		}
 		if s.players[0] == nil {
 			s.players[0] = dp
 			dp.Type = network.NETPLAYER_TYPE_PLAYER1
-			sctc.Type |= network.NETPLAYER_TYPE_PLAYER1
+			typeChangePkt.Type |= network.NETPLAYER_TYPE_PLAYER1
 		} else {
 			s.players[1] = dp
 			dp.Type = network.NETPLAYER_TYPE_PLAYER2
-			sctc.Type |= network.NETPLAYER_TYPE_PLAYER2
+			typeChangePkt.Type |= network.NETPLAYER_TYPE_PLAYER2
 		}
 	} else {
 		s.Observers[dp.ID] = dp
 		dp.Type = network.NETPLAYER_TYPE_OBSERVER
-		sctc.Type |= network.NETPLAYER_TYPE_OBSERVER
-		var scwc protocol.STOCHsWatchChange
-		scwc.WatchCount = uint16(len(s.Observers))
+		typeChangePkt.Type |= network.NETPLAYER_TYPE_OBSERVER
+		var watchChangePkt protocol.STOCHsWatchChange
+		watchChangePkt.WatchCount = uint16(len(s.Observers))
 		if s.players[0] != nil {
-			s.SendPacketDataToPlayer(s.players[0], network.STOC_HS_WATCH_CHANGE, scwc)
+			s.SendPacketDataToPlayer(s.players[0], network.STOC_HS_WATCH_CHANGE, watchChangePkt)
 		}
 		if s.players[1] != nil {
-			s.SendPacketDataToPlayer(s.players[1], network.STOC_HS_WATCH_CHANGE, scwc)
+			s.SendPacketDataToPlayer(s.players[1], network.STOC_HS_WATCH_CHANGE, watchChangePkt)
 		}
 		for _, v := range s.Observers {
-			s.SendPacketDataToPlayer(v, network.STOC_HS_WATCH_CHANGE, scwc)
+			s.SendPacketDataToPlayer(v, network.STOC_HS_WATCH_CHANGE, watchChangePkt)
 		}
 	}
-	s.SendPacketDataToPlayer(dp, network.STOC_JOIN_GAME, scjg)
-	s.SendPacketDataToPlayer(dp, network.STOC_TYPE_CHANGE, sctc)
+	s.SendPacketDataToPlayer(dp, network.STOC_JOIN_GAME, joinGamePkt)
+	s.SendPacketDataToPlayer(dp, network.STOC_TYPE_CHANGE, typeChangePkt)
 	if s.players[0] != nil {
-		var scpe protocol.STOCHsPlayerEnter
-		copy(scpe.Name[:], s.players[0].Name[:])
-		scpe.Pos = 0
-		s.SendPacketDataToPlayer(dp, network.STOC_HS_PLAYER_ENTER, scpe)
+		var playerEnterPkt protocol.STOCHsPlayerEnter
+		copy(playerEnterPkt.Name[:], s.players[0].Name[:])
+		playerEnterPkt.Pos = 0
+		s.SendPacketDataToPlayer(dp, network.STOC_HS_PLAYER_ENTER, playerEnterPkt)
 		if s.ready[0] {
-			var scpc protocol.STOCHsPlayerChange
-			scpc.Status = network.PLAYERCHANGE_READY
-			s.SendPacketDataToPlayer(dp, network.STOC_HS_PLAYER_CHANGE, scpc)
+			var playerChangePkt protocol.STOCHsPlayerChange
+			playerChangePkt.Status = network.PLAYERCHANGE_READY
+			s.SendPacketDataToPlayer(dp, network.STOC_HS_PLAYER_CHANGE, playerChangePkt)
 		}
 	}
 	if s.players[1] != nil {
-		var scpe protocol.STOCHsPlayerEnter
-		copy(scpe.Name[:], s.players[1].Name[:])
-		scpe.Pos = 1
-		s.SendPacketDataToPlayer(dp, network.STOC_HS_PLAYER_ENTER, scpe)
+		var playerEnterPkt protocol.STOCHsPlayerEnter
+		copy(playerEnterPkt.Name[:], s.players[1].Name[:])
+		playerEnterPkt.Pos = 1
+		s.SendPacketDataToPlayer(dp, network.STOC_HS_PLAYER_ENTER, playerEnterPkt)
 		if s.ready[1] {
-			var scpc protocol.STOCHsPlayerChange
-			scpc.Status = 0x10 | network.PLAYERCHANGE_READY
-			s.SendPacketDataToPlayer(dp, network.STOC_HS_PLAYER_CHANGE, scpc)
+			var playerChangePkt protocol.STOCHsPlayerChange
+			playerChangePkt.Status = 0x10 | network.PLAYERCHANGE_READY
+			s.SendPacketDataToPlayer(dp, network.STOC_HS_PLAYER_CHANGE, playerChangePkt)
 		}
 	}
 	if len(s.Observers) > 0 {
-		var scwc protocol.STOCHsWatchChange
-		scwc.WatchCount = uint16(len(s.Observers))
-		s.SendPacketDataToPlayer(dp, network.STOC_HS_WATCH_CHANGE, scwc)
+		var watchChangePkt protocol.STOCHsWatchChange
+		watchChangePkt.WatchCount = uint16(len(s.Observers))
+		s.SendPacketDataToPlayer(dp, network.STOC_HS_WATCH_CHANGE, watchChangePkt)
 	}
-}
-
-func (s *SingleDuel) LeaveGame(dp *DuelPlayer) {
-	leaveGame(s, dp)
 }
 
 func (s *SingleDuel) leaveAsPlayer(dp *DuelPlayer) {
 	if s.DuelStage == network.DUEL_STAGE_BEGIN {
-		var scpc protocol.STOCHsPlayerChange
+		var playerChangePkt protocol.STOCHsPlayerChange
 		s.players[dp.Type] = nil
 		s.ready[dp.Type] = false
-		scpc.Status = dp.Type<<4 | network.PLAYERCHANGE_LEAVE
-		sendHsPlayerChangeAll(s, scpc)
-		_ = s.DisconnetPlayer(dp)
+		playerChangePkt.Status = dp.Type<<4 | network.PLAYERCHANGE_LEAVE
+		sendHsPlayerChangeAll(s, playerChangePkt)
+		_ = s.DisconnectPlayer(dp)
 		return
 	}
 	if s.DuelStage == network.DUEL_STAGE_SIDING {
@@ -152,7 +162,7 @@ func (s *SingleDuel) leaveAsPlayer(dp *DuelPlayer) {
 		s.EndDuel()
 		broadcastProto(s, network.STOC_DUEL_END)
 	}
-	_ = s.DisconnetPlayer(dp)
+	_ = s.DisconnectPlayer(dp)
 }
 
 func (s *SingleDuel) ToDuelList(dp *DuelPlayer) {
@@ -163,18 +173,6 @@ func (s *SingleDuel) ToDuelList(dp *DuelPlayer) {
 		return
 	}
 	toDuelListObserver(s, dp)
-}
-
-func (s *SingleDuel) ToObserver(dp *DuelPlayer) {
-	toObserver(s, dp)
-}
-
-func (s *SingleDuel) PlayerReady(dp *DuelPlayer, isReady bool) {
-	playerReady(s, dp, isReady)
-}
-
-func (s *SingleDuel) PlayerKick(dp *DuelPlayer, pos byte) {
-	playerKick(s, dp, pos)
 }
 
 func (s *SingleDuel) UpdateDeck(dp *DuelPlayer, pData []byte) {
@@ -191,9 +189,9 @@ func (s *SingleDuel) UpdateDeck(dp *DuelPlayer, pData []byte) {
 		s.pDeck[dp.Type].Clear()
 	}
 	if s.duelCount == 0 {
-		s.DeckError[dp.Type] = DeckManger.LoadDeck(s.pDeck[dp.Type], deckBuf.List[:], deckBuf.MainC, deckBuf.SideC, false)
+		s.DeckError[dp.Type] = DeckManager.LoadDeck(s.pDeck[dp.Type], deckBuf.List[:], deckBuf.MainC, deckBuf.SideC, false)
 	} else {
-		if DeckManger.LoadSide(s.pDeck[dp.Type], deckBuf.List[:], deckBuf.MainC, deckBuf.SideC) {
+		if DeckManager.LoadSide(s.pDeck[dp.Type], deckBuf.List[:], deckBuf.MainC, deckBuf.SideC) {
 			s.ready[dp.Type] = true
 			s.SendPacketToPlayer(dp, network.STOC_DUEL_START)
 			if s.ready[0] && s.ready[1] {
@@ -213,43 +211,7 @@ func (s *SingleDuel) UpdateDeck(dp *DuelPlayer, pData []byte) {
 }
 
 func (s *SingleDuel) StartDuel(dp *DuelPlayer) {
-	if dp != s.HostPlayer {
-		return
-	}
-	if !s.ready[0] || !s.ready[1] {
-		return
-	}
-	s.StopListen()
-	s.SendPacketToPlayer(s.players[0], network.STOC_DUEL_START)
-	s.ReSendToPlayer(s.players[1])
-	for _, v := range s.Observers {
-		v.State = network.CTOS_LEAVE_GAME
-		s.ReSendToPlayer(v)
-	}
-	var deckBuff = make([]byte, 12)
-	pBuf := utils.NewYGOBuffer(deckBuff, binary.LittleEndian)
-	pBuf.Write(
-		int16(len(s.pDeck[0].Main)), int16(len(s.pDeck[0].Extra)), int16(len(s.pDeck[0].Side)),
-		int16(len(s.pDeck[1].Main)), int16(len(s.pDeck[1].Extra)), int16(len(s.pDeck[1].Side)))
-	s.SendPacketDataToPlayer(s.players[0], network.STOC_DECK_COUNT, deckBuff)
-
-	// 交换前6字节和后6字节
-	temp := make([]byte, 6)
-	copy(temp, deckBuff[:6])
-	copy(deckBuff[:6], deckBuff[6:])
-	copy(deckBuff[6:], temp)
-	s.SendPacketDataToPlayer(s.players[1], network.STOC_DECK_COUNT, deckBuff)
-	s.SendPacketToPlayer(s.players[0], network.STOC_SELECT_HAND)
-	s.ReSendToPlayer(s.players[1])
-	s.handResult[0] = 0
-	s.handResult[1] = 0
-	s.players[0].State = network.CTOS_HAND_RESULT
-	s.players[1].State = network.CTOS_HAND_RESULT
-	s.DuelStage = network.DUEL_STAGE_FINGER
-}
-
-func (s *SingleDuel) HandResult(dp *DuelPlayer, res byte) {
-	handResult(s, dp, res)
+	startDuelCommon(s, dp)
 }
 
 func (s *SingleDuel) TPResult(dp *DuelPlayer, tp byte) {
@@ -265,103 +227,7 @@ func (s *SingleDuel) TPResult(dp *DuelPlayer, tp byte) {
 		s.pDeck[0], s.pDeck[1] = s.pDeck[1], s.pDeck[0]
 		swapped = true
 	}
-	dp.State = network.CTOS_RESPONSE
-	seed := rand.Uint32()
-
-	var rnd = rand.New(rand.NewSource(int64(seed)))
-	rh := ExtendedReplayHeader{}
-	rh.Base.ID = REPLAY_ID_YRP2
-	rh.Base.Version = PRO_VERSION
-	rh.Base.Flag = REPLAY_UNIFORM
-	rh.Base.Seed = seed
-	for i := 0; i < SEED_COUNT; i++ {
-		rh.SeedSequence[i] = rand.Uint32()
-	}
-	rh.Base.StartTime = uint32(time.Now().Unix())
-	s.lastReplay = NewReplay()
-	s.lastReplay.BeginRecord()
-	s.lastReplay.WriteHeader(rh)
-	name0 := make([]byte, 40)
-	for i := 0; i < 20; i++ {
-		binary.LittleEndian.PutUint16(name0[i*2:], s.players[0].Name[i])
-	}
-	s.lastReplay.WriteData(name0, false)
-	name1 := make([]byte, 40)
-	for i := 0; i < 20; i++ {
-		binary.LittleEndian.PutUint16(name1[i*2:], s.players[1].Name[i])
-	}
-	s.lastReplay.WriteData(name1, false)
-	if s.HostInfo.NoShuffleDeck == 0 {
-		rnd.Shuffle(len(s.pDeck[0].Main), func(i, j int) {
-			s.pDeck[0].Main[i], s.pDeck[0].Main[j] = s.pDeck[0].Main[j], s.pDeck[0].Main[i]
-		})
-		rnd.Shuffle(len(s.pDeck[1].Main), func(i, j int) {
-			s.pDeck[1].Main[i], s.pDeck[1].Main[j] = s.pDeck[1].Main[j], s.pDeck[1].Main[i]
-		})
-	}
-	s.timeLimit[0], s.timeLimit[1] = int16(s.HostInfo.TimeLimit), int16(s.HostInfo.TimeLimit)
-
-	s.Duel = ocgcore.NewDuelV2(rh.SeedSequence)
-	s.Duel.InitPlayers(s.HostInfo.StartLp, int32(s.HostInfo.StartHand), int32(s.HostInfo.DrawCount))
-
-	opt := uint32(s.HostInfo.DuelRule) << 16
-	if s.HostInfo.NoShuffleDeck != 0 {
-		opt |= ocgcore.DUEL_PSEUDO_SHUFFLE
-	}
-	s.lastReplay.WriteInt32(s.HostInfo.StartLp, false)
-	s.lastReplay.WriteInt32(int32(s.HostInfo.StartHand), false)
-	s.lastReplay.WriteInt32(int32(s.HostInfo.DrawCount), false)
-	s.lastReplay.WriteInt32(int32(opt), false)
-	s.lastReplay.Flush()
-	load := func(deckContainer []*CardDataC, p uint8, location uint8) {
-		s.lastReplay.WriteInt32(int32(len(deckContainer)), false)
-		for _, v := range deckContainer {
-			s.Duel.AddCard(v.Code, int(p), location)
-			s.lastReplay.WriteInt32(int32(v.Code), false)
-		}
-	}
-	slices.Reverse(s.pDeck[0].Main)
-	slices.Reverse(s.pDeck[1].Main)
-	load(s.pDeck[0].Main, 0, ocgcore.LOCATION_DECK)
-	load(s.pDeck[0].Extra, 0, ocgcore.LOCATION_EXTRA)
-	load(s.pDeck[1].Main, 1, ocgcore.LOCATION_DECK)
-	load(s.pDeck[1].Extra, 1, ocgcore.LOCATION_EXTRA)
-
-	startBuf := make([]byte, 32)
-	pBuf := utils.NewYGOBuffer(startBuf, binary.LittleEndian)
-	pBuf.Write(
-		uint8(ocgcore.MSG_START), uint8(0), uint8(s.HostInfo.DuelRule),
-		s.HostInfo.StartLp, s.HostInfo.StartLp,
-		uint16(s.Duel.QueryFieldCount(0, ocgcore.LOCATION_DECK)),
-		uint16(s.Duel.QueryFieldCount(0, ocgcore.LOCATION_EXTRA)),
-		uint16(s.Duel.QueryFieldCount(1, ocgcore.LOCATION_DECK)),
-		uint16(s.Duel.QueryFieldCount(1, ocgcore.LOCATION_EXTRA)),
-	)
-	s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, startBuf[:19])
-	startBuf[1] = 1
-	s.SendPacketDataToPlayer(s.players[1], network.STOC_GAME_MSG, startBuf[:19])
-	if !swapped {
-		startBuf[1] = 0x10
-	} else {
-		startBuf[1] = 0x11
-	}
-	for _, v := range s.Observers {
-		s.SendPacketDataToPlayer(v, network.STOC_GAME_MSG, startBuf[:19])
-	}
-	s.RefreshExtraDef(0)
-	s.RefreshExtraDef(1)
-	s.Duel.Start(int32(opt))
-	if s.HostInfo.TimeLimit != 0 {
-		s.timeElapsed = 0
-		s.ETimer = timerWheel.AfterFunc(time.Second, s.SingleTimer)
-
-	}
-
-	s.Process()
-}
-
-func (s *SingleDuel) Process() {
-	processDuel(s)
+	beginDuel(s, dp, swapped)
 }
 
 func (s *SingleDuel) DuelEndProc() {
@@ -440,12 +306,6 @@ func (s *SingleDuel) analyzeMatchKill(pbuf, offset *utils.YGOBuffer) int {
 	return 0
 }
 
-func (s *SingleDuel) WaitforResponse(player byte) {
-	waitForResponse(s, player)
-}
-func (s *SingleDuel) TimeConfirm(dp *DuelPlayer) {
-	timeConfirm(s, dp)
-}
 func (s *SingleDuel) GetResponse(dp *DuelPlayer, msgBuffer []byte) {
 	if s.Duel == nil {
 		return
@@ -471,9 +331,6 @@ func (s *SingleDuel) GetResponse(dp *DuelPlayer, msgBuffer []byte) {
 		s.timeElapsed = 0
 	}
 	s.Process()
-}
-func (s *SingleDuel) EndDuel() {
-	endDuel(s)
 }
 
 // applyWinResult 记录一局胜负（Surrender / 超时 / MSG_WIN 共用同一套
@@ -533,39 +390,6 @@ func (s *SingleDuel) SingleTimer() {
 	s.ETimer = timerWheel.AfterFunc(time.Second, s.SingleTimer)
 
 }
-func (s *SingleDuel) RefreshExtraDef(player int) {
-	refreshExtraDef(s, player)
-}
-func (s *SingleDuel) RefreshExtra(player int, flag uint32, useCache int) {
-	refreshExtra(s, player, flag, useCache)
-}
-func (s *SingleDuel) RefreshMzoneDef(player int) {
-	refreshMzoneDef(s, player)
-}
-func (s *SingleDuel) RefreshMzone(player int, flag uint32, useCache int) {
-	refreshZone(s, player, int(ocgcore.LOCATION_MZONE), flag, useCache)
-}
-func (s *SingleDuel) RefreshSzoneDef(player int) {
-	refreshSzoneDef(s, player)
-}
-func (s *SingleDuel) RefreshSzone(player int, flag uint32, useCache int) {
-	refreshZone(s, player, int(ocgcore.LOCATION_SZONE), flag, useCache)
-}
-func (s *SingleDuel) RefreshHandDef(player int) {
-	refreshHandDef(s, player)
-}
-func (s *SingleDuel) RefreshHand(player int, flag uint32, useCache int) {
-	refreshHand(s, player, flag, useCache)
-}
-func (s *SingleDuel) RefreshSingleDef(player uint8, location uint8, sequence uint8) {
-	s.RefreshSingle(player, location, sequence, 0xf81fff)
-}
-func (s *SingleDuel) RefreshGraveDef(player int) {
-	refreshGraveDef(s, player)
-}
-func (s *SingleDuel) RefreshGrave(player int, flag uint32, useCache int) {
-	refreshGrave(s, player, flag, useCache)
-}
 
 // duelRoom 接口实现（差异点钩子）。
 
@@ -584,8 +408,6 @@ func (s *SingleDuel) zoneMaskedPair(player int) (*DuelPlayer, *DuelPlayer) {
 func (s *SingleDuel) handMaskedRecipients(player int) []*DuelPlayer {
 	return []*DuelPlayer{s.players[1-player]}
 }
-
-func (s *SingleDuel) skipCardQuery(clen int32) bool { return clen < ocgcore.LEN_HEADER }
 
 func (s *SingleDuel) waitingNotifyRecipients(player byte) []*DuelPlayer {
 	return []*DuelPlayer{s.players[1-player]}
@@ -620,9 +442,48 @@ func (s *SingleDuel) recordTpPlayer(bWins bool) {
 	}
 }
 
-func (s *SingleDuel) onJoinPassDenied(dp *DuelPlayer) { _ = s.DisconnetPlayer(dp) }
+func (s *SingleDuel) onJoinPassDenied(dp *DuelPlayer) { _ = s.DisconnectPlayer(dp) }
 
 func (s *SingleDuel) onDuelEnded() {}
+
+func (s *SingleDuel) seatCount() int { return 2 }
+
+func (s *SingleDuel) replayFlag() uint32 { return REPLAY_UNIFORM }
+
+func (s *SingleDuel) extraDuelOpt() uint32 { return 0 }
+
+// loadDecksToEngine 把两名玩家的卡组按原版顺序装入引擎并写入回放：
+// Main 先整体 Reverse（与原版一致，从卡组顶端开始 load），再按
+// 0 号主卡组/额外 → 1 号主卡组/额外 的固定序列 AddCard
+//（single_duel.cpp TPResult 的 load 调用序列）。
+func (s *SingleDuel) loadDecksToEngine(d *ocgcore.Duel, rp *Replay) {
+	load := func(deckContainer []*CardDataC, p uint8, location uint8) {
+		rp.WriteInt32(int32(len(deckContainer)), false)
+		for _, v := range deckContainer {
+			d.AddCard(v.Code, int(p), location)
+			rp.WriteInt32(int32(v.Code), false)
+		}
+	}
+	slices.Reverse(s.pDeck[0].Main)
+	slices.Reverse(s.pDeck[1].Main)
+	load(s.pDeck[0].Main, 0, ocgcore.LOCATION_DECK)
+	load(s.pDeck[0].Extra, 0, ocgcore.LOCATION_EXTRA)
+	load(s.pDeck[1].Main, 1, ocgcore.LOCATION_DECK)
+	load(s.pDeck[1].Extra, 1, ocgcore.LOCATION_EXTRA)
+}
+
+// refreshOnDuelStart 是开局额外卡组刷新（原版 single RefreshExtraDef，
+// 即 0xe81fff/缓存）。
+func (s *SingleDuel) refreshOnDuelStart() {
+	s.RefreshExtraDef(0)
+	s.RefreshExtraDef(1)
+}
+
+// armDuelTimer 武装决斗秒表：SingleTimer 超时处理自行重新武装
+//（与原版 SingleTimer 一致）。
+func (s *SingleDuel) armDuelTimer() {
+	s.ETimer = timerWheel.AfterFunc(time.Second, s.SingleTimer)
+}
 
 func (s *SingleDuel) onEngineWin(player uint8) {
 	if player > 1 {
@@ -640,39 +501,11 @@ func (s *SingleDuel) onEngineWin(player uint8) {
 	}
 }
 
-func (s *SingleDuel) refreshGraveAfterSwap(player int) { s.RefreshGraveDef(player) }
-
-func (s *SingleDuel) refreshAfterSummon() {
-	s.RefreshMzoneDef(0)
-	s.RefreshMzoneDef(1)
-	s.RefreshSzoneDef(0)
-	s.RefreshSzoneDef(1)
-}
-
-func (s *SingleDuel) refreshAfterChain() {
-	s.RefreshMzoneDef(0)
-	s.RefreshMzoneDef(1)
-	s.RefreshSzoneDef(0)
-	s.RefreshSzoneDef(1)
-	s.RefreshHandDef(0)
-	s.RefreshHandDef(1)
-}
-
-func (s *SingleDuel) refreshAfterDamageStep() {
-	s.RefreshMzoneDef(0)
-	s.RefreshMzoneDef(1)
-}
-
-func (s *SingleDuel) refreshAfterNewPhase() {
-	s.RefreshMzoneDef(0)
-	s.RefreshMzoneDef(1)
-	s.RefreshSzoneDef(0)
-	s.RefreshSzoneDef(1)
-}
-
-func (s *SingleDuel) refreshSingleMoved(cc, cl, cs uint8) { s.RefreshSingleDef(cc, cl, cs) }
-
-func (s *SingleDuel) refreshSingleFlip(cc, cl, cs uint8) { s.RefreshSingle(cc, cl, cs, 0xf81fff) }
+// refreshGraveAfterSwap / refreshAfterSummon / refreshAfterChain /
+// refreshAfterDamageStep / refreshAfterNewPhase / refreshSingleMoved /
+// refreshSingleFlip / skipCardQuery 原本在本文件以 *Def 常量实现，差异已收进
+// DuelMode.refresh 参数表（构造时填写），统一由 DuelMode 基类读表实现
+//（见 duel_refresh.go）。
 
 func (s *SingleDuel) RefreshSingle(player uint8, location uint8, sequence uint8, flag int32) {
 	flag |= ocgcore.QUERY_CODE | ocgcore.QUERY_POSITION

@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,6 +32,10 @@ type App struct {
 	// 单人谜题（single_mode.go）：nil = 没有进行中的谜题
 	singleMu sync.Mutex
 	single   *singleRun
+	// lastSingleReplay 保存最近一次已完结单人谜题的录像句柄，供前端确认后
+	// SaveSingleReplay 落盘（auto_save_replay=0 时）。session 本身在 Run 返回
+	// 后即被置 nil，这里只保留 Replay 避免持有已 End 的引擎句柄。
+	lastSingleReplay *duel.Replay
 }
 
 // NewApp creates a new App application struct
@@ -161,11 +167,11 @@ func (a *App) Quit() {
 // LoadLFList 会把「N/A」（哈希 0）追加在末尾；仓库目前没有 lflist.conf，
 // 因此通常只有 N/A，缺数据时下拉照常工作。
 func (a *App) ListLFLists() []LFListEntry {
-	if len(duel.DeckManger.LFList) == 0 {
-		duel.DeckManger.LoadLFList()
+	if len(duel.DeckManager.LFList) == 0 {
+		duel.DeckManager.LoadLFList()
 	}
-	entries := make([]LFListEntry, 0, len(duel.DeckManger.LFList))
-	for _, l := range duel.DeckManger.LFList {
+	entries := make([]LFListEntry, 0, len(duel.DeckManager.LFList))
+	for _, l := range duel.DeckManager.LFList {
 		entries = append(entries, LFListEntry{Hash: l.Hash, Name: l.ListName})
 	}
 	return entries
@@ -280,8 +286,12 @@ func (a *App) GetCard(code uint32) *CardInfo {
 // %d-1, %d-2 alternate-art suffixes). Search roots are the executable's
 // directory and the working directory, with YGOPRO_PICS_DIR overriding both —
 // so the app finds art whether it was launched from the install dir or a
-// shortcut with a different working directory. Returns "" when no art exists,
-// letting the frontend fall back to its procedural/CDN picture.
+// shortcut with a different working directory. When no local art exists the
+// card is pulled from the YGOProDeck CDN by the Go side (the WebView cannot
+// fetch it itself: images.ygoprodeck.com sends no CORS headers, so a
+// cross-origin fetch from the webview origin is always blocked) and cached
+// into <cwd>/pics/ so later calls hit the local branch. Returns "" only when
+// neither local art nor the CDN has the card.
 func (a *App) GetCardImage(code uint32) string {
 	var roots []string
 	if dir := strings.TrimSpace(os.Getenv("YGOPRO_PICS_DIR")); dir != "" {
@@ -330,7 +340,96 @@ func (a *App) GetCardImage(code uint32) string {
 			}
 		}
 	}
+	return fetchCDNCardArt(code)
+}
+
+// ---- 卡图 CDN 回退（本地无 pics 时） ----
+//
+// WebView 里前端 fetch images.ygoprodeck.com 会被 CORS 拦截（对方不发
+// Access-Control-Allow-Origin），所以必须走 Go 代拉。拉取成功后顺手落盘
+// 到 <cwd>/pics/<code>.jpg，下一次调用直接命中上面的本地分支。
+// cardArtEntry 是单卡号的单飞记录：第一个进入的调用负责下载，后续调用
+//（含并发）直接复用结果。只锁不缓存结果的话，并发调用会排队后重复下载。
+type cardArtEntry struct {
+	mu   sync.Mutex
+	done bool
+	url  string
+}
+
+var (
+	cardArtClient = &http.Client{Timeout: 12 * time.Second}
+	// 高清单图优先，小图兜底（ygo 老卡号两张都有；缺失时 404 快速跳过）
+	cardArtCDNURLs = []string{
+		"https://images.ygoprodeck.com/images/cards/%d.jpg",
+		"https://images.ygoprodeck.com/images/cards_small/%d.jpg",
+	}
+	cardArtCacheDir = "" // 测试可指向 t.TempDir()；空 = <cwd>/pics
+
+	cardArtInflightMu sync.Mutex
+	cardArtInflight   = map[uint32]*cardArtEntry{}
+)
+
+func fetchCDNCardArt(code uint32) string {
+	cardArtInflightMu.Lock()
+	e, ok := cardArtInflight[code]
+	if !ok {
+		e = &cardArtEntry{}
+		cardArtInflight[code] = e
+	}
+	cardArtInflightMu.Unlock()
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.done {
+		return e.url
+	}
+	e.url = downloadCardArt(code)
+	e.done = true
+	return e.url
+}
+
+func downloadCardArt(code uint32) string {
+	for _, tpl := range cardArtCDNURLs {
+		url := fmt.Sprintf(tpl, code)
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("User-Agent", "goygopro/1.0 (+local ygopro client)")
+		resp, err := cardArtClient.Do(req)
+		if err != nil {
+			continue
+		}
+		// 单图上限 8MB，防异常响应把内存打爆
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		resp.Body.Close()
+		if readErr != nil || resp.StatusCode != http.StatusOK || len(data) == 0 {
+			continue
+		}
+		mime := "image/jpeg"
+		if ct := resp.Header.Get("Content-Type"); strings.HasPrefix(ct, "image/") {
+			mime = ct
+		}
+		cacheCardArt(code, data)
+		return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
+	}
 	return ""
+}
+
+// cacheCardArt 把下载到的卡图写进 pics/（尽力而为：写失败不影响返回）。
+func cacheCardArt(code uint32, data []byte) {
+	dir := cardArtCacheDir
+	if dir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return
+		}
+		dir = filepath.Join(cwd, "pics")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("%d.jpg", code)), data, 0o644)
 }
 
 func (a *App) SearchCards(filter CardFilter) []CardInfo {

@@ -138,3 +138,21 @@ func walkReloadField(p *int, msg []byte) bool {
 	}
 	return adv(p, msg, int(msg[*p-1])*15)
 }
+
+// SplitBatchMessages 把引擎消息批次按 engineMsgLayouts 的权威布局切分为
+// 单条完整消息（type 字节 + body）。ok=false 表示批次中途遇到未知布局，
+// 调用方应把批次按原样整体透传（走 batchResponseOffset 的 !ok 回退分支）
+// 或丢弃。供驱动方（如故事决斗的 AI 代答器）在转发前逐条检查消息。
+func SplitBatchMessages(msg []byte) (msgs [][]byte, ok bool) {
+	var out [][]byte
+	p := 0
+	for p < len(msg) {
+		end, _, _, ok := walkEngineMessage(msg, p+1)
+		if !ok {
+			return nil, false
+		}
+		out = append(out, msg[p:end])
+		p = end
+	}
+	return out, true
+}

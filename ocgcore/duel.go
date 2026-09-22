@@ -110,6 +110,12 @@ func (d *Duel) InitPlayers(startLp, startHand, drawCount int32) {
 	API.SetPlayerInfo(d.duelPtr, 1, startLp, startHand, drawCount)
 }
 
+// InitPlayer 初始化单个玩家（故事决斗等双方基本分不同的场景；
+// InitPlayers 是其双座同值的便捷封装）。
+func (d *Duel) InitPlayer(player uint8, startLp, startHand, drawCount int32) {
+	API.SetPlayerInfo(d.duelPtr, int32(player), startLp, startHand, drawCount)
+}
+
 // AddCard 添加卡片
 func (d *Duel) AddCard(cardId uint32, owner int, location uint8) {
 	API.NewCard(d.duelPtr, cardId, uint8(owner), uint8(owner),

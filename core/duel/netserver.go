@@ -1,6 +1,8 @@
 package duel
 
 import (
+	"sync/atomic"
+
 	"github.com/panjf2000/gnet/v2"
 )
 
@@ -12,7 +14,13 @@ var NetServerEngine *gnet.Engine
 // BroadcastInstance 全局广播服务器引用
 var BroadcastInstance *BroadcastServer
 
-// AcceptingConnections 是否接受新连接
+// AcceptingConnections 是否接受新连接。atomic.Bool：OnOpen 在 gnet 事件循环
+// goroutine 读取，StopListen 在决斗 goroutine 写入，--multicore=true 下是跨
+// goroutine 访问，普通 bool 会数据竞争。
 // C++ 中 StopListen() 通过 evconnlistener_disable 停止接受新连接。
 // Go 中通过该标志在 OnOpen 中拒绝新连接。
-var AcceptingConnections = true
+var AcceptingConnections atomic.Bool
+
+func init() {
+	AcceptingConnections.Store(true)
+}

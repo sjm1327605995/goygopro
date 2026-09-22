@@ -36,7 +36,7 @@ type deckManager struct {
 	_datas map[uint32]*CardDataC
 }
 
-var DeckManger = new(deckManager)
+var DeckManager = new(deckManager)
 
 type LFList struct {
 	Hash     uint32
@@ -162,69 +162,54 @@ func (d *deckManager) CheckDeck(deck *Deck, lfhash uint32, rule int) uint32 {
 		avail = ruleMap[rule]
 	}
 
-	// 检查主卡组
-	for _, card := range deck.Main {
-		if err := checkAvail(uint32(card.Ot), avail); err != 0 {
-			return (err << 28) | card.Code
-		}
-		if card.Type&(ocgcore.TYPES_EXTRA_DECK|ocgcore.TYPE_TOKEN) != 0 {
-			return network.DECKERROR_MAINCOUNT << 28
-		}
-		code := card.Code
-		if card.Alias != 0 {
-			code = uint32(card.Alias)
-		}
-		ccount[code]++
-		if ccount[code] > 3 {
-			return (network.DECKERROR_CARDCOUNT << 28) | card.Code
-		}
-		if limit, ok := lflist.Content[code]; ok && ccount[code] > limit {
-			return (network.DECKERROR_LFLIST << 28) | card.Code
-		}
+	// 检查主卡组：不允许额外卡组怪兽与衍生物。
+	if err := checkPile(deck.Main, ccount, lflist, avail, func(card *CardDataC) bool {
+		return card.Type&(ocgcore.TYPES_EXTRA_DECK|ocgcore.TYPE_TOKEN) == 0
+	}, network.DECKERROR_MAINCOUNT); err != 0 {
+		return err
 	}
 
-	// 检查额外卡组
-	for _, card := range deck.Extra {
+	// 检查额外卡组：必须是额外卡组怪兽且非衍生物。
+	if err := checkPile(deck.Extra, ccount, lflist, avail, func(card *CardDataC) bool {
+		return card.Type&ocgcore.TYPES_EXTRA_DECK != 0 && card.Type&ocgcore.TYPE_TOKEN == 0
+	}, network.DECKERROR_EXTRACOUNT); err != 0 {
+		return err
+	}
+
+	// 检查副卡组：不允许衍生物。
+	if err := checkPile(deck.Side, ccount, lflist, avail, func(card *CardDataC) bool {
+		return card.Type&ocgcore.TYPE_TOKEN == 0
+	}, network.DECKERROR_SIDECOUNT); err != 0 {
+		return err
+	}
+
+	return 0
+}
+
+// checkPile 是 CheckDeck 主卡/额外/副卡三段共有检查的公共实现：可用性
+//（checkAvail）、类型约束（typeOK 为 false 时返回 countErrCode<<28）、同名卡
+//（含 Alias 归并）不超过 3 张与禁卡表数量限制。三段仅在"类型约束"与"计数错误码"
+// 上不同，由参数表达；返回的错误码与原逐段实现逐位一致（DECKERROR_*<<28 | code）。
+func checkPile(cards []*CardDataC, ccount map[uint32]int, lflist *LFList, avail uint32, typeOK func(*CardDataC) bool, countErrCode uint32) uint32 {
+	for _, card := range cards {
 		if err := checkAvail(uint32(card.Ot), avail); err != 0 {
 			return (err << 28) | uint32(card.Code)
 		}
-		if card.Type&ocgcore.TYPES_EXTRA_DECK == 0 || card.Type&ocgcore.TYPE_TOKEN != 0 {
-			return network.DECKERROR_EXTRACOUNT << 28
+		if !typeOK(card) {
+			return countErrCode << 28
 		}
-		code := card.Code
+		code := uint32(card.Code)
 		if card.Alias != 0 {
 			code = card.Alias
 		}
 		ccount[code]++
 		if ccount[code] > 3 {
-			return (network.DECKERROR_CARDCOUNT << 28) | card.Code
+			return (network.DECKERROR_CARDCOUNT << 28) | uint32(card.Code)
 		}
 		if limit, ok := lflist.Content[code]; ok && ccount[code] > limit {
-			return (network.DECKERROR_LFLIST << 28) | card.Code
+			return (network.DECKERROR_LFLIST << 28) | uint32(card.Code)
 		}
 	}
-
-	// 检查副卡组
-	for _, card := range deck.Side {
-		if err := checkAvail(uint32(card.Ot), avail); err != 0 {
-			return (err << 28) | uint32(card.Code)
-		}
-		if card.Type&ocgcore.TYPE_TOKEN != 0 {
-			return network.DECKERROR_SIDECOUNT << 28
-		}
-		code := card.Code
-		if card.Alias != 0 {
-			code = uint32(card.Alias)
-		}
-		ccount[code]++
-		if ccount[code] > 3 {
-			return (network.DECKERROR_CARDCOUNT << 28) | card.Code
-		}
-		if limit, ok := lflist.Content[uint32(code)]; ok && ccount[code] > limit {
-			return (network.DECKERROR_LFLIST << 28) | card.Code
-		}
-	}
-
 	return 0
 }
 

@@ -17,6 +17,9 @@ import (
 
 func initSingleEngine(t *testing.T) {
 	t.Helper()
+	// 单人解谜现在会录制录像到 ./replay（Prepare 时就 BeginRecord），测试后
+	// 清理掉，避免在仓库里留下 core/duel/replay/。与 replay_test.go 的做法一致。
+	t.Cleanup(func() { _ = os.RemoveAll("./replay") })
 	root, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
@@ -177,4 +180,102 @@ func encodeI(v int32) []byte {
 	buf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(buf, uint32(v))
 	return buf
+}
+
+// driveBlueEyesWin 用制胜走线把「青眼一击」驱动到 MSG_WIN（与
+// TestSingleSessionPlayPuzzle 的 handler 相同）：进战斗阶段 → 青眼攻击恶魔的
+// 召唤 → 无目标后进结束阶段 → MSG_CHAIN 一律不连锁。
+func driveBlueEyesWin(ss *SingleSession) (sawWin bool, err error) {
+	respCh := make(chan []byte, 4)
+	stopCh := make(chan struct{})
+	attacksLeft := 1
+	// 保险丝：响应流卡死时自动退出
+	go func() {
+		<-time.After(60 * time.Second)
+		close(stopCh)
+	}()
+	err = ss.Run(func(msg []byte) {
+		if len(msg) == 0 {
+			return
+		}
+		switch msg[0] {
+		case ocgcore.MSG_SELECT_IDLECMD:
+			respCh <- encodeI(6) // 进入战斗阶段
+		case ocgcore.MSG_SELECT_BATTLECMD:
+			if attacksLeft > 0 {
+				attacksLeft--
+				respCh <- encodeI(1) // 攻击列表第 0 个
+			} else {
+				respCh <- encodeI(3) // 进结束阶段
+			}
+		case ocgcore.MSG_SELECT_CHAIN:
+			respCh <- encodeI(-1) // 不连锁
+		case ocgcore.MSG_SELECT_CARD:
+			respCh <- []byte{1, 0} // 攻击目标：count=1 + 序号 0
+		case ocgcore.MSG_WIN:
+			sawWin = true
+		}
+	}, respCh, stopCh)
+	return sawWin, err
+}
+
+// 单机录像落盘回读（原版 single_mode.cpp:114-162 的 last_replay 录制链）：
+// 走完胜利后断言 SaveReplay 的 .yrp 能被 OpenReplay 原样读回 —— 头标带
+// REPLAY_UNIFORM|REPLAY_SINGLE_MODE，昵称/空 client 名/8000·5·1 参数/脚本文件名
+// 都正确，响应流能被 ReadNextResponse 从数据区起点反读。
+func TestSingleSessionRecordRoundtrip(t *testing.T) {
+	initSingleEngine(t)
+
+	ss := NewSingleSession(newRandomSeed())
+	ss.HostName = "ReplayTester"
+	if err := ss.Prepare("青眼一击.lua"); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+
+	sawWin, err := driveBlueEyesWin(ss)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !sawWin || !ss.Completed {
+		t.Fatalf("duel did not complete (win=%v)", sawWin)
+	}
+
+	if !ss.SaveReplay("single_replay_roundtrip") {
+		t.Fatal("SaveReplay failed")
+	}
+
+	r2 := NewReplay()
+	if !r2.OpenReplay("single_replay_roundtrip.yrp") {
+		t.Fatal("OpenReplay failed to read back single replay")
+	}
+	hdr := r2.ReadHeader()
+	if hdr.Base.Flag&REPLAY_SINGLE_MODE == 0 || hdr.Base.Flag&REPLAY_UNIFORM == 0 {
+		t.Fatalf("header flag = 0x%x, want REPLAY_SINGLE_MODE|REPLAY_UNIFORM", hdr.Base.Flag)
+	}
+	if len(r2.players) != 2 {
+		t.Fatalf("players = %d, want 2", len(r2.players))
+	}
+	if r2.players[0] != "ReplayTester" {
+		t.Fatalf("host name = %q, want ReplayTester", r2.players[0])
+	}
+	if r2.players[1] != "" {
+		t.Fatalf("client name = %q, want empty", r2.players[1])
+	}
+	if r2.scriptName != "青眼一击.lua" {
+		t.Fatalf("script name = %q, want 青眼一击.lua", r2.scriptName)
+	}
+	if r2.params.StartLP != 8000 || r2.params.StartHand != 5 || r2.params.DrawCount != 1 {
+		t.Fatalf("params = LP%d/Hand%d/Draw%d, want 8000/5/1", r2.params.StartLP, r2.params.StartHand, r2.params.DrawCount)
+	}
+
+	// 响应流：SkipInfo 定位到信息区之后，第一段是 uint8 长度 + 4 字节 LE 的
+	// encodeI(6)（进入战斗阶段）。
+	r2.SkipInfo()
+	var resp [8]byte
+	if !r2.ReadNextResponse(resp[:]) {
+		t.Fatal("ReadNextResponse failed at response stream start")
+	}
+	if resp[0] != 6 || resp[1] != 0 || resp[2] != 0 || resp[3] != 0 {
+		t.Fatalf("first response = %v, want [6 0 0 0]", resp[:4])
+	}
 }

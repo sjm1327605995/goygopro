@@ -2,6 +2,7 @@ package duel
 
 import (
 	"encoding/binary"
+	"log"
 
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/ocgcore"
@@ -39,8 +40,22 @@ func runAnalyze(m duelRoom, table map[uint8]analyzeHandler, msgBuffer []byte) in
 			// 与原版 switch 无匹配 case 一致：仅消费类型字节后继续。
 			continue
 		}
+		// 解析越界（截断/损坏的引擎消息批次）：handler 内被吞掉的读取失败
+		// 会留在这里被一次性拦下——记日志（消息类型、越界偏移、批次长度）
+		// 并终止本局（EndDuel 收尾回放/引擎，返回 2 走既有 DuelEndProc 通道），
+		// 避免基于错位缓冲区继续广播损坏数据。
+		if pbuf.Overflowed() {
+			log.Printf("[duel] analyze: corrupt engine message 0x%02x (offset %d, batch %d bytes): buffer overflow, duel aborted", engType, pbuf.Offset(), len(msgBuffer))
+			m.EndDuel()
+			return 2
+		}
 		if r := h(m, engType, pbuf, offset); r != 0 {
 			return r
+		}
+		if pbuf.Overflowed() {
+			log.Printf("[duel] analyze: corrupt engine message 0x%02x (offset %d, batch %d bytes): buffer overflow, duel aborted", engType, pbuf.Offset(), len(msgBuffer))
+			m.EndDuel()
+			return 2
 		}
 	}
 	return 0

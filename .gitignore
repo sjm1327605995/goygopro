@@ -27,3 +27,10 @@ frontend/smoke-dist/
 .DS_Store
 Thumbs.db
 core/duel/replay/
+
+# 卡图 CDN 缓存（GetCardImage 下载到本地 pics/）
+pics/
+
+# 运行时/调试产物
+replay/
+tmp_dbg/
