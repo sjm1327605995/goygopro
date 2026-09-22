@@ -84,21 +84,36 @@ export default function PhaseStrip() {
       >{folded ? '«' : '»'}</button>
       {!folded && (
         <div className="phase-buttons">
+          {/* 原版 wPhase 六个阶段位（game.cpp:343-353）：DP/SP/M1 为当前
+              阶段指示（btnPhaseStatus 显示当前阶段缩写，不可点），
+              BP/M2/EP 为可点的跳阶段按钮 */}
+          <span
+            id="phase-dp"
+            className={`phase-btn phase-display${phase & PHASE_DRAW ? ' current' : ''}`}
+          >ＤＰ</span>
+          <span
+            id="phase-sp"
+            className={`phase-btn phase-display${phase & PHASE_STANDBY ? ' current' : ''}`}
+          >ＳＰ</span>
+          <span
+            id="phase-m1"
+            className={`phase-btn phase-display${phase & PHASE_MAIN1 ? ' current' : ''}`}
+          >Ｍ１</span>
           <button
             id="phase-btn-bp"
-            className={`phase-btn${canBP ? ' actionable' : ''}`}
+            className={`phase-btn${(phase & PHASE_BATTLE) ? ' current-phase' : ''}${canBP ? ' actionable' : ''}`}
             disabled={!canBP}
             onClick={onBP}
           >ＢＰ</button>
           <button
             id="phase-btn-m2"
-            className={`phase-btn${canM2 ? ' actionable' : ''}`}
+            className={`phase-btn${(phase & PHASE_MAIN2) ? ' current-phase' : ''}${canM2 ? ' actionable' : ''}`}
             disabled={!canM2}
             onClick={onM2}
           >Ｍ２</button>
           <button
             id="phase-btn-ep"
-            className={`phase-btn${canEP ? ' actionable' : ''}`}
+            className={`phase-btn${(phase & PHASE_END) ? ' current-phase' : ''}${canEP ? ' actionable' : ''}`}
             disabled={!canEP}
             onClick={onEP}
           >ＥＰ</button>

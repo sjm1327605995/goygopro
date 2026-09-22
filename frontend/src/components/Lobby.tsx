@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { WailsBridge, eventBus } from '../wails_bridge.ts';
 import { settingsStore } from '../domain/settings.ts';
+import GfwSelect from './ui/GfwSelect.tsx';
 
 interface LobbyProps {
   onNavigate: (screen: string) => void;
@@ -519,8 +520,8 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
 
   // 建房窗行布局（docs 原型 host-row：label 90px 右对齐 + 控件）
   const row = (label: string, control: React.ReactNode) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minHeight: '22px' }}>
-      <span className="gfw-label" style={{ width: '90px', textAlign: 'right', flexShrink: 0 }}>{label}</span>
+    <div className="flex min-h-[22px] items-center gap-1.5">
+      <span className="gfw-label w-[90px] shrink-0 text-right">{label}</span>
       {control}
     </div>
   );
@@ -641,37 +642,35 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
         <div className="gfw-title">建立主机</div>
         <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '5px', flex: 1, boxSizing: 'border-box' }}>
           {row('禁限卡表：', (
-            <select
+            <GfwSelect
               id="lobby-lflist-select"
-              className="gfw-select form-select"
-              style={{ flex: 1 }}
-              value={lfLists.some((l) => l.hash === lflist) ? lflist : (lfLists[0]?.hash ?? 0)}
-              onChange={(e) => setLflist(Number(e.target.value))}
-            >
-              {lfLists.map((l) => <option key={l.hash} value={l.hash}>{l.name}</option>)}
-            </select>
+              flex={1}
+              // Radix 受控值必须落在 options 内：空表时给 'N/A' 占位项
+              //（对应原生下拉的 lfLists[0]?.hash ?? 0 语义）
+              value={String(lfLists.some((l) => l.hash === lflist) ? lflist : (lfLists[0]?.hash ?? 0))}
+              onValueChange={(v) => setLflist(Number(v))}
+              options={lfLists.length
+                ? lfLists.map((l) => ({ value: String(l.hash), label: l.name }))
+                : [{ value: '0', label: 'N/A' }]}
+            />
           ))}
           {row('卡片允许：', (
-            <select
+            <GfwSelect
               id="lobby-rule-select"
-              className="gfw-select form-select"
-              style={{ flex: 1 }}
-              value={cardRule}
-              onChange={(e) => setCardRule(parseInt(e.target.value, 10))}
-            >
-              {CARD_RULES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
+              flex={1}
+              value={String(cardRule)}
+              onValueChange={(v) => setCardRule(parseInt(v, 10))}
+              options={CARD_RULES.map((r) => ({ value: String(r.value), label: r.label }))}
+            />
           ))}
           {row('决斗模式：', (
-            <select
+            <GfwSelect
               id="lobby-duel-mode-select"
-              className="gfw-select form-select"
-              style={{ flex: 1 }}
-              value={duelMode}
-              onChange={(e) => setDuelMode(parseInt(e.target.value, 10))}
-            >
-              {DUEL_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-            </select>
+              flex={1}
+              value={String(duelMode)}
+              onValueChange={(v) => setDuelMode(parseInt(v, 10))}
+              options={DUEL_MODES.map((m) => ({ value: String(m.value), label: m.label }))}
+            />
           ))}
           {row('每回合时间：', (
             <input
@@ -686,15 +685,13 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
           {/* 额外选项提示（docs 原型：灰色小字） */}
           <div style={{ fontSize: '11px', color: '#666', padding: '2px 0 2px 96px' }}>↓额外选项（无特殊要求请勿修改）</div>
           {row('规则：', (
-            <select
+            <GfwSelect
               id="lobby-duel-rule-select"
-              className="gfw-select form-select"
-              style={{ flex: 1 }}
-              value={duelRule}
-              onChange={(e) => setDuelRule(parseInt(e.target.value, 10))}
-            >
-              {DUEL_RULES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
+              flex={1}
+              value={String(duelRule)}
+              onValueChange={(v) => setDuelRule(parseInt(v, 10))}
+              options={DUEL_RULES.map((r) => ({ value: String(r.value), label: r.label }))}
+            />
           ))}
           <div style={{ display: 'flex', gap: '20px', paddingLeft: '96px', minHeight: '20px', alignItems: 'center' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px' }}>
@@ -794,32 +791,28 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
           </div>
           {/* 卡组选择：分类 + 具体卡组 两下拉（观战者无卡组操作） */}
           {!isObserver ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-              <span className="gfw-label" style={{ width: '60px', flexShrink: 0 }}>卡组选择：</span>
-              <select
+            <div className="mt-1 flex items-center gap-1.5">
+              <span className="gfw-label w-[60px] shrink-0">卡组选择：</span>
+              <GfwSelect
                 id="lobby-deck-category"
-                className="gfw-select form-select"
-                value={deckCategory}
-                onChange={(e) => onCategoryChange(e.target.value)}
-              >
-                {deckCategories.map((c) => <option key={c || '__root__'} value={c}>{c || '未分类卡组'}</option>)}
-              </select>
-              <select
+                // Radix Item 不允许空串 value：根分类 '' 用哨兵 '__root__' 表示
+                value={deckCategory || '__root__'}
+                onValueChange={(v) => onCategoryChange(v === '__root__' ? '' : v)}
+                options={deckCategories.map((c) => ({ value: c || '__root__', label: c || '未分类卡组' }))}
+              />
+              <GfwSelect
                 id="lobby-deck-select"
-                className="gfw-select form-select"
-                style={{ flex: 1 }}
+                flex={1}
                 value={pickedDeck}
-                onChange={(e) => {
-                  setPickedDeck(e.target.value);
-                  settingsStore.set('lastdeck', e.target.value);
+                onValueChange={(v) => {
+                  setPickedDeck(v);
+                  settingsStore.set('lastdeck', v);
                 }}
-              >
-                {decksInCategory.map((d) => (
-                  <option key={d} value={d}>
-                    {deckCategory && d.startsWith(deckCategory + '/') ? d.slice(deckCategory.length + 1) : d}
-                  </option>
-                ))}
-              </select>
+                options={decksInCategory.map((d) => ({
+                  value: d,
+                  label: deckCategory && d.startsWith(deckCategory + '/') ? d.slice(deckCategory.length + 1) : d,
+                }))}
+              />
             </div>
           ) : null}
           {/* 底部按钮：开始 + 退出 居中（border-top 分隔） */}

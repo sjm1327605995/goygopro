@@ -67,6 +67,24 @@ const waitFor = (predicate, timeoutMs = 5000) => new Promise((resolve, reject) =
 
 const $ = (id) => document.getElementById(id);
 
+// Radix Select（GfwSelect）驱动：trigger 靠 pointerdown 打开；
+// 这里只需要数 option（确认换副卡组下拉已填充）
+const openSelect = async (id) => {
+  const t = $(id);
+  t.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: 'mouse' }));
+  t.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+  t.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }));
+  t.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+  await waitFor(() => !!document.querySelector('[role="option"]'));
+};
+const optionCount = async (id) => {
+  await openSelect(id);
+  const n = document.querySelectorAll('[role="option"]').length;
+  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  await new Promise((r) => setTimeout(r, 100));
+  return n;
+};
+
 window.__widgetsSmoke = { checks: {}, ready: false };
 
 const run = async () => {
@@ -252,8 +270,7 @@ const run = async () => {
   eventBus.emit('stoc:change_side', {});
   await waitFor(() => $('side-deck-select'));
   assert('sideDeckingShown', !!$('side-deck-select')
-    && $('side-deck-select').options.length > 0,
-    `options=${$('side-deck-select') ? $('side-deck-select').options.length : 'none'}`);
+    && (await optionCount('side-deck-select')) > 0);
   $('side-deck-confirm').click();
   await waitFor(() => deckSends.length === 1);
   assert('sideDeckUpdateMerged', deckSends[0].main.length === 20 && deckSends[0].side.length === 2,

@@ -244,6 +244,10 @@ export class DuelManager {
     sub('duel:select_idlecmd', (data) => {
       this.idleCmd = data;
       this.battleCmd = null;
+      // 原版 act.png 可发动角标（drawing.cpp:483-522）：idle 询问期间
+      // 标出墓地/除外/额外/场上所有可发动点；进入战阶询问后清除
+      this.field3D.clearAttackable();
+      this.field3D.setActivatable(data.activate || []);
     });
 
     sub('duel:select_battlecmd', (data) => {
@@ -251,6 +255,21 @@ export class DuelManager {
       // The engine awaits a battle-command answer now; a stale idle command
       // would let the hand popup send idle-phase responses mid-battle.
       this.idleCmd = null;
+      // 原版战阶询问：可攻击怪兽头顶剑标记 + 速攻等可发动角标
+      this.field3D.setActivatable(data.activate || []);
+      this.field3D.setAttackable(data.attack || []);
+    });
+
+    // 连锁询问期间原版同样显示 act.png 角标（可连锁的卡）
+    sub('duel:select_chain', (data) => {
+      const chains = (data && data.chains) || [];
+      this.field3D.setActivatable(chains.map((c: any) => ({ c: c.c, l: c.l, s: c.s })));
+    });
+
+    // 新阶段/指令结束：两类角标都清除
+    sub('duel:new_phase', () => {
+      this.field3D.clearAttackable();
+      this.field3D.clearActivatable();
     });
 
     // MSG_SELECT_PLACE：无 UI 的自动落点（gframe 自动选择语义：优先空区）。

@@ -25,6 +25,7 @@ export default defineConfig({
   plugins: [copyTextures()],
   base: './',
   build: {
+    target: 'es2022', // 顶层 await（wails runtime 动态 import）
     outDir: 'smoke-dist',
     emptyOutDir: true,
     rollupOptions: {

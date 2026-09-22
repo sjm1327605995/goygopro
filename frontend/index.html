@@ -4,6 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GoYGOPro - 3D 决斗客户端</title>
+  <!-- Wails v3 运行时：ES module（bundled runtime.js 以 export 结尾，经典
+       脚本会 SyntaxError 静默失败！）。内联 module 里的静态 import 会在
+       main.tsx 之前完成执行。缺失时前端静默落入 Mock 桥——表现为联机互不
+       可见、卡图拉取被 CORS 挡（调不到 Go 的 GetCardImage）。 -->
+  <script type="module">import "/wails/runtime.js";</script>
 </head>
 <body>
   <div id="root"></div>

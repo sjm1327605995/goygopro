@@ -115,7 +115,10 @@ export const DUEL_EVENTS = [
 ];
 
 /** 单人模式会话事件（single_mode.go StartSingle 的 goroutine emit） */
-export const SINGLE_EVENTS = ['single:ended'];
+export const SINGLE_EVENTS = ['single:ended', 'single:replay'];
+
+/** 故事决斗会话事件（story_duel.go storyDrive 的 goroutine emit） */
+export const STORY_EVENTS = ['story:ended'];
 
 /** 桥层应转发的全部事件 */
-export const FORWARDED_EVENTS = [...STOC_EVENTS, ...DUEL_EVENTS, ...SINGLE_EVENTS];
+export const FORWARDED_EVENTS = [...STOC_EVENTS, ...DUEL_EVENTS, ...SINGLE_EVENTS, ...STORY_EVENTS];

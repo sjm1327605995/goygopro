@@ -21,25 +21,25 @@ const FAKE_PIC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAAC
 WailsBridge.getCardImage = async (code) => ({ url: FAKE_PIC, full: false });
 // 卡信息按 code 给固定值：排序冒烟依赖 type/attack，计数归并依赖无 alias
 const CARD_INFO = {
-  89631139: { name: 'Blue-Eyes', type: 0x11, attack: 3000, defense: 2500 },
-  46986414: { name: 'Dark Magician', type: 0x11, attack: 2500, defense: 2100 },
-  38033121: { name: 'Ancient Gear', type: 0x11, attack: 1800, defense: 500 },
-  84013237: { name: 'Fusion Monster', type: 0x41, attack: 0, defense: 0 },
+  89631139: { name: 'Blue-Eyes', type: 0x11, attack: 3000, defense: 2500, level: 8, race: 0x200, attribute: 0x10 },
+  46986414: { name: 'Dark Magician', type: 0x11, attack: 2500, defense: 2100, level: 7, race: 0x200, attribute: 0x20 },
+  38033121: { name: 'Ancient Gear', type: 0x11, attack: 1800, defense: 500, level: 5, race: 0x200, attribute: 0x20 },
+  84013237: { name: 'Fusion Monster', type: 0x41, attack: 0, defense: 0, level: 8, race: 0x200, attribute: 0x20 },
   5318639: { name: 'Trap Card', type: 0x4, attack: 0, defense: 0 },
 };
 WailsBridge.getCard = async (code) => {
   // 与真实现一致：结果写入 _cardCache（排序按钮从缓存读 type/attack）
   const info = CARD_INFO[code]
     ? { code, desc: 'test', ...CARD_INFO[code] }
-    : { code, name: 'Card ' + code, type: 0x11, attack: 1000, defense: 500, desc: 'test' };
+    : { code, name: 'Card ' + code, type: 0x11, attack: 1000, defense: 500, level: 4, race: 0x1, attribute: 0x1, desc: 'test' };
   WailsBridge._cardCache.set(code, info);
   return info;
 };
 // 故意乱序：陷阱排最前、高攻怪兽在最后 —— 验证排序（怪兽按攻↓，魔法/陷阱殿后）
 const SEARCH_RESULTS = [
   { code: 44095762, name: 'Mirror Force', type: 0x4, attack: 0, defense: 0, desc: '' },
-  { code: 46986414, name: 'Dark Magician', type: 0x11, attack: 2500, defense: 2100, desc: '' },
-  { code: 89631139, name: 'Blue-Eyes', type: 0x11, attack: 3000, defense: 2500, desc: '' },
+  { code: 46986414, name: 'Dark Magician', type: 0x11, attack: 2500, defense: 2100, level: 7, race: 0x200, attribute: 0x20, desc: '' },
+  { code: 89631139, name: 'Blue-Eyes', type: 0x11, attack: 3000, defense: 2500, level: 8, race: 0x200, attribute: 0x10, desc: '' },
 ];
 // 18 张互异陷阱卡，供副卡组 15 上限测试用（同名 3 张限制不干扰互异卡）
 const ALL_TRAPS = Array.from({ length: 18 }, (_, i) => ({
@@ -80,9 +80,47 @@ const waitFor = (predicate, timeoutMs = 5000) => new Promise((resolve, reject) =
 
 // React 受控输入必须走原生 value setter 再派发事件
 const setInputValue = (el, value) => {
-  const proto = el.tagName === 'SELECT' ? window.HTMLSelectElement.prototype : window.HTMLInputElement.prototype;
-  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
-  el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+  Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(el, value);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+};
+
+// ---- Radix Select（GfwSelect）驱动助手：trigger 靠 pointerdown 打开 ----
+const openSelect = async (id) => {
+  const t = document.getElementById(id);
+  t.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: 'mouse' }));
+  t.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+  t.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }));
+  t.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+  await waitFor(() => !!document.querySelector('[role="option"]'));
+};
+const closeSelect = async () => {
+  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  await tryWaitFor(() => !document.querySelector('[role="option"]'));
+};
+// 打开下拉读出全部 option（GfwSelect 给每个 Item 输出 data-value），再 Escape 关闭
+const readOptions = async (id) => {
+  await openSelect(id);
+  const opts = [...document.querySelectorAll('[role="option"]')]
+    .map((o) => ({ value: o.getAttribute('data-value'), label: o.textContent.trim() }));
+  await closeSelect();
+  return opts;
+};
+const optionCount = async (id) => (await readOptions(id)).length;
+// 打开下拉并按 data-value 点选（Radix Item 在 pointerup 上提交选中）
+const selectOption = async (id, value) => {
+  await openSelect(id);
+  const opt = document.querySelector(`[role="option"][data-value="${CSS.escape(value)}"]`);
+  if (!opt) throw new Error(`option not found: ${id}=${value}`);
+  opt.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: 'mouse' }));
+  opt.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }));
+  opt.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+  await waitFor(() => !document.querySelector('[role="option"]'));
+};
+// 软等待：到时返回 predicate 当前值而不是抛错（用于判定式断言）
+const tryWaitFor = async (predicate, ms = 1500) => {
+  const started = Date.now();
+  while (!predicate() && Date.now() - started < ms) await new Promise((r) => setTimeout(r, 25));
+  return predicate();
 };
 
 const mainGrid = () => document.querySelectorAll('.deck-grid')[0];
@@ -104,12 +142,12 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     const raceSel = document.getElementById('deck-filter-race');
     const attrSel = document.getElementById('deck-filter-attr');
     record('filter-controls-exist', !!raceSel && !!attrSel);
-    record('race-options-populated', raceSel.options.length > 20);
-    record('attr-options-populated', attrSel.options.length >= 7);
+    record('race-options-populated', (await optionCount('deck-filter-race')) > 20);
+    record('attr-options-populated', (await optionCount('deck-filter-attr')) >= 7);
 
     // 搜索 → 过滤字段透传（race 走到 CardFilter）
     setInputValue(document.getElementById('deck-search-input'), 'dragon');
-    setInputValue(raceSel, '512'); // 0x200 龙
+    await selectOption('deck-filter-race', '512'); // 0x200 龙
     const searchBtn = [...document.querySelectorAll('.deck-search-panel .btn')].find((b) => b.textContent.includes('搜索'));
     searchBtn.click();
     await waitFor(() => document.querySelectorAll('.search-results-grid .deck-card-chip').length > 0);
@@ -156,7 +194,7 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     record('zoom-overlay-closes', true);
 
     // 同名 3 张上限（check_limit）+ 副卡组 15 上限（用互异卡区分两条规则）
-    setInputValue(document.getElementById('deck-add-target'), 'side');
+    await selectOption('deck-add-target', 'side');
     const sideStart = sideGrid().querySelectorAll('.deck-card-chip').length;
     await clickN(results[2], 4); // Mirror Force（陷阱）点 4 次：前 3 进、第 4 被 check_limit 拦下
     await waitFor(() => alertMsgs.some((m) => m.includes('3 张上限')));
@@ -177,7 +215,8 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     // 清空条件按钮：重置全部过滤控件
     const clearBtn = document.getElementById('deck-filter-clear');
     clearBtn.click();
-    await waitFor(() => document.getElementById('deck-search-input').value === '' && raceSel.value === '0');
+    await waitFor(() => document.getElementById('deck-search-input').value === ''
+      && document.getElementById('deck-filter-race').textContent.includes('（无）'));
     record('clear-filters', true);
 
     // 删除卡组：走 confirm → DeleteDeck → 列表刷新。
@@ -195,18 +234,27 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     // ---- 波 G：卡组分类（gframe cbDBCategory：未分类 + ./deck/ 子目录） ----
     const catSel = document.getElementById('deck-category-select');
     const deckSel = document.getElementById('deck-select');
+    // 分类下拉的可见项：未分类（Radix 空串 value 用 '__root__' 哨兵）+ Tournament
+    const catOptions = await readOptions('deck-category-select');
     record('category-select-exists', !!catSel && !!deckSel
-      && [...catSel.options].map((o) => o.value).join(',') === ',Tournament');
+      && catOptions.map((o) => o.label).join(',') === '未分类卡组,Tournament'
+      && catOptions.map((o) => o.value).join(',') === '__root__,Tournament');
     // 默认未分类：卡组下拉只列根目录的 Alpha/Beta，分类卡组被过滤掉
-    record('default-category-filters', [...deckSel.options].every((o) => !o.value.includes('/')));
+    const rootDeckOptions = await readOptions('deck-select');
+    record('default-category-filters', rootDeckOptions.every((o) => !o.value.includes('/')));
 
     // 切到 Tournament 分类 → 卡组下拉只显示 TestDeck（值为完整相对名）
-    setInputValue(catSel, 'Tournament');
-    await waitFor(() => deckSel.options.length === 1 && deckSel.options[0].value === 'Tournament/TestDeck');
-    record('category-switch-filters', deckSel.options[0].textContent === 'TestDeck');
+    await selectOption('deck-category-select', 'Tournament');
+    // React 重渲染有中间态，轮询到只剩 1 项为止
+    let tourneyOptions = [];
+    for (let i = 0; i < 40 && tourneyOptions.length !== 1; i++) {
+      tourneyOptions = await readOptions('deck-select');
+    }
+    record('category-switch-filters', tourneyOptions.length === 1
+      && tourneyOptions[0].value === 'Tournament/TestDeck' && tourneyOptions[0].label === 'TestDeck');
 
     // 加载分类卡组 → deckName 显示文件名（Go LoadDeck Name=basename）
-    setInputValue(deckSel, 'Tournament/TestDeck');
+    await selectOption('deck-select', 'Tournament/TestDeck');
     await waitFor(() => [...document.querySelectorAll('.deck-header input')].some((i) => i.value === 'TestDeck'));
     record('category-load-basename', true);
 

@@ -102,6 +102,18 @@ const nextEvent = (type, timeoutMs = 5000) => new Promise((resolve, reject) => {
   eventBus.on(type, listener);
 });
 
+// 日志收在左侧预览面板的「消息记录」页签（右侧 LogDrawer 已删，同原版 wInfos）：
+// Radix Tabs 触发用 mousedown 激活，需先点开页签内容才挂载。
+const openLogTab = async () => {
+  const btn = [...document.querySelectorAll('.preview-tab')]
+    .find((b) => b.textContent.includes('消息记录'));
+  if (btn) {
+    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  }
+  await waitFor(() => document.getElementById('duel-log-list'), 'log tab content');
+};
 const logText = () => document.getElementById('duel-log-list').innerText;
 const popup = () => document.getElementById('action-popup');
 const state = () => duelStore.getState();
@@ -113,8 +125,8 @@ window.__practiceSmoke = { field, manager, aiSimulator, store: duelStore, transc
   // the widgets to exist before driving them.
   await waitFor(() => document.getElementById('modal-overlay')
     && document.getElementById('hand-cards-dock')
-    && document.getElementById('action-popup')
-    && document.getElementById('duel-log-list'));
+    && document.getElementById('action-popup'));
+  await openLogTab();
 
   // ---- P4: chain-prefs 'ignore' auto-declines a non-forced select_chain
   // without showing any popup (gframe duelclient.cpp:1776 local semantics —

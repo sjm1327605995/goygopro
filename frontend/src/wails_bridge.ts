@@ -167,21 +167,33 @@ class EventBus {
 
 export const eventBus = new EventBus();
 
-// Check if Wails v3 runtime is injected (window._wails)
-const wailsRuntime = typeof window !== 'undefined' && window._wails ? window._wails : null;
-const isWails = !!(wailsRuntime && wailsRuntime.Call && wailsRuntime.Call.ByName);
+// Wails v3 运行时：生产环境由 /wails/runtime.js 提供（index.html 静态 import
+// 先行加载）；浏览器/冒烟环境没有该模块 → 落入 Mock 桥。注意 Call/Events 是
+// runtime 的 ESM 导出，不在 window._wails 上（后者只有 invoke/dispatchWailsEvent
+// 等内部钩子）——早期实现读 window._wails.Call 恒为 undefined，导致真客户端
+// 一直跑在 Mock 桥：联机双端互不可见、卡图走浏览器 fetch 被 CORS 挡。
+let wailsCall: any = null;
+let wailsEvents: any = null;
+try {
+  // 变量 specifier：TS 不做模块解析，vite 不打包（@vite-ignore），运行时由
+  // Wails 资产服务器提供；浏览器/冒烟环境 404 → catch → Mock 桥
+  const RUNTIME_URL = '/wails/runtime.js';
+  const runtime: any = await import(/* @vite-ignore */ RUNTIME_URL);
+  wailsCall = runtime && runtime.Call ? runtime.Call : null;
+  wailsEvents = runtime && runtime.Events ? runtime.Events : null;
+} catch { /* 非 Wails 环境（浏览器/冒烟） */ }
+export const isWails = !!(wailsCall && wailsCall.ByName);
 
 // Call a bound Go service method (v3 uses fully-qualified names "App.Method")
 function callWails(method: string, ...args: any[]) {
-  return wailsRuntime!.Call!.ByName("App." + method, ...args);
+  return wailsCall.ByName("App." + method, ...args);
 }
 
-const wailsEvents = wailsRuntime && wailsRuntime.Events ? wailsRuntime.Events : null;
 if (wailsEvents && wailsEvents.On) {
   // Bridge Wails events to internal eventBus. 名字唯一来源见
   // net/events_forward.ts（与 Go emit 点有名字对齐测试）。
   FORWARDED_EVENTS.forEach(name => {
-    wailsEvents.On(name, (ev) => eventBus.emit(name, ev && ev.data !== undefined ? ev.data : ev));
+    wailsEvents.On(name, (ev: any) => eventBus.emit(name, ev && ev.data !== undefined ? ev.data : ev));
   });
 }
 
@@ -617,6 +629,15 @@ export const WailsBridge = {
       return await callWails("SaveLastReplay", name);
     }
     return { success: true, name: (name || "_LastReplay") + ".yrp" };
+  },
+
+  // 落盘最近一次完结的单机谜题录像（ReplaySavePrompt 确认后调用，
+  // 对应 Go SaveSingleReplay；无进行中/已完结录像时返回 error）。
+  async saveSingleReplay(name: string): Promise<{ success: boolean; name?: string; error?: string }> {
+    if (isWails) {
+      return await callWails("SaveSingleReplay", name);
+    }
+    return { success: true, name: (name || "_SingleReplay") + ".yrp" };
   },
 
   async deleteReplay(name: string) {

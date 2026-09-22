@@ -3,6 +3,7 @@ import DuelStage from './DuelStage.tsx';
 import type { StageHandle } from './DuelStage.tsx';
 import { WailsBridge, eventBus } from '../wails_bridge.ts';
 import { duelStore } from '../duel/store.ts';
+import GfwSelect from './ui/GfwSelect.tsx';
 
 /**
  * Replay Theater: lists recorded .yrp duels, asks the Go backend to replay one
@@ -355,12 +356,16 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
                 {isPlaying ? '⏸ 暂停' : '▶ 播放'}
               </button>
               <button className="gfw-btn btn" style={{ width: '48px' }} onClick={stepForward} disabled={!stageReady || currentStep >= events.length}>⏭</button>
-              <select className="gfw-select form-select" style={{ width: '90px' }} value={speed} onChange={(e) => changeSpeed(parseFloat(e.target.value))}>
-                <option value="0.5">0.5x</option>
-                <option value="1">1.0x</option>
-                <option value="2">2.0x</option>
-                <option value="4">4.0x</option>
-              </select>
+              <GfwSelect
+                aria-label="回放速度"
+                width={90}
+                value={String(speed)}
+                onValueChange={(v) => changeSpeed(parseFloat(v))}
+                options={[
+                  { value: '0.5', label: '0.5x' }, { value: '1', label: '1.0x' },
+                  { value: '2', label: '2.0x' }, { value: '4', label: '4.0x' },
+                ]}
+              />
             </div>
           </div>
         </div>

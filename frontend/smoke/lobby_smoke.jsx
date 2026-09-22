@@ -41,10 +41,36 @@ const waitFor = (predicate, timeoutMs = 5000) => new Promise((resolve, reject) =
   };
   tick();
 });
-const fireChange = (el, value) => {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
-  setter.call(el, value);
-  el.dispatchEvent(new Event('change', { bubbles: true }));
+// Radix Select 下拉由 trigger 的 pointerdown 打开（element.click() 只发 click，
+// 不会打开弹层），这里合成完整指针/鼠标事件序列驱动。
+const openSelect = async (id) => {
+  const t = $(id);
+  t.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: 'mouse' }));
+  t.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+  t.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }));
+  t.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+  await waitFor(() => !!document.querySelector('[role="option"]'));
+};
+const closeSelect = async () => {
+  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  await tryWaitFor(() => !document.querySelector('[role="option"]'));
+};
+// 打开下拉数 option 个数再 Escape 关闭（Radix option 渲染在 body 的 portal 里）
+const optionCount = async (id) => {
+  await openSelect(id);
+  const n = document.querySelectorAll('[role="option"]').length;
+  await closeSelect();
+  return n;
+};
+// 打开下拉并按可见文本点选（Radix Item 在 pointerup 上提交选中）
+const selectOption = async (id, label) => {
+  await openSelect(id);
+  const opt = [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent.trim() === label);
+  if (!opt) throw new Error(`option not found: ${id}=${label}`);
+  opt.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: 'mouse' }));
+  opt.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }));
+  opt.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+  await waitFor(() => !document.querySelector('[role="option"]'));
 };
 const setInputVal = (el, value) => {
   Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(el, value);
@@ -76,8 +102,8 @@ try {
   record('create-room-passes-name-pass', createGameReqs[0].roomName === 'Championship Match' && createGameReqs[0].pass === '');
 
   // --- 换规则/模式后再次建房：下拉驱动 hostInfo ---
-  fireChange($('lobby-duel-rule-select'), '4');
-  fireChange($('lobby-duel-mode-select'), '1');
+  await selectOption('lobby-duel-rule-select', '新大师规则（2017）');
+  await selectOption('lobby-duel-mode-select', '比赛模式');
   createBtn.click();
   await waitFor(() => createGameReqs.length === 2);
   record('dropdown-drives-duelrule-4', createGameReqs[1].req.duelRule === 4);
@@ -89,11 +115,12 @@ try {
     && !!$('lobby-startlp') && !!$('lobby-starthand') && !!$('lobby-drawcount') && !!$('lobby-timelimit')
     && !!$('lobby-nocheck') && !!$('lobby-noshuffle'));
   // LFList 下拉由挂载后异步 listLFLists 填充
-  await waitFor(() => $('lobby-lflist-select').options.length === 2);
-  record('lflist-options-from-bridge', true);
+  let lfCount = 0;
+  for (let i = 0; i < 40 && lfCount !== 2; i++) lfCount = await optionCount('lobby-lflist-select');
+  record('lflist-options-from-bridge', lfCount === 2);
   // 改满参数再建房：全量透传到 HostInfoReq
-  fireChange($('lobby-lflist-select'), String(0x7dfcee6a));
-  fireChange($('lobby-rule-select'), '1');
+  await selectOption('lobby-lflist-select', 'Test List');
+  await selectOption('lobby-rule-select', 'ＴＣＧ');
   setInputVal($('lobby-startlp'), '16000');
   setInputVal($('lobby-starthand'), '6');
   setInputVal($('lobby-drawcount'), '2');
@@ -128,15 +155,15 @@ try {
   WailsBridge.startLocalServer = async () => ({ success: true, port: 7911 });
   const startSrvBtn = [...document.querySelectorAll('#server-connect-panel .btn')].find((b) => b.textContent.includes('启动服务器'));
   startSrvBtn.click();
-  await waitFor(() => !!$('lobby-deck-select') && $('lobby-deck-select').options.length > 0);
   // docs 原型两下拉：卡组分类 + 分类内卡组（mock 卡组 "Meta/Cyber Dragon OTK" 归 Meta 分类，
   // 未分类下 2 个）
-  record('deck-select-populated', $('lobby-deck-select').options.length === 2
-    && $('lobby-deck-category') && $('lobby-deck-category').options.length === 2);
-  fireChange($('lobby-deck-category'), 'Meta');
-  await waitFor(() => $('lobby-deck-select').options.length === 1
-    && $('lobby-deck-select').textContent.includes('Cyber Dragon OTK'));
-  record('deck-category-filters', true);
+  let deckCount = 0;
+  for (let i = 0; i < 40 && deckCount === 0; i++) deckCount = await optionCount('lobby-deck-select');
+  const catCount = await optionCount('lobby-deck-category');
+  record('deck-select-populated', deckCount === 2 && catCount === 2);
+  await selectOption('lobby-deck-category', 'Meta');
+  await waitFor(() => $('lobby-deck-select').textContent.includes('Cyber Dragon OTK'));
+  record('deck-category-filters', (await optionCount('lobby-deck-select')) === 1);
 
   const readyBtn = [...document.querySelectorAll('#room-lobby-panel .btn')].find((b) => b.textContent.includes('准备'));
   record('ready-btn-exists', !!readyBtn);
