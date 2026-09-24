@@ -88,6 +88,10 @@ func HandleCreateGame(c *PacketContext) {
 	mode.BaseMode().RoomID = roomId
 
 	c.Player.Game = room.DuelMode
+	// 对齐原版 netserver.cpp:313（CTOS_CREATE_GAME 即 StartBroadcast）：
+	// 建房时若广播应答器未运行（如上一场决斗开始时被 StopListen 连带停止）
+	// 则恢复 LAN 发现应答；已在运行时为空操作，端口被占只记日志。
+	EnsureBroadcast()
 	// create 未挂 RoomLockMiddleware（RequireNotInGame 保证进来时 c.Game()==nil，
 	// 该中间件是 no-op），而 JoinGame 写房间的共享玩家表，需显式持锁，
 	// 避免 --multicore=true 下与并发加入者竞争。
@@ -108,6 +112,15 @@ func HandleJoinGame(c *PacketContext) {
 
 	room, exist := DefaultManager.GetRoom(roomId)
 	if !exist {
+		// Go 设计密码即房间索引：GetRoom 失败最常见的原因是密码不对。
+		// 对齐原版进房后密码不符的提示（JOINERROR code=1，SysString 1404
+		// 「密码错误」，前端 Lobby describeErrorMsg 的 code=1 分支自动生效）：
+		// 只要服务器上还有任意房间就按密码错误提示；一个房间都没有时才回
+		// 通用 JOINERROR（code=0），单房间语义不变。
+		if DefaultManager.RoomCount() > 0 {
+			c.AbortWithErrorCode(ErrWrongRoomPassword(), 1)
+			return
+		}
 		c.AbortWithError(ErrJoinError())
 		return
 	}

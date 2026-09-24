@@ -78,6 +78,9 @@ type selectCardDTO struct {
 	Min        uint8                `json:"min"`
 	Max        uint8                `json:"max"`
 	Cards      []selectCardEntryDTO `json:"cards"`
+	// Tribute 标记 MSG_SELECT_TRIBUTE 来源：前端祭品选择保持弹窗路径
+	// （原版 CheckSelectTribute 求和校验），不并入场上点选选择态
+	Tribute bool `json:"tribute,omitempty"`
 }
 
 type selectUnselectDTO struct {
@@ -179,14 +182,14 @@ type becomeTargetDTO struct {
 }
 
 type battleDTO struct {
-	Attacker       locPosRefDTO `json:"attacker"`
-	AttackerATK    int32        `json:"attackerATK"`
-	AttackerDEF    int32        `json:"attackerDEF"`
-	AttackerDirect bool         `json:"attackerDirect"`
-	Target         locPosRefDTO `json:"target"`
-	TargetATK      int32        `json:"targetATK"`
-	TargetDEF      int32        `json:"targetDEF"`
-	TargetDirect   bool         `json:"targetDirect"`
+	Attacker          locPosRefDTO `json:"attacker"`
+	AttackerATK       int32        `json:"attackerATK"`
+	AttackerDEF       int32        `json:"attackerDEF"`
+	AttackerDestroyed bool         `json:"attackerDestroyed"`
+	Target            locPosRefDTO `json:"target"`
+	TargetATK         int32        `json:"targetATK"`
+	TargetDEF         int32        `json:"targetDEF"`
+	TargetDestroyed   bool         `json:"targetDestroyed"`
 }
 
 // ---- duel:update_data / duel:update_card（query blob 解码结果）----

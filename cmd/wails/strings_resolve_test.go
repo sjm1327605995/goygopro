@@ -49,14 +49,27 @@ func TestResolveDescCardStrings(t *testing.T) {
 }
 
 // TestResolveDescSystemStringAndMisses covers the two non-card branches:
-// system strings (< 64000, no strings.conf in-repo → empty text, still a
-// success so the frontend can fall back) and unknown codes / bad offsets.
+// system strings (< 64000) resolve against the embedded common subset
+// (strings.conf excerpt shared with frontend domain/sys_strings.ts); ids
+// outside the subset still come back empty so the frontend can fall back;
+// plus unknown codes / bad offsets.
 func TestResolveDescSystemStringAndMisses(t *testing.T) {
 	a := &App{cardDB: openTestCardDB(t)}
 
+	// 收录的 id → 子集文案
 	res := a.ResolveDesc(1000)
+	if !res["success"].(bool) || res["text"].(string) != "卡组" {
+		t.Fatalf("system string 1000 must resolve to 卡组: %+v", res)
+	}
+	res = a.ResolveDesc(1409)
+	if !res["success"].(bool) || res["text"].(string) != "等待更换副卡组中..." {
+		t.Fatalf("system string 1409 must resolve: %+v", res)
+	}
+
+	// 未收录的 id → 空文本（前端兜底）
+	res = a.ResolveDesc(999)
 	if !res["success"].(bool) || res["text"].(string) != "" {
-		t.Fatalf("system string must be success with empty text: %+v", res)
+		t.Fatalf("unlisted system string must be success with empty text: %+v", res)
 	}
 
 	res = a.ResolveDesc((99999999 << 4) | 1) // 不存在的卡号

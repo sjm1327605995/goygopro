@@ -286,6 +286,11 @@ func (d *DuelMode) StopServer() {
 }
 func (d *DuelMode) StopListen() {
 	AcceptingConnections.Store(false)
+	// 原版 netserver.cpp:79-82 的 StopListen 同样连带 StopBroadcast——
+	// single_duel.cpp:325 / tag_duel.cpp:289 的 StopBroadcast 注释掉正是
+	// 因为 StopListen 已代劳，决斗期间不应答 LAN 发现广播与原版一致。
+	// 下一次建房由 EnsureBroadcast 恢复应答（对齐 CTOS_CREATE_GAME
+	// 即 StartBroadcast 的语义）。
 	if BroadcastInstance != nil {
 		BroadcastInstance.Stop()
 	}

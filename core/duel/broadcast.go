@@ -2,8 +2,10 @@ package duel
 
 import (
 	"encoding/binary"
+	"log"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-restruct/restruct"
@@ -17,11 +19,23 @@ type BroadcastServer struct {
 	conn     *net.UDPConn
 	stopCh   chan struct{}
 	stopOnce sync.Once
+	stopped  atomic.Bool
 }
+
+// lastBroadcastPort 记录最近一次（尝试）启动广播时的服务器监听端口，
+// 供 EnsureBroadcast 在广播被 StopListen 停止后按同端口重启。
+var (
+	broadcastMu       sync.Mutex
+	lastBroadcastPort uint16
+)
 
 // StartBroadcast 启动 UDP 广播监听
 // C++: 创建 UDP socket -> bind(:7920) -> event_add(EV_READ|EV_PERSIST)
 func StartBroadcast(serverPort uint16) (*BroadcastServer, error) {
+	broadcastMu.Lock()
+	lastBroadcastPort = serverPort
+	broadcastMu.Unlock()
+
 	addr, err := net.ResolveUDPAddr("udp4", ":7920")
 	if err != nil {
 		return nil, err
@@ -39,6 +53,29 @@ func StartBroadcast(serverPort uint16) (*BroadcastServer, error) {
 
 	go bs.serve(serverPort)
 	return bs, nil
+}
+
+// Running 报告广播应答器是否仍在运行（Stop 后或从未启动为 false）。
+func (bs *BroadcastServer) Running() bool {
+	return bs != nil && !bs.stopped.Load()
+}
+
+// EnsureBroadcast 在广播应答器未运行（从未启动成功，或已被 StopListen /
+// StopServer 停止）时按上次记录的端口重启。对齐原版 netserver.cpp:313
+// CTOS_CREATE_GAME 即 StartBroadcast 的语义——决斗开始会连带停掉广播，
+// 下一次建房时恢复应答。绑定 :7920 失败（端口被占）只记录日志，不影响建房。
+func EnsureBroadcast() {
+	broadcastMu.Lock()
+	port := lastBroadcastPort
+	broadcastMu.Unlock()
+	if port == 0 || BroadcastInstance.Running() {
+		return
+	}
+	if bs, err := StartBroadcast(port); err != nil {
+		log.Printf("[duel] restart broadcast failed: %v", err)
+	} else {
+		BroadcastInstance = bs
+	}
 }
 
 func (bs *BroadcastServer) serve(serverPort uint16) {
@@ -112,6 +149,7 @@ func (bs *BroadcastServer) serve(serverPort uint16) {
 // C++: event_del -> evutil_closesocket -> event_free
 func (bs *BroadcastServer) Stop() {
 	bs.stopOnce.Do(func() {
+		bs.stopped.Store(true)
 		close(bs.stopCh)
 		_ = bs.conn.Close()
 	})

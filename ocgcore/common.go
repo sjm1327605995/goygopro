@@ -307,6 +307,7 @@ const (
 	MSG_SELECT_PLACE         = 18
 	MSG_SELECT_POSITION      = 19
 	MSG_SELECT_TRIBUTE       = 20
+	MSG_SORT_CHAIN           = 21
 	MSG_SELECT_COUNTER       = 22
 	MSG_SELECT_SUM           = 23
 	MSG_SELECT_DISFIELD      = 24
@@ -374,6 +375,7 @@ const (
 	MSG_ANNOUNCE_ATTRIB      = 141
 	MSG_ANNOUNCE_CARD        = 142
 	MSG_ANNOUNCE_NUMBER      = 143
+	MSG_ANNOUNCE_CARD_FILTER = 144
 	MSG_CARD_HINT            = 160
 	MSG_TAG_SWAP             = 161
 	MSG_RELOAD_FIELD         = 162 // Debug.ReloadFieldEnd()
@@ -382,6 +384,7 @@ const (
 	MSG_PLAYER_HINT          = 165
 	MSG_MATCH_KILL           = 170
 	MSG_CUSTOM_MSG           = 180
+	MSG_DUEL_WINNER          = 200
 )
 
 // Hints

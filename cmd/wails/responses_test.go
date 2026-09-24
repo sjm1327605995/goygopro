@@ -66,6 +66,11 @@ func TestResponseEncodings(t *testing.T) {
 			want: []byte{1, 0x8, 6},
 		},
 		{
+			name: "SelectPlaces: two zones flat triples",
+			got:  encodeSelectPlacesResponse([]int32{0, 0x4, 2, 1, 0x8, 3}),
+			want: []byte{0, 0x4, 2, 1, 0x8, 3},
+		},
+		{
 			name: "SortCard: permutation bytes",
 			got:  encodeSortCardResponse([]int32{1, 2, 0}),
 			want: []byte{1, 2, 0},

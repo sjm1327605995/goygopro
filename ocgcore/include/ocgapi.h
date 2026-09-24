@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 intptr_t create_duel(int32_t seed);
+intptr_t create_duel_v2(uint32_t seed[8]);
 void start_duel(intptr_t pduel, int32_t options);
 void end_duel(intptr_t pduel);
 void set_player_info(intptr_t pduel, int32_t playerid, int32_t lp, int32_t startcount, int32_t drawcount);
@@ -10,6 +11,7 @@ void get_log_message(intptr_t pduel,unsigned char* buf);
 int32_t get_message(intptr_t pduel, unsigned char* buf);
 int32_t process(intptr_t pduel);
 void new_card(intptr_t pduel, uint32_t code, uint8_t owner, uint8_t playerid, uint8_t location, uint8_t sequence, uint8_t position);
+void new_tag_card(intptr_t pduel, uint32_t code, uint8_t owner, uint8_t location);
 int32_t query_card(intptr_t pduel, uint8_t playerid, uint8_t location, uint8_t sequence, int32_t query_flag,  unsigned char* buf, int32_t use_cache);
 int32_t query_field_count(intptr_t pduel, uint8_t playerid, uint8_t location);
 int32_t query_field_card(intptr_t pduel, uint8_t playerid, uint8_t location, int32_t query_flag, unsigned char* buf, int32_t use_cache);

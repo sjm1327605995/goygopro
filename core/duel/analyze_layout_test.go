@@ -1,6 +1,7 @@
 package duel
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	"github.com/panjf2000/gnet/v2"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/ocgcore"
+	"github.com/sjm1327605995/goygopro/protocol/network"
 )
 
 // stubConn 满足 gnet.Conn：嵌入空接口以补齐全部方法，仅覆盖 Write 为吞掉写。
@@ -134,5 +136,86 @@ func TestAnalyzeTableModeSpecifics(t *testing.T) {
 	}
 	if _, ok := tagAnalyzeTable[ocgcore.MSG_TAG_SWAP]; !ok {
 		t.Error("tag 表缺少 MSG_TAG_SWAP")
+	}
+}
+
+// TestNewlyRegisteredMessageLayouts 覆盖显式降级登记的五条消息：
+// MSG_SORT_CHAIN(21)、MSG_ANNOUNCE_CARD_FILTER(144)、MSG_REQUEST_DECK(8)、
+// MSG_DUEL_WINNER(200)、MSG_CUSTOM_MSG(180)。
+// 断言两件事：
+//  1. 布局表（walker）认识它们，且走查消费与登记的体长一致；
+//  2. 模式表无 handler 时 runAnalyze 按布局安全跳过、后续消息保持对齐：
+//     消息体后紧跟一条完整的 MSG_NEW_PHASE，players[0] 收到的广播字节
+//     必须恰好只有这一条（一个数据包）。旧实现只消费类型字节，体里等于
+//     表内类型的字节（SORT_CHAIN 的 player 字节故意取 0x29）会被当成
+//     MSG_NEW_PHASE 命中，多广播一条错位数据。
+func TestNewlyRegisteredMessageLayouts(t *testing.T) {
+	// SORT_CHAIN 体：player(0x29) + count(1) + 1×(code4+cc+cl+cs 全 0xaa)。
+	// 0x29 是 MSG_NEW_PHASE 的类型字节，0xaa 不在任何 analyze 表里。
+	sortChainBody := append([]byte{0x29, 0x01}, bytes.Repeat([]byte{0xaa}, 7)...)
+	cases := []struct {
+		name string
+		typ  uint8
+		body []byte
+	}{
+		{"sort-chain", ocgcore.MSG_SORT_CHAIN, sortChainBody},
+		{"announce-card-filter", ocgcore.MSG_ANNOUNCE_CARD_FILTER, nil},
+		{"request-deck", ocgcore.MSG_REQUEST_DECK, nil},
+		{"duel-winner", ocgcore.MSG_DUEL_WINNER, nil},
+		{"custom-msg", ocgcore.MSG_CUSTOM_MSG, nil},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := append([]byte{tc.typ}, tc.body...)
+			end, _, _, ok := walkEngineMessage(payload, 1)
+			if !ok {
+				t.Fatal("walker 不识别该消息（engineMsgLayouts 缺少条目）")
+			}
+			if got := end - 1; got != len(tc.body) {
+				t.Fatalf("walker 消费 %d 字节，期望 %d（布局登记漂移？）", got, len(tc.body))
+			}
+
+			fake := &analyzeFakeRoom{SingleDuel: &SingleDuel{}}
+			fake.players[0] = &DuelPlayer{Conn: &recordConn{}}
+			fake.players[1] = &DuelPlayer{Conn: &recordConn{}}
+
+			// 完整尾随消息：MSG_NEW_PHASE + 2 字节体，runAnalyze 应干净走完（0）。
+			batch := append(append([]byte{tc.typ}, tc.body...), ocgcore.MSG_NEW_PHASE, 0, 0)
+			if r := runAnalyze(fake, sharedAnalyzeHandlers, batch); r != 0 {
+				t.Fatalf("runAnalyze 返回 %d，期望 0", r)
+			}
+
+			// players[0] 只收到 NEW_PHASE 这一条广播（u16 长=4 + proto + 3 字节消息）。
+			want := []byte{4, 0, network.STOC_GAME_MSG, ocgcore.MSG_NEW_PHASE, 0, 0}
+			if got := fake.players[0].Conn.(*recordConn).buf; !bytes.Equal(got, want) {
+				t.Fatalf("players[0] 收到 %v，期望仅一条 NEW_PHASE 广播 %v（安全跳过失准？）", got, want)
+			}
+		})
+	}
+}
+
+// abortRecordingRoom 在 analyzeFakeRoom 之上记录 EndDuel 是否被调用。
+type abortRecordingRoom struct {
+	*analyzeFakeRoom
+	aborted bool
+}
+
+func (f *abortRecordingRoom) EndDuel() { f.aborted = true }
+
+// TestAnalyzeUnknownMessageAbortsDuel 守住显式降级的另一半：布局表也
+// 不认识的消息（如 0xfe）无从得知消息体长度，必须记日志并 EndDuel 兜底
+//（返回 2），禁止像旧实现那样只消费类型字节后静默错位继续广播。
+func TestAnalyzeUnknownMessageAbortsDuel(t *testing.T) {
+	fake := &abortRecordingRoom{analyzeFakeRoom: &analyzeFakeRoom{SingleDuel: &SingleDuel{}}}
+	fake.players[0] = &DuelPlayer{Conn: stubConn{}}
+	fake.players[1] = &DuelPlayer{Conn: stubConn{}}
+
+	batch := []byte{0xfe, 0, 0, 0}
+	if r := runAnalyze(fake, sharedAnalyzeHandlers, batch); r != 2 {
+		t.Fatalf("runAnalyze 返回 %d，期望 2（EndDuel 兜底）", r)
+	}
+	if !fake.aborted {
+		t.Fatal("未知消息未触发 EndDuel 兜底")
 	}
 }
