@@ -11,7 +11,20 @@ import { settingsStore } from '../domain/settings.ts';
 const MAX_MESSAGES = 8;
 const FADE_MS = 12000;
 
-type ChatMsg = { id: number; pos: number; name: string; text: string };
+type ChatMsg = { id: number; pos: number; cls: string; name: string; text: string };
+
+/**
+ * 原版 chatColor 分档（drawing.cpp:1041 的 20 档表取主要几档）：
+ * 自己白、对手决斗者红、系统消息蓝紫、观战者按序号轮换绿/青/蓝/品红/黄。
+ * （duelclient.cpp STOC_CHAT：决斗者 0-3 经 ChatLocalPlayer 本地化，8 系统，
+ * 10-19 观战者统一按观战档上色。）
+ */
+const SPECTATOR_COLORS = ['spec0', 'spec1', 'spec2', 'spec3', 'spec4'];
+function chatClass(player: number, selfSlot: number): string {
+  if (player === 8) return 'chat-sys';
+  if (player >= 10) return `chat-spec-${SPECTATOR_COLORS[(player - 10) % SPECTATOR_COLORS.length]}`;
+  return player === selfSlot ? 'chat-self' : 'chat-opp';
+}
 
 export default function ChatOverlay() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -36,6 +49,7 @@ export default function ChatOverlay() {
       setMessages((prev) => [...prev.slice(-(MAX_MESSAGES - 1)), {
         id,
         pos: data.player,
+        cls: chatClass(data.player, playerSlot),
         name,
         text: data.msg,
       }]);
@@ -67,7 +81,7 @@ export default function ChatOverlay() {
     >
       <div id="chat-messages" className="chat-messages">
         {messages.map((m) => (
-          <div key={m.id} className={`chat-line chat-p${m.pos}`}>
+          <div key={m.id} className={`chat-line chat-p${m.pos} ${m.cls}`}>
             <span className="chat-name">{m.name}：</span>{m.text}
           </div>
         ))}

@@ -55,6 +55,11 @@ WailsBridge.respondBattleCmd = (idx, cmdType) => phaseResponses.push({ kind: 'ba
 const deckSends = [];
 WailsBridge.updateDeck = (mainCards, sideCards) => deckSends.push({ main: mainCards, side: sideCards });
 
+// P3: VictoryOverlay 的 match kill 卡图走 getCardImage，mock 成 data URL
+// （避免冒烟环境发 CDN 请求）
+const FAKE_PIC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
+WailsBridge.getCardImage = async () => ({ url: FAKE_PIC, full: false });
+
 const waitFor = (predicate, timeoutMs = 5000) => new Promise((resolve, reject) => {
   const started = Date.now();
   const tick = () => {
@@ -226,11 +231,20 @@ const run = async () => {
 
   // ---- P5 VictoryOverlay: duel:win opens the victory modal (winner 1 is the
   // local seat here → 胜利/🏆), and its exit button emits nav 'menu'. ----
+  // P3 补完：MSG_MATCH_KILL 击杀卡图 + 胜负原因（strings.conf !victory 子集）
+  eventBus.emit('duel:match_kill', { code: 89631139 });
+  await waitFor(() => duelStore.getState().matchKill === 89631139);
+  eventBus.emit('duel:win', { winner: 1, type: 1 });
   await waitFor(() => $('victory-overlay'));
   assert('victoryOverlayShown', $('victory-overlay').className.includes('active')
     && $('victory-overlay').innerText.includes('胜利')
     && $('victory-overlay').innerText.includes('🏆'),
     $('victory-overlay').innerText.slice(0, 40));
+  assert('victoryReasonShown', $('victory-overlay').innerText.includes('原因：基本分变成0'),
+    $('victory-overlay').innerText.slice(0, 60));
+  await waitFor(() => !!document.querySelector('#match-kill-card img'));
+  const killImg = document.querySelector('#match-kill-card img');
+  assert('matchKillCardShown', killImg.src === FAKE_PIC, killImg.src.slice(0, 40));
   const navEvents = [];
   eventBus.on('nav', (dest) => navEvents.push(dest));
   $('modal-duel-exit').click();

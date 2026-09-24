@@ -70,12 +70,36 @@ export class DuelField3D {
   // 装备/目标关系线（duel:equip / card_target / cancel_target / unequip）
   relationLines: any[] = [];
   disposed = false;
+  // ---- MSG_SELECT_PLACE 落点选择（原版 drawing.cpp:187-209 的虚线高亮）----
+  // placeSelectMarks = 可选格的虚线描边面片（点击射线检测目标）；
+  // disabledMarks = MSG_FIELD_DISABLED 禁用格的白叉（drawing.cpp:210-241）。
+  placeSelectMarks: { mesh: any; zone: { player: number; loc: number; seq: number } }[] = [];
+  placeSelectTextures: { on: any; off: any } | null = null;
+  disabledMarks: any[] = [];
+  // ---- select_card / select_unselect 场上点选（原版 drawing.cpp:431-436
+  // 可选卡画黄色虚线框 DrawSelectionLine，直接点卡完成选择）----
+  // cardSelectMarks = 可选场卡上的黄框面片；点击射线直接打卡 mesh。
+  cardSelectMarks: { mesh: any; idx: number; cardMesh: any }[] = [];
+  cardSelectTextures: { on: any; off: any } | null = null;
+  // 视角交换（原版 SwapField/ReplaySwap）：true 时相机转到场地另一侧，
+  // 3D 座标不动——从对侧看等效于场地旋转 180°（卡牌朝向随观看侧自然正确）
+  viewSwapped = false;
+  // HINT_ZONE 区域高亮（duelclient.cpp:1168：与 select_place 同位域，
+  // 样式区分——绿色实线+浅填充；瞬态展示，duel_manager 定时清除）
+  hintZoneMarks: any[] = [];
+  hintZoneTexture: any = null;
+  // 点选/右键回调由 DuelStage 挂到 manager 方法上（构造时还没有 manager）
+  onPlaceZoneClick: ((zone: { player: number; loc: number; seq: number }) => void) | null = null;
+  onCardSelectPick: ((idx: number) => void) | null = null;
+  onBoardRightClick: ((x: number, y: number) => void) | null = null;
+  onPileRightClick: ((player: number, pile: string) => void) | null = null;
   matTexture: any = null;
   transparentMatTexture: any = null;
   matMesh: any = null;
   _onResize: () => void = () => {};
   _onMouseMove: (e: MouseEvent) => void = () => {};
   _onClick: (e: MouseEvent) => void = () => {};
+  _onContextMenu: (e: MouseEvent) => void = () => {};
   // 最近一次鼠标的屏幕像素坐标（stTip 悬浮提示跟随用）
   _lastClientX = 0;
   _lastClientY = 0;
@@ -272,6 +296,275 @@ export class DuelField3D {
       m.material.dispose();
     }
     this.actMarks = [];
+  }
+
+  // ---- MSG_SELECT_PLACE / SELECT_DISFIELD 落点选择 ----
+  // 原版 drawing.cpp:187-209：selectable_field 的每格画蓝色虚线选框
+  // （DrawSelectionLine，alpha 在 255↔25 间呼吸），selected_field 的格
+  // 反转虚线相位——这里译为未选=蓝色虚线呼吸、已选=琥珀实线+浅填充。
+  // zones 的 player 是引擎 seat（与 ZONE_COORDS 一致），loc 是引擎 LOCATION。
+
+  /** 虚线/实线描边的共享贴图（懒生成，全实例共享两种状态图） */
+  ensurePlaceSelectTextures(): { on: any; off: any } {
+    if (this.placeSelectTextures) return this.placeSelectTextures;
+    const build = (selected: boolean): any => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 184;
+      const ctx = canvas.getContext('2d')!;
+      ctx.clearRect(0, 0, 128, 184);
+      if (selected) {
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.16)';
+        ctx.fillRect(0, 0, 128, 184);
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = 7;
+        ctx.strokeRect(4, 4, 120, 176);
+      } else {
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 6;
+        ctx.setLineDash([16, 10]);
+        ctx.strokeRect(4, 4, 120, 176);
+      }
+      const tex = new (THREE as any).CanvasTexture(canvas);
+      return tex;
+    };
+    this.placeSelectTextures = { on: build(true), off: build(false) };
+    return this.placeSelectTextures;
+  }
+
+  /**
+   * 布设可选落点高亮。selectedKeys 是 "player:loc:seq" 集合
+   * （duel_manager 维护选择状态）；每次选择变化整体重建（格数 ≤ 16，廉价）。
+   */
+  setPlaceSelectZones(
+    zones: { player: number; loc: number; seq: number }[],
+    selectedKeys: Set<string>,
+  ): void {
+    this.clearPlaceSelectZones();
+    const tex = this.ensurePlaceSelectTextures();
+    for (const zone of zones || []) {
+      const coord = this.getZonePosition(zone.player, LOC_NAMES[zone.loc] || 'mzone', zone.seq);
+      const selected = selectedKeys.has(`${zone.player}:${zone.loc}:${zone.seq}`);
+      const geo = new (THREE as any).PlaneGeometry(CARD_WIDTH + 0.16, CARD_HEIGHT + 0.16);
+      const mat = new (THREE as any).MeshBasicMaterial({
+        map: selected ? tex.on : tex.off,
+        transparent: true,
+        depthWrite: false,
+        opacity: selected ? 0.95 : 0.8,
+      });
+      const mesh = new (THREE as any).Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(coord.x, 0.045, coord.z);
+      mesh.renderOrder = 5;
+      mesh.userData.placeZone = zone;
+      mesh.userData.selected = selected;
+      this.scene.add(mesh);
+      this.placeSelectMarks.push({ mesh, zone });
+    }
+  }
+
+  clearPlaceSelectZones(): void {
+    for (const m of this.placeSelectMarks) {
+      this.scene.remove(m.mesh);
+      m.mesh.geometry.dispose();
+      m.mesh.material.dispose();
+    }
+    this.placeSelectMarks = [];
+  }
+
+  // ---- select_card / select_unselect 场上可选卡（黄色选框）----
+  // 原版 drawing.cpp:431-436：is_selectable 的场卡画黄色虚线框、已选反相；
+  // 这里译为未选=黄色虚线呼吸、已选=黄色实线+浅填充。点击命中直接打
+  // 卡 mesh（pickCardSelect），不依赖面片。
+
+  ensureCardSelectTextures(): { on: any; off: any } {
+    if (this.cardSelectTextures) return this.cardSelectTextures;
+    const build = (selected: boolean): any => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 184;
+      const ctx = canvas.getContext('2d')!;
+      ctx.clearRect(0, 0, 128, 184);
+      if (selected) {
+        ctx.fillStyle = 'rgba(250, 204, 21, 0.18)';
+        ctx.fillRect(0, 0, 128, 184);
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 7;
+        ctx.strokeRect(4, 4, 120, 176);
+      } else {
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 6;
+        ctx.setLineDash([16, 10]);
+        ctx.strokeRect(4, 4, 120, 176);
+      }
+      return new (THREE as any).CanvasTexture(canvas);
+    };
+    this.cardSelectTextures = { on: build(true), off: build(false) };
+    return this.cardSelectTextures;
+  }
+
+  /**
+   * 布设场上可选卡高亮。entries 的 c/l/s 是引擎座标（与 cardsOnField 一致），
+   * selectedIdx 是已选应答下标集合；每次选择变化整体重建（候选数小，廉价）。
+   */
+  setCardSelectMarks(
+    entries: { idx: number; c: number; l: number; s: number }[],
+    selectedIdx: Set<number>,
+  ): void {
+    this.clearCardSelectMarks();
+    const tex = this.ensureCardSelectTextures();
+    for (const entry of entries || []) {
+      const cardMesh = this.meshAt(entry.c, entry.l, entry.s);
+      if (!cardMesh) continue;
+      const selected = selectedIdx.has(entry.idx);
+      const geo = new (THREE as any).PlaneGeometry(CARD_WIDTH + 0.16, CARD_HEIGHT + 0.16);
+      const mat = new (THREE as any).MeshBasicMaterial({
+        map: selected ? tex.on : tex.off,
+        transparent: true,
+        depthWrite: false,
+        opacity: selected ? 0.95 : 0.8,
+      });
+      const mesh = new (THREE as any).Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(cardMesh.position.x, cardMesh.position.y + 0.06, cardMesh.position.z);
+      mesh.renderOrder = 6;
+      mesh.userData.selected = selected;
+      this.scene.add(mesh);
+      this.cardSelectMarks.push({ mesh, idx: entry.idx, cardMesh });
+    }
+  }
+
+  clearCardSelectMarks(): void {
+    for (const m of this.cardSelectMarks) {
+      this.scene.remove(m.mesh);
+      m.mesh.geometry.dispose();
+      m.mesh.material.dispose();
+    }
+    this.cardSelectMarks = [];
+  }
+
+  /** 鼠标下的可选场卡（命中卡 mesh 本身）；无则 null */
+  pickCardSelect(): { idx: number; cardMesh: any } | null {
+    if (!this.cardSelectMarks.length) return null;
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    const hits = this.raycaster.intersectObjects(this.cardSelectMarks.map((m) => m.cardMesh));
+    if (!hits.length) return null;
+    const mark = this.cardSelectMarks.find((m) => m.cardMesh === hits[0].object);
+    return mark ? { idx: mark.idx, cardMesh: mark.cardMesh } : null;
+  }
+
+  // ---- 视角交换（观战 btnSpectatorSwap / 回放 btnReplaySwap）----
+  // 相机绕到场地另一侧（等效场地旋转 180°）：卡牌朝向/守备方向随观看侧
+  // 自然正确，3D 座标与 ZONE_COORDS 不变。2D HUD 的座位显示由 store 的
+  // viewSwapped 负责（localSeat 翻转），这里只搬相机与远侧手背行。
+  setViewSwapped(on: boolean): void {
+    if (this.viewSwapped === on) return;
+    this.viewSwapped = on;
+    const targetZ = on ? -12.5 : 12.5;
+    const lookZ = on ? -0.3 : 0.3;
+    this.makeTween(this.camera.position)
+      .to({ z: targetZ }, 500)
+      .easing(TWEEN.Easing.Quadratic.InOut)
+      .onUpdate(() => this.camera.lookAt(0, 0, lookZ))
+      .onComplete(() => this.camera.lookAt(0, 0, lookZ))
+      .start();
+    this.layoutFarHandRow();
+  }
+
+  // ---- HINT_ZONE 区域高亮（绿色实线+浅填充，与 select_place 蓝虚线区分）----
+
+  ensureHintZoneTexture(): any {
+    if (this.hintZoneTexture) return this.hintZoneTexture;
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 184;
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, 128, 184);
+    ctx.fillStyle = 'rgba(74, 222, 128, 0.18)';
+    ctx.fillRect(0, 0, 128, 184);
+    ctx.strokeStyle = '#4ade80';
+    ctx.lineWidth = 7;
+    ctx.strokeRect(4, 4, 120, 176);
+    this.hintZoneTexture = new (THREE as any).CanvasTexture(canvas);
+    return this.hintZoneTexture;
+  }
+
+  /** 布设 HINT_ZONE 高亮（zones 的 player 是引擎 seat，同 setPlaceSelectZones） */
+  setHintZones(zones: { player: number; loc: number; seq: number }[]): void {
+    this.clearHintZones();
+    const tex = this.ensureHintZoneTexture();
+    for (const zone of zones || []) {
+      const coord = this.getZonePosition(zone.player, LOC_NAMES[zone.loc] || 'mzone', zone.seq);
+      const geo = new (THREE as any).PlaneGeometry(CARD_WIDTH + 0.16, CARD_HEIGHT + 0.16);
+      const mat = new (THREE as any).MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        depthWrite: false,
+        opacity: 0.9,
+      });
+      const mesh = new (THREE as any).Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(coord.x, 0.05, coord.z);
+      mesh.renderOrder = 6;
+      mesh.userData.hintZone = zone;
+      this.scene.add(mesh);
+      this.hintZoneMarks.push(mesh);
+    }
+  }
+
+  clearHintZones(): void {
+    for (const m of this.hintZoneMarks) {
+      this.scene.remove(m);
+      m.geometry.dispose();
+      m.material.dispose();
+    }
+    this.hintZoneMarks = [];
+  }
+
+  // ---- MSG_FIELD_DISABLED 禁用格（drawing.cpp:210-241：格上画白色对角叉线）----
+  // flag 位域与 decorateSelectPlace 同构：低 16 位 = 操作方 mzone(0-6)/
+  // szone(8-13+灵摆 14/15)，高 16 位 = 对手同构区域。
+  setFieldDisabled(flag: number): void {
+    for (const m of this.disabledMarks) {
+      this.scene.remove(m);
+      m.geometry.dispose();
+      m.material.dispose();
+    }
+    this.disabledMarks = [];
+    const zones: { player: number; loc: number; seq: number }[] = [];
+    const scan = (player: number, loc: number, base: number, count: number) => {
+      for (let seq = 0; seq < count; seq++) {
+        if (flag & (base << seq)) zones.push({ player, loc, seq });
+      }
+    };
+    scan(0, 0x04, 0x1, 7);
+    scan(0, 0x08, 0x100, 8);
+    scan(1, 0x04, 0x10000, 7);
+    scan(1, 0x08, 0x1000000, 8);
+    for (const zone of zones) {
+      const coord = this.getZonePosition(zone.player, LOC_NAMES[zone.loc] || 'mzone', zone.seq);
+      const hw = CARD_WIDTH / 2 + 0.06;
+      const hd = CARD_HEIGHT / 2 + 0.06;
+      const pts = [
+        new (THREE as any).Vector3(coord.x - hw, 0.06, coord.z - hd),
+        new (THREE as any).Vector3(coord.x + hw, 0.06, coord.z + hd),
+      ];
+      const pts2 = [
+        new (THREE as any).Vector3(coord.x - hw, 0.06, coord.z + hd),
+        new (THREE as any).Vector3(coord.x + hw, 0.06, coord.z - hd),
+      ];
+      for (const linePts of [pts, pts2]) {
+        const geo = new (THREE as any).BufferGeometry().setFromPoints(linePts);
+        const line = new (THREE as any).Line(geo, new (THREE as any).LineBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.9,
+        }));
+        line.renderOrder = 5;
+        this.scene.add(line);
+        this.disabledMarks.push(line);
+      }
+    }
   }
 
   // Board-facing rotation for a card in `position` (ocgcore position bits:
@@ -631,6 +924,9 @@ export class DuelField3D {
     };
     if (this.chainVisualizer) this.chainVisualizer.clearChain();
     this.clearRelationLines();
+    this.clearPlaceSelectZones();
+    this.clearCardSelectMarks();
+    this.clearHintZones();
     this.tweenGroup.removeAll();
     // Force the field-spell background to re-evaluate (and fade out).
     this.fieldSpellCode = -1;
@@ -638,11 +934,12 @@ export class DuelField3D {
   }
 
   /**
-   * 对手手牌：上缘一排背面朝上的卡（原版 opponent hand 的呈现方式）。
-   * count 增减时直接落位（无飞入动画——抽牌动画已由 animateDrawCard 负责，
-   * 落位只是把持久表示同步成最新数量）。
+   * 远侧（显示座 1）手牌：画面远端一排背面朝上的卡（原版对方手牌的呈现
+   * 方式）。count 增减时直接落位（无飞入动画——抽牌动画已由
+   * animateDrawCard 负责，落位只是把持久表示同步成最新数量）。
+   * 视角交换后远侧换边，z 符号随 viewSwapped 翻转。
    */
-  setOpponentHandCount(count: number): void {
+  setFarHandCount(count: number): void {
     const target = Math.max(0, Math.min(count, 10));
     while (this.opponentHandMeshes.length > target) {
       const mesh = this.opponentHandMeshes.pop();
@@ -654,11 +951,16 @@ export class DuelField3D {
       this.opponentHandMeshes.push(mesh);
       this.scene.add(mesh);
     }
-    // 以对手视角朝向我们：卡背朝上（x=PI），排在对方后场之后居中微重叠
+    this.layoutFarHandRow();
+  }
+
+  /** 远侧手背行落位：卡背朝上（x=PI），排在远侧后场之后居中微重叠 */
+  layoutFarHandRow(): void {
+    const z = this.viewSwapped ? 8.8 : -8.8;
     const spacing = CARD_WIDTH * 0.55;
     this.opponentHandMeshes.forEach((mesh, i) => {
       const offset = i - (this.opponentHandMeshes.length - 1) / 2;
-      mesh.position.set(-offset * spacing, 0.35, -8.8);
+      mesh.position.set(-offset * spacing, 0.35, z);
       mesh.rotation.set(Math.PI, 0, 0);
     });
   }
@@ -696,6 +998,41 @@ export class DuelField3D {
       sprite.position.set(c.x, 0.07 + Math.min(stack.length, 20) * 0.02 + 0.15, c.z);
       sprite.scale.set(1.1, 1.1, 1);
     });
+  }
+
+  // ---- 场上卡无效化徽章（drawing.cpp:458-462）----
+  // STATUS_DISABLED|STATUS_FORBIDDEN 且在场、表侧的卡的 mesh 上挂 negated
+  // 小图标（Sprite 作为 mesh 子节点，随卡移动/销毁自动清理）。
+  // 由 DuelManager 在 update_data/update_card 后按 store.board 的 status 同步。
+  syncNegatedBadges(seat: number, locName: 'mzone' | 'szone', cards: ({ status?: number; pos: number } | null)[]): void {
+    const STATUS_DISABLED = 0x0001;
+    const STATUS_FORBIDDEN = 0x4000000;
+    const zone = (this.cardsOnField[seat] || {})[locName] || [];
+    const max = Math.max(zone.length, cards.length);
+    for (let i = 0; i < max; i++) {
+      const mesh = zone[i];
+      if (!mesh) continue;
+      const card = cards[i] || null;
+      // pos & 0x5 = 表侧（POS_FACEUP_ATTACK|POS_FACEUP_DEFENSE）
+      const show = !!card
+        && (((card.status ?? 0) & (STATUS_DISABLED | STATUS_FORBIDDEN)) !== 0)
+        && ((card.pos & 0x5) !== 0);
+      const badge = mesh.userData.negatedBadge;
+      if (show && !badge) {
+        const sprite = new (THREE as any).Sprite(new (THREE as any).SpriteMaterial({
+          map: this.negatedTexture, transparent: true, depthTest: false,
+        }));
+        // BoxGeometry 的 y 是卡面法线方向（CARD_DEPTH 厚度），微抬避免 z-fighting
+        sprite.position.set(0, CARD_DEPTH, 0);
+        sprite.scale.set(0.45, 0.45, 1);
+        mesh.add(sprite);
+        mesh.userData.negatedBadge = sprite;
+      } else if (!show && badge) {
+        mesh.remove(badge);
+        badge.material.dispose();
+        delete mesh.userData.negatedBadge;
+      }
+    }
   }
 
   // ---- 波 B 渲染原语：指示物 / 装备线 / 目标线 / 翻开确认 ----
@@ -813,11 +1150,34 @@ export class DuelField3D {
     });
   }
 
-  // MSG_CONFIRM_CARDS：卡面黄色闪光（原版确认动画的简化版）
+  // MSG_CONFIRM_CARDS：揭示序列（原版 duelclient.cpp:2161-2260 的简化版）——
+  // 盖卡先做一次翻开抖动（绕长边/短边的小角度旋转），再叠黄色高亮闪光
   flashCards(cards: { c: number; l: number; s: number }[]): void {
     for (const e of cards || []) {
       const mesh = this.meshAt(e.c, e.l, e.s);
       if (!mesh) continue;
+      // 翻开抖动：表侧卡只抬升轻晃；里侧卡（set 状态）绕边翻转半周回弹，
+      // 近似原版 pcard->dRot 的 36° 旋转揭示
+      const facedown = mesh.userData.positionState === 'FACEDOWN';
+      const lift = { y: mesh.position.y + 0.35 };
+      this.makeTween(mesh.position)
+        .to(lift, 140)
+        .yoyo(true)
+        .repeat(1)
+        .easing(TWEEN.Easing.Quadratic.Out)
+        .start();
+      if (facedown) {
+        const axis = (mesh.userData.slot && (mesh.userData.slot.loc === 'mzone' || mesh.userData.slot.loc === 'szone'))
+          && mesh.rotation.y !== 0 ? 'x' : 'y';
+        const rot = { ...mesh.rotation };
+        this.makeTween(mesh.rotation)
+          .to({ [axis]: (rot[axis] || 0) + Math.PI / 5 } as any, 160)
+          .yoyo(true)
+          .repeat(1)
+          .easing(TWEEN.Easing.Quadratic.InOut)
+          .onComplete(() => mesh.rotation.set(rot.x, rot.y, rot.z))
+          .start();
+      }
       const mat = Array.isArray(mesh.material) ? mesh.material[2] : mesh.material;
       if (!mat || !mat.emissive) continue;
       mat.emissive = new (THREE as any).Color(0xfde047);
@@ -832,6 +1192,22 @@ export class DuelField3D {
         .onComplete(() => { mat.emissiveIntensity = 0; })
         .start();
     }
+  }
+
+  // MSG_SUMMONED/SPSUMMONED/FLIPSUMMONED：召唤落定的顿点表现——怪兽槽位
+  // 小冲击波 + 卡的轻微压实弹跳（原版只有日志事件串，这里是轻量增强）
+  settleCard(player: number, slot: number): void {
+    const mesh = this.cardsOnField[player] && this.cardsOnField[player].mzone[slot];
+    const coord = ZONE_COORDS[player].mzone && ZONE_COORDS[player].mzone[slot];
+    if (coord) this.createShockwave(coord.x, coord.z, 0x94a3b8);
+    if (!mesh) return;
+    this.makeTween(mesh.scale)
+      .to({ x: 1.12, y: 1.12, z: 1.12 }, 110)
+      .yoyo(true)
+      .repeat(1)
+      .easing(TWEEN.Easing.Quadratic.Out)
+      .onComplete(() => mesh.scale.set(1, 1, 1))
+      .start();
   }
 
   clearRelationLines(): void {
@@ -861,27 +1237,106 @@ export class DuelField3D {
     // would stack one listener per duel screen mount).
     this._onResize = () => this.onWindowResize();
     this._onMouseMove = (e: MouseEvent) => {
-      const rect = this.container.getBoundingClientRect();
-      this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      this.updateMouseFromEvent(e);
       this._lastClientX = e.clientX;
       this._lastClientY = e.clientY;
       this.handleHover();
     };
     this._onClick = (e: MouseEvent) => {
+      this.updateMouseFromEvent(e);
+      // 落点选择模式优先：点到高亮格 → 交给 manager 累计选位；
+      // 点空处吞掉点击（原版选位期间不响应其他场上点击）
+      if (this.placeSelectMarks.length) {
+        const hit = this.pickPlaceZone();
+        if (hit && this.onPlaceZoneClick) this.onPlaceZoneClick(hit.zone);
+        return;
+      }
+      // select_card 场上点选模式：点可选卡 → 交给 manager 累计/应答；
+      // 点空处同样吞掉（原版选择期间不响应其他场上动作）
+      if (this.cardSelectMarks.length) {
+        const hit = this.pickCardSelect();
+        if (hit && this.onCardSelectPick) this.onCardSelectPick(hit.idx);
+        return;
+      }
       if (this.hoveredCard && this.onCardClick) {
         // Screen coordinates let the caller position an action popup (e.g.
         // the battle-phase attack menu) right where the player clicked.
         this.onCardClick(e.clientX, e.clientY, this.hoveredCard.userData);
       }
     };
+    this._onContextMenu = (e: MouseEvent) => {
+      // 原版右键语义（event_handler.cpp RMOUSE_LEFT_UP）：关闭菜单/取消
+      // 当前选择；点在墓地/除外/额外/卡组堆区上 = 快速查看列表
+      // （gframe F1-F8 同源的 wCardDisplay）。
+      e.preventDefault();
+      this.updateMouseFromEvent(e);
+      const pile = this.pickPileZone();
+      if (pile && this.onPileRightClick) {
+        this.onPileRightClick(pile.player, pile.pile);
+      } else if (this.onBoardRightClick) {
+        this.onBoardRightClick(e.clientX, e.clientY);
+      }
+    };
 
     window.addEventListener('resize', this._onResize);
     this.container.addEventListener('mousemove', this._onMouseMove);
     this.container.addEventListener('click', this._onClick);
+    this.container.addEventListener('contextmenu', this._onContextMenu);
+  }
+
+  updateMouseFromEvent(e: MouseEvent): void {
+    const rect = this.container.getBoundingClientRect();
+    this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  }
+
+  /** 当前鼠标下的可选落点高亮（无则 null） */
+  pickPlaceZone(): { mesh: any; zone: { player: number; loc: number; seq: number } } | null {
+    if (!this.placeSelectMarks.length) return null;
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    const hits = this.raycaster.intersectObjects(this.placeSelectMarks.map((m) => m.mesh));
+    return hits.length ? this.placeSelectMarks.find((m) => m.mesh === hits[0].object) || null : null;
+  }
+
+  /**
+   * 鼠标命中的堆区（grave/banish/extra/deck，双方）。堆区没有 mesh，
+   * 用盘面交点与 ZONE_COORDS 的堆区中心做矩形粗匹配（含卡组位）。
+   */
+  pickPileZone(): { player: number; pile: string } | null {
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    const targets = [this.matMesh, ...this.cardMeshes].filter(Boolean);
+    const hits = this.raycaster.intersectObjects(targets);
+    if (!hits.length) return null;
+    const p = hits[0].point;
+    for (const player of [0, 1]) {
+      for (const pile of ['grave', 'banish', 'extra', 'deck']) {
+        const c = ZONE_COORDS[player][pile];
+        if (!c) continue;
+        if (Math.abs(p.x - c.x) <= 0.95 && Math.abs(p.z - c.z) <= 1.25) {
+          return { player, pile };
+        }
+      }
+    }
+    return null;
   }
 
   handleHover(): void {
+    // 落点选择期间：悬停可选格给手型光标（原版悬停 zone 高亮由
+    // DrawSelectionLine 呼吸承担，光标反馈是 Web 习惯的补充）
+    if (this.placeSelectMarks.length) {
+      this.raycaster.setFromCamera(this.mouse, this.camera);
+      const hit = this.pickPlaceZone();
+      this.container.style.cursor = hit ? 'pointer' : 'default';
+      return;
+    }
+    // select_card 点选期间：悬停可选卡给手型光标（选择模式点击已被拦截，
+    // 不再做抬升/查看的常规悬停）
+    if (this.cardSelectMarks.length) {
+      const hit = this.pickCardSelect();
+      this.container.style.cursor = hit ? 'pointer' : 'default';
+      return;
+    }
+    this.container.style.cursor = 'default';
     this.raycaster.setFromCamera(this.mouse, this.camera);
     const intersects = this.raycaster.intersectObjects(this.cardMeshes);
 
@@ -954,6 +1409,18 @@ export class DuelField3D {
     for (const m of this.actMarks) {
       m.material.rotation += 0.02;
     }
+    // 落点高亮呼吸（drawing.cpp:144-145 selFieldAlpha 255↔25 往返）
+    for (const m of this.placeSelectMarks) {
+      if (!m.mesh.userData.selected) {
+        m.mesh.material.opacity = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(t / 240));
+      }
+    }
+    // 可选卡黄框同样呼吸（与落点高亮同节律）
+    for (const m of this.cardSelectMarks) {
+      if (!m.mesh.userData.selected) {
+        m.mesh.material.opacity = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(t / 240));
+      }
+    }
     this.chainVisualizer?.tick();
     this.renderer.render(this.scene, this.camera);
   }
@@ -967,6 +1434,7 @@ export class DuelField3D {
     if (this.container) {
       this.container.removeEventListener('mousemove', this._onMouseMove);
       this.container.removeEventListener('click', this._onClick);
+      this.container.removeEventListener('contextmenu', this._onContextMenu);
     }
     if (this.scene) {
       this.cardMeshes.slice().forEach((mesh) => {
@@ -982,6 +1450,10 @@ export class DuelField3D {
       this.graveLockSprites = [];
       this.clearAttackable();
       this.clearActivatable();
+      this.clearPlaceSelectZones();
+      this.clearCardSelectMarks();
+      this.clearHintZones();
+      this.setFieldDisabled(0);
     }
     this.cardTextureCache.forEach((tex) => tex.dispose());
     this.cardTextureCache.clear();
@@ -1015,6 +1487,16 @@ export class DuelField3D {
     }
     this.tweenGroup.removeAll();
     this.clearRelationLines();
+    if (this.placeSelectTextures) {
+      this.placeSelectTextures.on.dispose();
+      this.placeSelectTextures.off.dispose();
+      this.placeSelectTextures = null;
+    }
+    if (this.cardSelectTextures) {
+      this.cardSelectTextures.on.dispose();
+      this.cardSelectTextures.off.dispose();
+      this.cardSelectTextures = null;
+    }
     if (this.renderer) {
       this.renderer.dispose();
       if (this.renderer.domElement && this.renderer.domElement.parentNode) {

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { WailsBridge, eventBus } from '../wails_bridge.ts';
 import { settingsStore } from '../domain/settings.ts';
+import { setLastSentDeck } from '../duel/side_deck_state.ts';
 import GfwSelect from './ui/GfwSelect.tsx';
 
 interface LobbyProps {
@@ -16,15 +17,40 @@ interface PlayerSeat {
 }
 
 const EMPTY_SEAT = (): PlayerSeat => ({ name: '', status: '等待玩家加入...', color: '#9ca3af', ready: false });
+// 原版 wHostPrepare 固定创建 4 个座位行（game.cpp:308-317），非 TAG 模式只
+// 用前 2 个；TAG 模式（Mode=2）4 个全用，1/2 号位为 0/1 号位的队友。
+const MAX_SEATS = 4;
 
-// 建房参数取值与 vendored ygopro 对齐：
-//   duelRule: ocgcore/common.go MASTER_RULE3=3 / NEW_MASTER_RULE=4 /
-//             MASTER_RULE_2020=5（服务端按 DuelFlag<<16 透传给 ocgcore）
+// LAN 广播发现到的一台主机（协议 HostPacket，duelclient.cpp BroadcastReply）
+interface HostEntry {
+  ip: string;
+  port: number;
+  name: string;
+  lflist: number;
+  rule: number;
+  mode: number;
+  duelRule: number;
+  startLp: number;
+  startHand: number;
+  drawCount: number;
+  timeLimit: number;
+  noCheckDeck: number;
+  noShuffleDeck: number;
+}
+
+// 建房参数取值与 vendored ygopro 对齐（game.cpp wCreateHost cbDuelRule，
+// 选项下标+1 即 duel_rule；SysString 1260-1264）：
+//   duelRule: 1=大师规则 / 2=大师规则２ / 3=大师规则３ /
+//             4=新大师规则(2017) / 5=大师规则(2020)
+//   服务端按 DuelRule<<16 透传给 ocgcore（ocgapi.cpp 直接采用该值，
+//   MR1/MR2 由 processor.cpp 的 duel_rule<=2 分支支持）。
 //   mode:     network.h MODE_SINGLE=0 / MODE_MATCH=1 / MODE_TAG=2
 const DUEL_RULES: { value: number; label: string }[] = [
   { value: 5, label: '大师规则（2020）' },
   { value: 4, label: '新大师规则（2017）' },
   { value: 3, label: '大师规则３' },
+  { value: 2, label: '大师规则２' },
+  { value: 1, label: '大师规则' },
 ];
 
 const DUEL_MODES: { value: number; label: string }[] = [
@@ -33,12 +59,15 @@ const DUEL_MODES: { value: number; label: string }[] = [
   { value: 2, label: 'ＴＡＧ' },
 ];
 
-// 卡片允许（SysString 1481+rule）：OCG/TCG/简体中文/自定义卡片
+// 卡片允许（SysString 1481+rule，game.cpp wCreateHost cbRule 六项）：
+// 服务端 deck_manager.go ruleMap = {OCG, TCG, SC, CUSTOM, OCGTCG, 0}
 const CARD_RULES: { value: number; label: string }[] = [
   { value: 0, label: 'ＯＣＧ' },
   { value: 1, label: 'ＴＣＧ' },
   { value: 2, label: '简体中文' },
   { value: 3, label: '自定义卡片' },
+  { value: 4, label: '无独有卡' },
+  { value: 5, label: '所有卡片' },
 ];
 
 // 规则信息面板（stHostPrepRule，duelclient.cpp:453-490）文案
@@ -118,13 +147,15 @@ const describeErrorMsg = (msg: number, code: number, cardName: string | null): s
 };
 
 // 聊天身份标签（原版 drawing.cpp / netserver.cpp:380-385：player<4 决斗者、
-// 8=系统、10-19 观战者）
+// 7=观战者（NETPLAYER_TYPE_OBSERVER）、8=系统、10-19 观战频道）。
+// TAG 队色：0/2 一队（蓝）、1/3 一队（红），与 2 人局 0 蓝 1 红一致。
 const chatIdentity = (player: number, seats: PlayerSeat[]): { name: string; color: string } => {
-  if (player < 4) {
+  if (player >= 0 && player < 4) {
     const seat = seats[player];
-    if (seat && seat.name) return { name: seat.name, color: player === 0 ? '#7dd3fc' : '#fca5a5' };
-    return { name: `决斗者 ${player + 1}`, color: player === 0 ? '#7dd3fc' : '#fca5a5' };
+    if (seat && seat.name) return { name: seat.name, color: player % 2 === 0 ? '#7dd3fc' : '#fca5a5' };
+    return { name: `决斗者 ${player + 1}`, color: player % 2 === 0 ? '#7dd3fc' : '#fca5a5' };
   }
+  if (player === 7) return { name: '观战者', color: '#9ca3af' };
   if (player === 8) return { name: '系统', color: '#fbbf24' };
   if (player >= 10 && player <= 19) return { name: `观战者 ${player - 9}`, color: '#9ca3af' };
   return { name: `频道 ${player}`, color: '#9ca3af' };
@@ -157,6 +188,9 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
   const [noShuffleDeck, setNoShuffleDeck] = useState(false);
   // 规则信息面板（stHostPrepRule）：来自 stoc:join_game 的 HostInfo
   const [roomRuleInfo, setRoomRuleInfo] = useState<any>(null);
+  // LAN 房间发现（lstHostList）：UDP 广播找房 + 点击行回填主机信息
+  const [hosts, setHosts] = useState<HostEntry[]>([]);
+  const [refreshingHosts, setRefreshingHosts] = useState(false);
 
   const [connected, setConnected] = useState(false);
   const [inRoom, setInRoom] = useState(false);
@@ -167,15 +201,21 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
   const [pickedDeck, setPickedDeck] = useState('');
   // 卡组分类（wHostPrepare cbDeckCategory：'/' 分隔的目录层级，根 = 未分类）
   const [deckCategory, setDeckCategory] = useState('');
-  const [seats, setSeats] = useState<PlayerSeat[]>([EMPTY_SEAT(), EMPTY_SEAT()]);
+  // 座位恒为 4 个（原版 wHostPrepare 4 座），渲染几行由房间模式决定
+  const [seats, setSeats] = useState<PlayerSeat[]>([EMPTY_SEAT(), EMPTY_SEAT(), EMPTY_SEAT(), EMPTY_SEAT()]);
   const [watchCount, setWatchCount] = useState(0);
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [messages, setMessages] = useState<string[]>([]);
   const [chat, setChat] = useState('');
 
   const chatBoxRef = useRef<HTMLDivElement | null>(null);
-  // Observer（selftype>1，gframe 语义）：无准备/卡组操作，只能观战或转回决斗者
-  const isObserver = selfType > 1;
+  // Observer（selftype，gframe 语义）：NETPLAYER_TYPE_OBSERVER=7（network.h:256），
+  // 决斗者座位在 single/match 为 0/1、TAG 为 0-3——不能用 >1 判断观战，
+  // 否则 TAG 的 2/3 号位玩家会被当成观战者（原版 duelclient 用 >3 判 TAG 观战）。
+  const isObserver = selfType >= 7;
+  // TAG 模式（HostInfo.Mode=2，network.h MODE_TAG）渲染 4 个座位，否则 2 个
+  const roomMode = Number(roomRuleInfo?.Mode ?? roomRuleInfo?.mode ?? 0);
+  const seatCount = roomMode === 2 ? MAX_SEATS : 2;
 
   useEffect(() => {
     const onTypeChange = (data: any) => {
@@ -189,7 +229,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
     };
     const onPlayerEnter = (data: any) => {
       const pos = Number(data.pos);
-      if (pos > 1) return;
+      if (pos < 0 || pos >= MAX_SEATS) return;
       setSeats((prev) => {
         const next = [...prev];
         next[pos] = { name: data.name || '', status: '已连接', color: '#10b981', ready: false };
@@ -197,7 +237,9 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
       });
     };
     // STOC_HS_PLAYER_CHANGE（duelclient.cpp:869-932）：status 低 4 位是事件、
-    // 高 4 位是座位。Go 侧已拆出 pos/status。
+    // 高 4 位是座位。Go 侧已拆出 pos/status。TAG 模式下座位/目标位都可能是
+    // 2/3（队友位）；state<8 是座位平移（pos → state），state 8/9/a/b 分别是
+    // 转观战/准备/取消准备/离开。
     const onPlayerChange = (data: any) => {
       const pos = Number(data.pos);
       const state = Number(data.status);
@@ -206,16 +248,16 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
         if (state < 8) {
           // 座位平移：pos 座位的玩家移到 state 座位
           const moving = prev[pos];
-          if (pos < 2) next[pos] = EMPTY_SEAT();
-          if (state < 2) next[state] = { ...moving, ready: false };
+          if (pos >= 0 && pos < MAX_SEATS) next[pos] = EMPTY_SEAT();
+          if (state >= 0 && state < MAX_SEATS) next[state] = { ...moving, ready: false };
         } else if (state === 0x9) { // PLAYERCHANGE_READY
-          if (pos < 2) next[pos] = { ...prev[pos], ready: true, status: '已准备', color: '#10b981' };
+          if (pos >= 0 && pos < MAX_SEATS) next[pos] = { ...prev[pos], ready: true, status: '已准备', color: '#10b981' };
         } else if (state === 0xa) { // PLAYERCHANGE_NOTREADY
-          if (pos < 2) next[pos] = { ...prev[pos], ready: false, status: '未准备', color: '#9ca3af' };
+          if (pos >= 0 && pos < MAX_SEATS) next[pos] = { ...prev[pos], ready: false, status: '未准备', color: '#9ca3af' };
         } else if (state === 0xb) { // PLAYERCHANGE_LEAVE：清座位
-          if (pos < 2) next[pos] = EMPTY_SEAT();
+          if (pos >= 0 && pos < MAX_SEATS) next[pos] = EMPTY_SEAT();
         } else if (state === 0x8) { // PLAYERCHANGE_OBSERVE：转观战，清座位
-          if (pos < 2) next[pos] = EMPTY_SEAT();
+          if (pos >= 0 && pos < MAX_SEATS) next[pos] = EMPTY_SEAT();
         }
         return next;
       });
@@ -306,6 +348,21 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
     });
     return () => { alive = false; };
   }, []);
+
+  // LAN 房间发现（原版 btnLanRefresh → DuelClient::BeginRefreshHost）：
+  // 广播窗口打开即自动刷一轮；手动点「刷新主机」重刷（is_refreshing 守卫防重入）
+  const refreshHostList = async (): Promise<void> => {
+    if (refreshingHosts) return;
+    setRefreshingHosts(true);
+    try {
+      const list = await WailsBridge.refreshHosts(3000);
+      setHosts(list || []);
+    } catch {
+      setHosts([]);
+    } finally {
+      setRefreshingHosts(false);
+    }
+  };
 
   // 大厅记忆预填（原版 game.cpp 点击连接/建房时保存 nickname/lasthost/lastport/
   // gamename/serverport/lastdeck，启动时回填输入框）。lastcategory 无对应 UI，
@@ -423,7 +480,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
     setIsHost(false);
     setIsReady(false);
     setRoomRuleInfo(null);
-    setSeats([EMPTY_SEAT(), EMPTY_SEAT()]);
+    setSeats([EMPTY_SEAT(), EMPTY_SEAT(), EMPTY_SEAT(), EMPTY_SEAT()]);
     setSeats((prev) => {
       const next = [...prev];
       next[0] = { ...next[0], name: username.trim() || 'Duelist' };
@@ -446,14 +503,16 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
       if (!pickedDeck) { setErrMsg('请先选择卡组'); return; }
       const deck = await WailsBridge.loadDeck(pickedDeck);
       if (!deck) { setErrMsg('卡组加载失败'); return; }
+      setLastSentDeck(deck);
       WailsBridge.updateDeck([...deck.main, ...deck.extra], deck.side);
     }
     setIsReady(next);
     WailsBridge.setReady(next);
   };
 
-  // 开始决斗使能（duelclient.cpp:916-923）：双方都准备才可开始
-  const canStart = isHost && !!seats[0].ready && !!seats[1].ready;
+  // 开始决斗使能（duelclient.cpp:916-923 + tag_duel.cpp 对应段）：全部座位
+  // 就绪才可开始（single/match 2 席、TAG 4 席；服务端 startDuelCommon 同样校验）
+  const canStart = isHost && seats.slice(0, seatCount).every((s) => s.ready);
 
   useEffect(() => {
     if (connected || inRoom) {
@@ -518,6 +577,30 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
   const showCreate = createOpen;
   const showPrepare = (connected || inRoom) && !createOpen;
 
+  // LAN 窗打开时自动发现一轮房间
+  useEffect(() => {
+    if (showLan) refreshHostList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showLan]);
+
+  // 主机行文案（原版 BroadcastReply 的 hoststr 拼接）：
+  // [卡表][规则][模式][标准/自定义]房间名
+  const hostRowLabel = (h: HostEntry): string => {
+    const lf = lfNameOf(h.lflist, lfLists);
+    const rule = (CARD_RULES[h.rule] || CARD_RULES[0]).label;
+    const mode = (DUEL_MODES[h.mode] || DUEL_MODES[0]).label;
+    // 原版：draw1/hand5/lp8000/不检查关/不洗关/默认规则(=5) → 1247「标准」
+    const standard = h.drawCount === 1 && h.startHand === 5 && h.startLp === 8000
+      && !h.noCheckDeck && !h.noShuffleDeck && h.duelRule === 5;
+    return `[${lf}][${rule}][${mode}][${standard ? '标准' : '自定义'}]${h.name}`;
+  };
+
+  // 选中主机行 → 回填主机信息（原版 LISTBOX_LAN_HOST，menu_handler.cpp:507-519）
+  const pickHost = (h: HostEntry): void => {
+    setJoinHost(h.ip);
+    setJoinPort(String(h.port));
+  };
+
   // 建房窗行布局（docs 原型 host-row：label 90px 右对齐 + 控件）
   const row = (label: string, control: React.ReactNode) => (
     <div className="flex min-h-[22px] items-center gap-1.5">
@@ -568,13 +651,34 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
               建立主机
             </button>
           </div>
-          {/* 房间列表（原版 lstHostList 220px；本地服务器暂无房间发现协议，占位） */}
-          <div id="lobby-host-list" className="gfw-list" style={{ height: '220px' }}>
-            <div className="gfw-list-item" style={{ color: '#888' }}>（「建立主机」= 本机开服并建房；「加入游戏」= 按主机信息+密码连接并入房）</div>
+          {/* 房间列表（原版 lstHostList 220px；LAN UDP 广播发现，点击行回填主机信息） */}
+          <div id="lobby-host-list" className="gfw-list" style={{ height: '220px', overflowY: 'auto' }}>
+            {hosts.length === 0 ? (
+              <div className="gfw-list-item" style={{ color: '#888' }}>
+                {refreshingHosts ? '正在搜索局域网主机……' : '未发现主机——可「建立主机」本机开服，或输入主机信息加入游戏'}
+              </div>
+            ) : hosts.map((h, i) => (
+              <div
+                key={`${h.ip}:${h.port}`}
+                id={`lobby-host-${i}`}
+                className="gfw-list-item"
+                style={{ cursor: 'pointer' }}
+                title="点击回填主机信息"
+                onClick={() => pickHost(h)}
+              >
+                {hostRowLabel(h)}
+              </div>
+            ))}
           </div>
           <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <button className="gfw-btn btn" style={{ width: '100px' }} onClick={() => { /* 原版刷新主机列表；本地无发现协议 */ }}>
-              刷新主机
+            <button
+              id="lobby-refresh-hosts"
+              className="gfw-btn btn"
+              style={{ width: '100px' }}
+              disabled={refreshingHosts}
+              onClick={refreshHostList}
+            >
+              {refreshingHosts ? '刷新中…' : '刷新主机'}
             </button>
           </div>
           {/* 底部：左 主机信息(IP+端口 60px)/主机密码，右 90px 加入游戏/取消 */}
@@ -742,11 +846,11 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
         <div className="gfw-title">决斗准备</div>
         <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <div style={{ display: 'flex', gap: '12px' }}>
-            {/* 左列：决斗者（X 踢人 + 昵称 + 准备勾选框；观战者身份换 转为决斗者） */}
+            {/* 左列：决斗者（X 踢人 + 昵称 + 准备勾选框；观战者身份换 转为决斗者）。
+                原版 wHostPrepare 恒建 4 座（game.cpp:308-317），TAG 模式全渲染 */}
             <div style={{ width: '180px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#222', padding: '2px 0' }}>决斗者</div>
-              {seatRow(0)}
-              {seatRow(1)}
+              {Array.from({ length: seatCount }, (_, i) => seatRow(i))}
               {isObserver ? (
                 <button id="lobby-to-duelist" className="gfw-btn btn" style={{ marginTop: '4px' }} onClick={backToDuelist}>→决斗者</button>
               ) : (!isHost && inRoom) ? (
@@ -822,7 +926,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
                 className="gfw-btn btn"
                 style={{ width: '100px' }}
                 disabled={!canStart}
-                title={canStart ? '' : '双方都准备后才能开始'}
+                title={canStart ? '' : '所有决斗者都准备后才能开始'}
                 onClick={() => WailsBridge.startDuel()}
               >
                 开始

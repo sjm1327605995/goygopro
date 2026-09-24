@@ -764,6 +764,17 @@
 
 /* 决斗者着色（gframe：主玩家蓝/对手红/观战灰） */
 .chat-line.chat-p0 .chat-name { color: #5eb2ff; }
+/* 聊天着色分档（gframe drawing.cpp:1041 chatColor 20 档取主要档）：
+   自己白、对手决斗者红、系统蓝紫、观战者绿/青/蓝/品红/黄轮换。
+   chat-self/opp/sys/spec 类优先于上面的旧 chat-p0..p3 规则。 */
+.chat-line.chat-self .chat-name { color: #ffffff; }
+.chat-line.chat-opp .chat-name { color: #ff4040; }
+.chat-line.chat-sys .chat-name { color: #8080ff; }
+.chat-line.chat-spec-spec0 .chat-name { color: #40ff40; }
+.chat-line.chat-spec-spec1 .chat-name { color: #40ffff; }
+.chat-line.chat-spec-spec2 .chat-name { color: #5eb2ff; }
+.chat-line.chat-spec-spec3 .chat-name { color: #ff40ff; }
+.chat-line.chat-spec-spec4 .chat-name { color: #ffff40; }
 .chat-line.chat-p1 .chat-name { color: #ff6a6a; }
 .chat-line.chat-p2 .chat-name,
 .chat-line.chat-p3 .chat-name { color: #b0b0b0; }
@@ -823,6 +834,37 @@
 
 .side-decking-box .form-select { width: 100%; }
 
+/* ---- 逐张换副卡组（三区 + 点击/拖拽互换） ---- */
+.side-decking-box-wide { min-width: 560px; max-width: 640px; max-height: 86vh; overflow-y: auto; }
+
+.side-deck-section { display: flex; flex-direction: column; gap: 4px; }
+
+.side-deck-section-title {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 13px; color: #cdd8f0;
+}
+
+.side-deck-count { font-size: 12px; }
+.side-deck-count.ok { color: #7ee787; }
+.side-deck-count.warn { color: #ffb454; }
+
+.side-deck-grid {
+  display: flex; flex-wrap: wrap; gap: 3px; min-height: 44px;
+  background: #0a0f1e; border: 1px solid #2a3a5e; border-radius: 6px; padding: 4px;
+}
+
+.side-deck-chip {
+  width: 34px; height: 48px; border-radius: 3px; overflow: hidden;
+  border: 1px solid #3a4a6e; background: #0f172a; flex-shrink: 0;
+}
+
+.side-deck-chip-fallback {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  font-size: 8px; color: #38bdf8; text-align: center; padding: 1px; word-break: break-all;
+}
+
+.side-deck-empty { font-size: 11px; color: #5a6a8e; padding: 4px; }
+
 /* ------------------------------------------------------------------
    DrawSpec 特效（原版 drawing.cpp:851）+ stTip 悬浮提示
    ------------------------------------------------------------------ */
@@ -873,6 +915,227 @@
   0%   { transform: scale(1.8); opacity: 0; }
   40%  { opacity: 1; }
   100% { transform: scale(1);   opacity: 1; }
+}
+
+/* showcard=4：淡入揭示（alpha 渐显，confirm_cards 单卡揭示） */
+.spec-fade { animation: spec-fade-anim 0.7s ease-out; }
+@keyframes spec-fade-anim {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* showcard=6：回合数大字盖戳（CHINT_TURN 的 number.png 叠卡图） */
+.spec-number {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 12, 20, 0.55);
+  animation: spec-number-anim 0.9s ease-out;
+}
+.spec-number > span {
+  font-size: 96px;
+  font-weight: 900;
+  color: #fbbf24;
+  text-shadow: 0 0 12px #000, 0 0 24px #f59e0b;
+  animation: spec-number-pop 0.5s ease-out;
+}
+@keyframes spec-number-anim {
+  0%   { opacity: 0; }
+  30%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes spec-number-pop {
+  0%   { transform: scale(2.2); }
+  100% { transform: scale(1); }
+}
+
+/* showcard=100：猜拳双拳下落对碰（原版 tHand 两拳相向会合） */
+.rps-arena {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  transform: translateX(-50%);
+  z-index: 930;
+  width: 320px;
+  height: 240px;
+  pointer-events: none;
+}
+.rps-hand {
+  position: absolute;
+  left: 50%;
+  font-size: 84px;
+  transform: translateX(-50%);
+  text-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
+}
+.rps-hand-top {
+  top: -120px;
+  animation: rps-drop-top 0.55s cubic-bezier(0.5, 0, 0.8, 0.4) forwards;
+}
+.rps-hand-bottom {
+  bottom: -120px;
+  animation: rps-rise-bottom 0.55s cubic-bezier(0.5, 0, 0.8, 0.4) forwards;
+}
+@keyframes rps-drop-top {
+  0%   { top: -120px; }
+  70%  { top: 62px; }
+  85%  { top: 54px; }
+  100% { top: 60px; }
+}
+@keyframes rps-rise-bottom {
+  0%   { bottom: -120px; }
+  70%  { bottom: 62px; }
+  85%  { bottom: 54px; }
+  100% { bottom: 60px; }
+}
+.rps-clash {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border: 4px solid #fde047;
+  border-radius: 50%;
+  opacity: 0;
+  animation: rps-clash-anim 0.5s ease-out 0.5s forwards;
+}
+@keyframes rps-clash-anim {
+  0%   { transform: scale(0.4); opacity: 0.9; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+
+/* 掷币/掷骰图标动画（toss_coin/toss_dice 的图标化升级，文本弹条保留） */
+.toss-arena {
+  position: absolute;
+  left: 50%;
+  top: 26%;
+  transform: translateX(-50%);
+  z-index: 930;
+  display: flex;
+  gap: 18px;
+  pointer-events: none;
+}
+.toss-coin {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fef3c7, #d4a017 70%, #8a6410);
+  border: 3px solid #8a6410;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 900;
+  color: #5a3d06;
+  animation: toss-coin-flip 0.9s ease-out;
+}
+@keyframes toss-coin-flip {
+  0%   { transform: translateY(-70px) rotateY(0deg); }
+  45%  { transform: translateY(6px)   rotateY(540deg); }
+  65%  { transform: translateY(-16px) rotateY(720deg); }
+  85%  { transform: translateY(3px)   rotateY(900deg); }
+  100% { transform: translateY(0)     rotateY(1080deg); }
+}
+.toss-die {
+  width: 60px;
+  height: 60px;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #f8fafc, #cbd5e1);
+  border: 2px solid #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  font-weight: 900;
+  color: #0f172a;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5);
+  animation: toss-die-bounce 0.9s ease-out;
+}
+@keyframes toss-die-bounce {
+  0%   { transform: translateY(-90px) rotate(-14deg); }
+  45%  { transform: translateY(8px)   rotate(8deg); }
+  65%  { transform: translateY(-22px) rotate(-5deg); }
+  85%  { transform: translateY(4px)   rotate(2deg); }
+  100% { transform: translateY(0)     rotate(0deg); }
+}
+
+/* ------------------------------------------------------------------
+   MSG_BATTLE 攻防对撞浮层（BattleOverlay.tsx）：伤害步骤双方攻守
+   数值从两侧对撞 → 结果行 → 整体淡出
+   ------------------------------------------------------------------ */
+.battle-overlay {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  transform: translateX(-50%);
+  z-index: 940;
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  pointer-events: none;
+  animation: battle-fade-anim 2.4s ease-in forwards;
+}
+.battle-side {
+  min-width: 150px;
+  padding: 10px 16px;
+  background: rgba(10, 12, 20, 0.88);
+  border: 1px solid rgba(184, 154, 90, 0.6);
+  border-radius: 6px;
+  text-align: center;
+}
+.battle-side-a { animation: battle-slide-l-anim 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+.battle-side-d { animation: battle-slide-r-anim 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+@keyframes battle-slide-l-anim {
+  0%   { transform: translateX(-90px); opacity: 0; }
+  100% { transform: translateX(0);     opacity: 1; }
+}
+@keyframes battle-slide-r-anim {
+  0%   { transform: translateX(90px); opacity: 0; }
+  100% { transform: translateX(0);    opacity: 1; }
+}
+.battle-name {
+  font-size: 13px;
+  color: #e8ddc0;
+  margin-bottom: 6px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.battle-stat { display: flex; justify-content: center; gap: 14px; }
+.battle-atk { font-size: 26px; font-weight: 700; color: #ff6b4a; text-shadow: 0 0 8px rgba(255, 107, 74, 0.5); }
+.battle-def { font-size: 26px; font-weight: 700; color: #4aa8ff; text-shadow: 0 0 8px rgba(74, 168, 255, 0.5); }
+.battle-clash { text-align: center; }
+.battle-vs {
+  font-size: 24px;
+  font-weight: 800;
+  color: #ffe66a;
+  text-shadow: 0 0 10px rgba(255, 230, 106, 0.7);
+  animation: battle-vs-anim 0.5s ease-out;
+}
+@keyframes battle-vs-anim {
+  0%   { transform: scale(2.2); opacity: 0; }
+  60%  { transform: scale(0.95); opacity: 1; }
+  100% { transform: scale(1); }
+}
+.battle-result {
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffd7d7;
+  text-shadow: 0 1px 2px #000;
+  animation: battle-result-anim 0.4s ease-out 0.35s backwards;
+}
+@keyframes battle-result-anim {
+  0%   { transform: translateY(8px); opacity: 0; }
+  100% { transform: translateY(0);   opacity: 1; }
+}
+@keyframes battle-fade-anim {
+  0%, 78% { opacity: 1; }
+  100%    { opacity: 0; }
 }
 
 /* ==================================================================
@@ -1115,4 +1378,29 @@
   padding-top: 12px;
   margin-top: 4px;
   border-top: 1px solid rgba(184, 154, 90, 0.45);
+}
+
+/* ---- select_card 场上点选控制条（纯场上询问时替代弹窗：
+   原版 stHintMsg 提示文本 + btnCancelOrFinish 的场形态） ---- */
+.card-select-bar {
+  position: absolute;
+  bottom: 168px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 16px;
+  background: rgba(16, 20, 32, 0.88);
+  border: 1px solid rgba(250, 204, 21, 0.55);
+  border-radius: 6px;
+  z-index: 160;
+  white-space: nowrap;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.55);
+}
+
+.card-select-bar span {
+  color: #fde68a;
+  font-size: 14px;
+  font-weight: 700;
 }

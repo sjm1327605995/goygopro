@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { eventBus, WailsBridge } from './wails_bridge.ts';
 import { soundManager } from './audio/sound_manager.ts';
+import { bgmManager } from './audio/bgm_manager.ts';
 import { settingsStore } from './domain/settings.ts';
+import { duelStore } from './duel/store.ts';
 import chainPrefs, { chainPrefFromSettings } from './duel/chain_prefs.ts';
 import MainMenu from './components/MainMenu.tsx';
 import Lobby from './components/Lobby.tsx';
@@ -67,9 +69,25 @@ export default function App() {
       if (shouldMute !== soundManager.muted) {
         setMuted(soundManager.toggleMute());
       }
+      // BGM：enable_music 开/关、music_volume 音量、music_mode 场景细分
+      bgmManager.setVolume(Number(s.music_volume) / 100);
+      bgmManager.setEnabled(!!s.enable_music);
+      bgmManager.setMode(Number(s.music_mode));
     };
     apply();
     return settingsStore.subscribe(apply);
+  }, []);
+
+  // 路由 → BGM 基础场景（menu/deck/duel；lobby/single/replay 归 menu）
+  useEffect(() => {
+    bgmManager.setRoute(screen);
+  }, [screen]);
+
+  // 决斗内状态 → BGM 场景（LP 优劣 / 胜负；原版 advantage/disadvantage/win/lose）
+  useEffect(() => {
+    const sync = () => bgmManager.syncDuel(duelStore.getState());
+    sync();
+    return duelStore.subscribe(sync);
   }, []);
 
   const toggleMute = () => setMuted(soundManager.toggleMute());

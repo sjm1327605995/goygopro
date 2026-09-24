@@ -14,6 +14,7 @@ import ActionPopup from './ActionPopup.tsx';
 import PromptHost from './PromptHost.tsx';
 import VictoryOverlay from './VictoryOverlay.tsx';
 import SpecOverlay from './SpecOverlay.tsx';
+import BattleOverlay from './BattleOverlay.tsx';
 import CardTooltip from './CardTooltip.tsx';
 
 /**
@@ -40,8 +41,8 @@ interface DuelStageProps {
   /**
    * compact=true 用于回放剧场的小容器：不渲染为全屏设计的 2D HUD
    * （预览列/日志抽屉/手牌坞/聊天/提示条/悬浮特效会把 3D 场地遮死），
-   * 也不渲染阶段条——回放里 phase 每步都变，actionable 闪光会一直闪。
-   * 只保留有信息量的 LP 面板。
+   * 阶段条只保留中央大字横幅（bannerOnly）——回放里 phase 每步都变，
+   * actionable 闪光会一直闪。只保留有信息量的 LP 面板。
    */
   compact?: boolean;
   onReady?: (stage: StageHandle | null) => void;
@@ -106,8 +107,9 @@ export default function DuelStage({
       {!compact && <CardPreviewPanel />}
       <PlayerPanel side="opponent" />
       <PlayerPanel side="player" />
-      {/* P3：阶段条（BP/M2/EP 走语义化 Respond* 方法）；回放里阶段每步都变，闪光常亮 → compact 不渲染 */}
+      {/* P3：阶段条（BP/M2/EP 走语义化 Respond* 方法）；回放里阶段每步都变，闪光常亮 → compact 只留横幅 */}
       {!compact && <PhaseStrip />}
+      {compact && <PhaseStrip bannerOnly />}
 
       {/* P5：全部 2D HUD 走 store（hud.js 已删）；compact 下全部藏起，只留 LP 面板 */}
       {!compact && <HintBar />}
@@ -126,6 +128,7 @@ export default function DuelStage({
       {!compact && <ChatOverlay />}
       {/* P4 波 6 补完：DrawSpec 特效（翻卡/放大/揭示/无效化 + 猜硬币文本）与 stTip 悬浮提示 */}
       {!compact && <SpecOverlay />}
+      {!compact && <BattleOverlay />}
       {!compact && <CardTooltip />}
     </div>
   );

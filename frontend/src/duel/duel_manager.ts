@@ -16,31 +16,121 @@
 
 import { WailsBridge, eventBus } from '../wails_bridge.ts';
 import { duelStore } from './store.ts';
+import { settingsStore } from '../domain/settings.ts';
+import { seatToDisplay, bottomEngineSeat } from '../domain/reducer.ts';
+import { respondCardSelection } from './card_select.ts';
 import {
   LOC_NAMES,
   LOC_DECK, LOC_HAND, LOC_EXTRA,
   CARD_QUESTION, PHINT_DESC_ADD,
 } from '../domain/constants.ts';
 import type { DuelField3D } from './field3d.ts';
+import { sysString } from '../domain/sys_strings.ts';
+import { cardName } from '../domain/card_names.ts';
+import { soundManager } from '../audio/sound_manager.ts';
+import { TYPE_TRAP, TYPE_SPELL, TYPE_CONTINUOUS, TYPE_FIELD } from '../domain/constants.ts';
 
 export class DuelManager {
   field3D: DuelField3D;
   /** 非交互模式（回放）不发送任何协议响应、不响应点击。 */
   interactive: boolean;
   playerSlot = 0;
-  /** 对手手牌数（驱动 field3D 的对手手背行；自己的手牌在 store.hand） */
-  opponentHandCount = 0;
+  /** 双座手牌数（引擎 seat 索引；驱动 field3D 的远侧手背行——显示座 1 一侧） */
+  handCounts: [number, number] = [0, 0];
   idleCmd: any = null;
   battleCmd: any = null;
+  /** MSG_SELECT_PLACE/DISFIELD 点选状态；null = 不在选位中 */
+  placeSelect: {
+    player: number;
+    count: number;
+    cancelable: boolean;
+    zones: { player: number; loc: number; seq: number }[];
+    selected: string[];
+  } | null = null;
   _resyncing = false;
   _subs: [string, (data: any) => void][] = [];
+  /** HINT_ZONE 高亮的自动清除定时器（原版 WaitFrameSignal(40) 后清） */
+  hintZoneTimer: ReturnType<typeof setTimeout> | null = null;
+  /** store 订阅（视角交换 / select_card 选择态联动）的退订函数 */
+  _storeUnsub: (() => void) | null = null;
+  _lastViewSwapped = false;
+  /** 上次布设高亮时的 cardSelect 指纹（kind:count:selected），避免重复重建 */
+  _lastCardSelectKey = '';
 
   constructor(field3D: DuelField3D, { interactive = true }: { interactive?: boolean } = {}) {
     this.field3D = field3D;
     // 非交互模式（回放）不发送任何协议响应、不响应点击。
     this.interactive = interactive;
 
+    // 3D 场的点选/右键回调挂到本 manager（构造顺序：field 先建、manager 后建，
+    // 回调只在事件后触发，无竞态）。
+    this.field3D.onPlaceZoneClick = (zone) => this.onPlaceZoneClick(zone);
+    this.field3D.onCardSelectPick = (idx) => this.onCardSelectPick(idx);
+    this.field3D.onBoardRightClick = (x, y) => this.onBoardRightClick(x, y);
+    this.field3D.onPileRightClick = (player, pile) => this.onPileRightClick(player, pile);
+
     this.initNetworkListeners();
+
+    // store 联动：视角交换 → 相机/手背行翻转（回放也生效）；cardSelect
+    // 选择态 → 场上高亮刷新 + 选满自动应答（仅交互模式应答）。
+    this._lastViewSwapped = duelStore.getState().viewSwapped;
+    this._storeUnsub = duelStore.subscribe(() => this.onStoreChange());
+  }
+
+  onStoreChange(): void {
+    const st = duelStore.getState();
+    if (st.viewSwapped !== this._lastViewSwapped) {
+      this._lastViewSwapped = st.viewSwapped;
+      this.field3D.setViewSwapped(st.viewSwapped);
+      this.refreshFarHandRow();
+    }
+    const cs = st.cardSelect;
+    const key = cs ? `${cs.kind}:${cs.cards.length}:${cs.selected.join(',')}` : '';
+    if (key !== this._lastCardSelectKey) {
+      this._lastCardSelectKey = key;
+      this.refreshCardSelectMarks();
+    }
+    if (!this.interactive || !cs || cs.kind !== 'card' || !cs.selected.length) return;
+    // 选满自动应答（原版 event_handler.cpp:1389-1398：达到 select_max，
+    // 或已达 select_min 且可选卡全部被选中时立即 SendResponse）
+    if (cs.selected.length >= cs.max
+        || (cs.selected.length >= cs.min && cs.selected.length === cs.cards.length)) {
+      respondCardSelection();
+    }
+  }
+
+  /** 远侧（显示座 1）手背行：视角交换后远侧换 seat，重新落数 */
+  refreshFarHandRow(): void {
+    const st = duelStore.getState();
+    const topSeat = 1 - bottomEngineSeat(st);
+    this.field3D.setFarHandCount(this.handCounts[topSeat as 0 | 1] || 0);
+  }
+
+  /** select_card/unselect 的场上候选（mzone/szone）布/撤 3D 高亮 */
+  refreshCardSelectMarks(): void {
+    const cs = duelStore.getState().cardSelect;
+    if (!this.interactive || !cs || !cs.cards.some((c) => c.onField)) {
+      this.field3D.clearCardSelectMarks();
+      return;
+    }
+    const entries = cs.cards
+      .filter((c) => c.onField)
+      .map((c) => ({ idx: c.idx, c: c.c, l: c.l, s: c.s }));
+    this.field3D.setCardSelectMarks(entries, new Set(cs.selected));
+  }
+
+  /** 3D 场点选回调：unselect 单选即应答；card 点选/取消（选满自动应答
+   * 由 onStoreChange 统一触发，弹窗路径共享同一语义） */
+  onCardSelectPick(idx: number): void {
+    if (!this.interactive) return;
+    const cs = duelStore.getState().cardSelect;
+    if (!cs) return;
+    if (cs.kind === 'unselect') {
+      duelStore.toggleCardSelect(idx);
+      respondCardSelection();
+      return;
+    }
+    duelStore.toggleCardSelect(idx);
   }
 
   initNetworkListeners(): void {
@@ -66,9 +156,12 @@ export class DuelManager {
     // off it; the store displays our seat as the "player" slot.
     sub('duel:start', (data) => {
       this.playerSlot = (data.playerType || 0) & 0x0f;
-      this.opponentHandCount = 0;
-      this.field3D.setOpponentHandCount(0);
+      this.handCounts = [0, 0];
+      this.field3D.setFarHandCount(0);
       this.field3D.setCantCheckGrave(false);
+      // 新一局视角复位（reducer 已清 viewSwapped，这里同步 3D 相机）
+      this._lastViewSwapped = false;
+      this.field3D.setViewSwapped(false);
     });
 
     // MSG_PLAYER_HINT 的 CARD_QUESTION（duelclient.cpp:3757-3768）：
@@ -79,21 +172,26 @@ export class DuelManager {
       }
     });
 
-    // MSG_RELOAD_FIELD（谜题布场）：对手手背行直接取快照里的手牌数
+    // MSG_RELOAD_FIELD（谜题布场）：双座手牌数直接取快照
     sub('duel:reload_field', (data) => {
-      const opp = data.players && data.players[1 - this.playerSlot];
-      if (opp) {
-        this.opponentHandCount = opp.hand || 0;
-        this.field3D.setOpponentHandCount(this.opponentHandCount);
+      for (const seat of [0, 1] as const) {
+        const p = data.players && data.players[seat];
+        if (p) this.handCounts[seat] = p.hand || 0;
       }
+      this.refreshFarHandRow();
+    });
+
+    // MSG_TAG_SWAP（TAG 队友换手）：该座的手牌数直接以本消息为准（原版
+    // duelclient.cpp:3782 用 hcount 重排 dField.hand）；本队手牌由 reducer 处理
+    sub('duel:tag_swap', (data) => {
+      this.handCounts[data.player as 0 | 1] = data.handCount || 0;
+      this.refreshFarHandRow();
     });
 
     sub('duel:draw', async (data) => {
-      // 对手手背行是持久表示，计数在 __instant（seek 重建）下也要同步
-      if (data.player !== this.playerSlot) {
-        this.opponentHandCount += data.count;
-        this.field3D.setOpponentHandCount(this.opponentHandCount);
-      }
+      // 手背行是持久表示，计数在 __instant（seek 重建）下也要同步
+      this.handCounts[data.player as 0 | 1] = (this.handCounts[data.player as 0 | 1] || 0) + data.count;
+      this.refreshFarHandRow();
       if (data.__instant) return; // 回放 seek 重建：跳过发牌动画
       for (let i = 0; i < data.count; i++) {
         const cardCode = (data.cards && data.cards[i]) ? data.cards[i] : 0;
@@ -128,6 +226,16 @@ export class DuelManager {
       }
       this.field3D.animateSummon(data.cc, data.code, data.cs, data.cp, cardInfo, false);
     });
+
+    // MSG_SUMMONED/SPSUMMONED/FLIPSUMMONED：召唤落定顿点（小冲击波+压实弹跳）；
+    // 日志在 reducer（SysString 1604/1606/1608）
+    const onSummoned = (data: any) => {
+      if (data && data.__instant) return;
+      this.field3D.settleCard(data.cc, data.cs);
+    };
+    sub('duel:summoned', onSummoned);
+    sub('duel:spsummoned', onSummoned);
+    sub('duel:flipsummoned', onSummoned);
 
     sub('duel:set', async (data) => {
       const isMonster = data.cl === 0x4;
@@ -166,14 +274,14 @@ export class DuelManager {
       const fromLoc = LOC_NAMES[data.pl as number];
       const toLoc = LOC_NAMES[data.cl as number];
 
-      // 对手手牌数：离手 -1、回手 +1（背面行的持久表示同步）
-      if (fromLoc === 'hand' && data.pc !== this.playerSlot) {
-        this.opponentHandCount -= 1;
-        this.field3D.setOpponentHandCount(this.opponentHandCount);
+      // 手牌数：离手 -1、回手 +1（手背行的持久表示同步）
+      if (fromLoc === 'hand') {
+        this.handCounts[data.pc as 0 | 1] = Math.max(0, this.handCounts[data.pc as 0 | 1] - 1);
+        this.refreshFarHandRow();
       }
-      if (toLoc === 'hand' && data.cc !== this.playerSlot) {
-        this.opponentHandCount += 1;
-        this.field3D.setOpponentHandCount(this.opponentHandCount);
+      if (toLoc === 'hand') {
+        this.handCounts[data.cc as 0 | 1] += 1;
+        this.refreshFarHandRow();
       }
 
       const mesh = (fromLoc && data.pl !== LOC_HAND && data.pl !== LOC_DECK && data.pl !== LOC_EXTRA)
@@ -237,6 +345,13 @@ export class DuelManager {
       this.field3D.chainVisualizer?.removeSolvingLink(data.count);
     });
 
+    // MSG_CHAINED：连锁成立——最新连锁徽章顿点盖戳（原版在 dField.chains
+    // 压入正式连锁序号，徽章本身在 chaining 时已弹出）
+    sub('duel:chained', (data) => {
+      if (data && data.__instant) return;
+      this.field3D.chainVisualizer?.stampLatestLink();
+    });
+
     sub('duel:chain_end', () => {
       this.field3D.chainVisualizer?.clearChain();
     });
@@ -266,27 +381,29 @@ export class DuelManager {
       this.field3D.setActivatable(chains.map((c: any) => ({ c: c.c, l: c.l, s: c.s })));
     });
 
-    // 新阶段/指令结束：两类角标都清除
+    // 新阶段/指令结束：两类角标都清除；阶段横幅音效（原版 SOUND_PHASE，
+    // 在 MSG_NEW_PHASE 时与 showcard=101 横幅一起触发）
     sub('duel:new_phase', () => {
       this.field3D.clearAttackable();
       this.field3D.clearActivatable();
+      this.clearHintZones();
+      soundManager.playPhaseChange();
     });
 
-    // MSG_SELECT_PLACE：无 UI 的自动落点（gframe 自动选择语义：优先空区）。
-    // Go decorateSelectPlace 已把禁用位掩码取反、解码成可选 zones
-    // （含区域归属 player；对手区域见于 SELECT_DISFIELD）。
+    // MSG_SELECT_PLACE / MSG_SELECT_DISFIELD：原版两种模式——
+    // 自动落点（duelclient.cpp:1852-1905：automonsterpos 覆盖含怪兽区的
+    // 询问、autospellpos 覆盖纯魔陷区询问；SELECT_DISFIELD 从不自动）或
+    // 进入点选模式（event_handler.cpp:1316-1375：点格累计选位、再点已选
+    // 格取消、选满即应答）。Go decorateSelectPlace 已把禁用位掩码取反、
+    // 解码成带区域归属 player 的 zones 列表。
     sub('duel:select_place', (data) => {
       if (!this.interactive) return;
-      const zones = data.zones || [];
-      const locName: Record<number, string> = { 0x04: 'mzone', 0x08: 'szone' };
-      const occupied = (z: { player?: number; loc: number; seq: number }) => {
-        const target = this.field3D.cardsOnField[z.player ?? data.player];
-        const arr = target && target[locName[z.loc]];
-        return !!(arr && arr[z.seq]);
-      };
-      const zone = zones.find((z: any) => !occupied(z)) || zones[0];
-      if (!zone) return;
-      WailsBridge.respondSelectPlace(zone.player ?? data.player, zone.loc, zone.seq);
+      this.beginPlaceSelect(data);
+    });
+
+    // MSG_FIELD_DISABLED：禁用格白叉（drawing.cpp:210-241）
+    sub('duel:field_disabled', (data) => {
+      this.field3D.setFieldDisabled((data && data.zones) || 0);
     });
 
     // ---- 波 B：过程展示消息 → field3d 原语（回放同样消费，无协议响应）----
@@ -346,9 +463,14 @@ export class DuelManager {
     });
 
     // MSG_HINT：HINT_EVENT(1)/HINT_MESSAGE(2) 的文本走 ResolveDesc 显示在
-    // 提示条（gframe MESG_HINT 的 stHintMsg 分支）；其余类型是选择提示/
-    // 效果角标，不落 2D。
+    // 提示条（gframe MESG_HINT 的 stHintMsg 分支）；HINT_ZONE(11) 译位掩码
+    // 为场上区域高亮；其余类型（select 提示/宣言展示/效果角标）由
+    // reducer / PromptHost / SpecOverlay 消费。
     sub('duel:hint', async (data) => {
+      if (data.type === 11) {
+        this.showHintZones(data.player, data.data);
+        return;
+      }
       if (data.type !== 1 && data.type !== 2) return;
       const text = await WailsBridge.resolveDesc(data.data);
       if (text) duelStore.setHint(text);
@@ -376,14 +498,247 @@ export class DuelManager {
     sub('duel:update_data', () => {
       this.resyncFromStore();
     });
+    // MSG_UPDATE_CARD 不走整板 resync，但 status 可能变化 → 只刷新无效化徽章
+    sub('duel:update_card', () => {
+      this.syncNegatedBadges();
+    });
   }
 
   // Unsubscribes every eventBus listener registered in initNetworkListeners.
   // Called by the hosting React component on unmount.
   dispose() {
+    if (this._storeUnsub) {
+      this._storeUnsub();
+      this._storeUnsub = null;
+    }
     if (!this._subs) return;
     this._subs.forEach(([event, fn]) => eventBus.off(event, fn));
     this._subs = [];
+  }
+
+  // ---- MSG_SELECT_PLACE 落点选择（点选模式） ----
+
+  /**
+   * HINT_ZONE（duelclient.cpp:1168）：位掩码译成格子在场上画高亮（与
+   * select_place 同位域、不同样式），~40 帧（0.8s）后自动清除；对方操作
+   * 时高低 16 位互换（低半 = 屏幕下方本方场地）。
+   */
+  showHintZones(player: number, raw: number): void {
+    // 位掩码低 16 位 = 屏幕下侧一方的场地（viewSwapped 时下侧是对面 seat）
+    const seat = bottomEngineSeat(duelStore.getState());
+    let mask = raw >>> 0;
+    if (player !== seat) mask = ((mask >>> 16) | (mask << 16)) >>> 0;
+    const opp = 1 - seat;
+    const zones: { player: number; loc: number; seq: number }[] = [];
+    const scan = (p: number, loc: number, base: number, count: number) => {
+      for (let seq = 0; seq < count; seq++) {
+        if (mask & (base << seq)) zones.push({ player: p, loc, seq });
+      }
+    };
+    scan(seat, 0x04, 0x1, 7);
+    scan(seat, 0x08, 0x100, 8);
+    scan(opp, 0x04, 0x10000, 7);
+    scan(opp, 0x08, 0x1000000, 8);
+    this.field3D.setHintZones(zones);
+    if (this.hintZoneTimer) clearTimeout(this.hintZoneTimer);
+    this.hintZoneTimer = setTimeout(() => {
+      this.hintZoneTimer = null;
+      this.field3D.clearHintZones();
+    }, 800);
+  }
+
+  clearHintZones(): void {
+    if (this.hintZoneTimer) {
+      clearTimeout(this.hintZoneTimer);
+      this.hintZoneTimer = null;
+    }
+    this.field3D.clearHintZones();
+  }
+
+  placeZoneKey(zone: { player: number; loc: number; seq: number }): string {
+    return `${zone.player}:${zone.loc}:${zone.seq}`;
+  }
+
+  /**
+   * select_place 入口：自动落点设置命中时按原版优先级代答（随机位
+   * randompos 开时在候选里均匀取），否则进入点选模式并布设高亮。
+   */
+  beginPlaceSelect(data: any): void {
+    this.endPlaceSelect(); // 新的询问到达时旧的高亮/选择态作废
+    // 原版消息处理即消费 select_hint（自动代答路径也不例外）
+    const hintId = duelStore.getState().selectHint;
+    if (hintId) duelStore.consumeSelectHint();
+    const zones = (data.zones || []).map((z: any) => ({
+      player: z.player ?? data.player,
+      loc: z.loc,
+      seq: z.seq,
+    }));
+    if (!zones.length) return;
+    // 原版 selectable_field & 0x7f007f：可选集含任一怪兽区（己方或对方）
+    const hasMzone = zones.some((z: any) => z.loc === 0x04);
+    const autoMonster = Number(settingsStore.get('automonsterpos')) !== 0;
+    const autoSpell = Number(settingsStore.get('autospellpos')) !== 0;
+    if (!data.disfield && ((autoMonster && hasMzone) || (autoSpell && !hasMzone))) {
+      const zone = this.pickAutoPlaceZone(zones, data.player, hasMzone);
+      if (zone) WailsBridge.respondSelectPlace(zone.player, zone.loc, zone.seq);
+      return;
+    }
+    const count = Math.max(1, data.count || 1);
+    this.placeSelect = {
+      player: data.player,
+      count,
+      cancelable: (data.count || 0) === 0,
+      zones,
+      selected: [],
+    };
+    this.field3D.setPlaceSelectZones(zones, new Set());
+    // 原版 stHintMsg：SysString 560「请选择」/ 570「请选择要变成不能使用的
+    // 卡片区域」（SELECT_DISFIELD）；select_hint 优先——SELECT_PLACE 时
+    // hint 是卡号（SysString 569「请选择[%ls]的位置」），DISFIELD 时是
+    // desc id（duelclient.cpp:1839-1849）。
+    const fallback = data.disfield
+      ? (sysString(570) || '请选择要变成不能使用的区域')
+      : (sysString(560) || '请选择卡片的位置');
+    let text = fallback;
+    if (hintId) {
+      text = data.disfield
+        ? (sysString(hintId) || fallback)
+        : (sysString(569) || '请选择[%ls]的位置').replace('[%ls]', cardName(hintId));
+    }
+    duelStore.setHint(text);
+    duelStore.armSelectHint(text);
+    if (hintId) {
+      // desc id / 卡名未入缓存时异步精化（原版 GetDesc/GetName 是同步全表）
+      const sel = this.placeSelect;
+      void (async () => {
+        let refined = '';
+        if (data.disfield) {
+          refined = sysString(hintId) || (await WailsBridge.resolveDesc(hintId)) || '';
+        } else {
+          const info = await WailsBridge.getCard(hintId);
+          const name = (info && info.name) || cardName(hintId);
+          refined = (sysString(569) || '请选择[%ls]的位置').replace('[%ls]', name);
+        }
+        if (refined && this.placeSelect === sel) {
+          duelStore.setHint(refined);
+          duelStore.armSelectHint(refined);
+        }
+      })();
+    }
+  }
+
+  // 原版自动落点序（duelclient.cpp:1856-1901）：区域优先级
+  // 己 mzone→己 szone→己灵摆→对 mzone→对 szone→对灵摆；区内优先序
+  // 怪兽区 6,5,2,1,3,0,4（额外怪区优先），灵摆区 6,7；randompos 开时区内均匀随机。
+  pickAutoPlaceZone(
+    zones: { player: number; loc: number; seq: number }[],
+    player: number,
+    hasMzone: boolean,
+  ): { player: number; loc: number; seq: number } | null {
+    const regions = [
+      { player, loc: 0x04, pzone: false },
+      { player, loc: 0x08, pzone: false },
+      { player, loc: 0x08, pzone: true },
+      { player: 1 - player, loc: 0x04, pzone: false },
+      { player: 1 - player, loc: 0x08, pzone: false },
+      { player: 1 - player, loc: 0x08, pzone: true },
+    ];
+    const randomPos = Number(settingsStore.get('randompos')) !== 0;
+    for (const region of regions) {
+      // mzone 全区 seq0-6（5 主怪区 + 2 额外怪区）；szone 拆魔陷 seq0-5 与
+      // 灵摆 seq6/7 两个区域（原版 filter 0x3f00 / 0xc000 的拆分）
+      const candidates = zones.filter((z) => {
+        if (z.player !== region.player || z.loc !== region.loc) return false;
+        if (region.loc === 0x04) return true;
+        return region.pzone ? z.seq >= 6 : z.seq < 6;
+      });
+      if (!candidates.length) continue;
+      if (region.pzone) {
+        return candidates.find((z) => z.seq === 6) || candidates[0];
+      }
+      if (randomPos) {
+        return candidates[Math.floor(Math.random() * candidates.length)];
+      }
+      const priority = [6, 5, 2, 1, 3, 0, 4];
+      for (const seq of priority) {
+        const hit = candidates.find((z) => z.seq === seq);
+        if (hit) return hit;
+      }
+      return candidates[0];
+    }
+    return null;
+  }
+
+  /** 3D 场点选回调：点击高亮格 → 选中/再点取消；选满即应答 */
+  onPlaceZoneClick(zone: { player: number; loc: number; seq: number }): void {
+    if (!this.interactive) return;
+    const ps = this.placeSelect;
+    if (!ps) return;
+    const key = this.placeZoneKey(zone);
+    const idx = ps.selected.indexOf(key);
+    if (idx >= 0) {
+      ps.selected.splice(idx, 1);
+    } else {
+      if (ps.selected.length >= ps.count) return; // 选满后已应答，防重入
+      ps.selected.push(key);
+    }
+    this.field3D.setPlaceSelectZones(ps.zones, new Set(ps.selected));
+    if (ps.selected.length === ps.count) {
+      // 应答顺序对齐原版 respbuf 排列：己方 mzone → 己方 szone →
+      // 对方 mzone → 对方 szone，各按 seq 升序（event_handler.cpp:1328-1366）
+      const selectedZones = ps.selected.map((k) => {
+        const [p, l, s] = k.split(':').map(Number);
+        return { player: p, loc: l, seq: s };
+      });
+      const regionRank = (z: { player: number; loc: number }): number =>
+        (z.player === ps.player ? 0 : 2) + (z.loc === 0x04 ? 0 : 1);
+      selectedZones.sort((a, b) => (regionRank(a) - regionRank(b)) || (a.seq - b.seq));
+      const flat: number[] = [];
+      for (const z of selectedZones) flat.push(z.player, z.loc, z.seq);
+      WailsBridge.respondSelectPlaces(flat);
+      this.endPlaceSelect();
+    }
+  }
+
+  /** 右键点空处：选位模式下撤销最近一次已选；无已选且询问可取消时回
+   * [player,0,0]；select_card 点选中撤销最近一次已选（与弹窗选择集同步）；
+   * 否则关动作菜单（原版 CancelOrFinish 对非 cancelable 询问不做清除，
+   * 这里按需求补"撤销最近一次"的 Web 习惯交互） */
+  onBoardRightClick(_x: number, _y: number): void {
+    if (!this.interactive) return;
+    if (this.placeSelect) {
+      const ps = this.placeSelect;
+      if (ps.selected.length) {
+        ps.selected.pop(); // 取消最近一次已选
+        this.field3D.setPlaceSelectZones(ps.zones, new Set(ps.selected));
+      } else if (ps.cancelable) {
+        WailsBridge.respondSelectPlace(ps.player, 0, 0);
+        this.endPlaceSelect();
+      }
+      return;
+    }
+    const cs = duelStore.getState().cardSelect;
+    if (cs && cs.kind === 'card' && cs.selected.length) {
+      duelStore.toggleCardSelect(cs.selected[cs.selected.length - 1]);
+      return;
+    }
+    duelStore.closeActionPopup();
+  }
+
+  /** 右键点在墓地/除外/额外堆区：快速查看列表（F1-F8 同源的 wCardDisplay） */
+  onPileRightClick(player: number, pile: string): void {
+    if (!this.interactive) return;
+    if (pile === 'deck') return; // 卡组无列表数据（原版 F 键同样不含卡组）
+    if (pile === 'grave' && duelStore.getState().cantCheckGrave) return; // 原版 F1 禁查
+    eventBus.emit('ui:show_pile', { player: seatToDisplay(duelStore.getState(), player), pile });
+  }
+
+  endPlaceSelect(): void {
+    if (!this.placeSelect) return;
+    this.placeSelect = null;
+    this.field3D.clearPlaceSelectZones();
+    duelStore.setHint('');
+    duelStore.disarmSelectHint();
   }
 
   // Builds the action popup options for a hand card from the pending idle
@@ -471,11 +826,28 @@ export class DuelManager {
   // Compares the rendered mesh slots against duelStore.board; any drift
   // (missed/mis-decoded event) triggers a full instant rebuild from the
   // store snapshot. Undrifted duels pay only the comparison cost.
+  // 场上卡无效化徽章同步（drawing.cpp:458-462）：按 store.board 的 status
+  // 给 STATUS_DISABLED/FORBIDDEN 的表侧场卡挂/摘 negated 图标。
+  syncNegatedBadges(): void {
+    const state = duelStore.getState();
+    const bottom = bottomEngineSeat(state);
+    for (let disp = 0; disp < 2; disp++) {
+      const seat = disp === 0 ? bottom : 1 - bottom;
+      const sb = state.board[disp];
+      this.field3D.syncNegatedBadges(seat, 'mzone', sb.mzone);
+      this.field3D.syncNegatedBadges(seat, 'szone', sb.szone);
+    }
+  }
+
   async resyncFromStore(): Promise<void> {
     if (this._resyncing) return;
     const state = duelStore.getState();
-    const seatOf = (disp: number) => (disp === 0 ? this.playerSlot : 1 - this.playerSlot);
+    // 显示座 → 引擎 seat（viewSwapped 时下侧是对面 seat）
+    const bottom = bottomEngineSeat(state);
+    const seatOf = (disp: number) => (disp === 0 ? bottom : 1 - bottom);
     const posState = (pos: number) => this.field3D.positionStateFor(pos);
+
+    this.syncNegatedBadges();
 
     let drift = false;
     const check = (disp: number) => {
@@ -525,6 +897,8 @@ export class DuelManager {
         await rebuild('grave', sb.grave);
         await rebuild('banish', sb.banish);
       }
+      // 重建换了全部 mesh，徽章需按新 mesh 重挂
+      this.syncNegatedBadges();
     } finally {
       this._resyncing = false;
     }

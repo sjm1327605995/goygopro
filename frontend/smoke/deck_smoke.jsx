@@ -6,6 +6,7 @@
 import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { WailsBridge } from '../src/wails_bridge.ts';
+import { settingsStore } from '../src/domain/settings.ts';
 import '../css/style.css';
 import DeckBuilder from '../src/components/DeckBuilder.tsx';
 
@@ -154,7 +155,8 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     record('filter-passthrough', searchFilters.length > 0
       && searchFilters[0].keyword === 'dragon'
       && searchFilters[0].race === 512
-      && searchFilters[0].type === 0);
+      && searchFilters[0].type === 0
+      && searchFilters[0].multiKeywords === 1);
 
     // 排序 + 计数：怪兽按攻↓ 在前（89631139 第一个），结果数显示在标题行
     const results = [...document.querySelectorAll('.search-results-grid .deck-card-chip')];
@@ -185,6 +187,12 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     record('count-badge-x2', mainGrid().querySelectorAll('.deck-count-badge').length === 3
       && [...mainGrid().querySelectorAll('.deck-count-badge')].every((b) => b.textContent === '×3'));
 
+    // 右键结果卡 → 直接加入副卡组（不受「点击加入」下拉影响，此时下拉仍是主卡组）
+    const sideBeforeRC = sideGrid().querySelectorAll('.deck-card-chip').length;
+    results[1].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    await waitFor(() => sideGrid().querySelectorAll('.deck-card-chip').length === sideBeforeRC + 1);
+    record('result-rightclick-adds-side', true);
+
     // 双击看大图遮罩
     mainGrid().querySelector('.deck-card-chip').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     await waitFor(() => document.getElementById('deck-zoom-overlay'));
@@ -212,12 +220,40 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     await waitFor(() => alertMsgs.some((m) => m.includes('副卡组已满')));
     record('side-cap-blocks-16th', sideGrid().querySelectorAll('.deck-card-chip').length === 15);
 
+    // auto_search_limit >= 0：输入满 N 字自动搜索（deck_con.cpp InstantSearch）
+    settingsStore.set('auto_search_limit', 3);
+    const searchesBeforeAuto = searchFilters.length;
+    setInputValue(document.getElementById('deck-search-input'), 'auto');
+    await waitFor(() => searchFilters.length > searchesBeforeAuto);
+    record('auto-search-fires-at-limit', searchFilters[searchFilters.length - 1].keyword === 'auto');
+    settingsStore.set('auto_search_limit', -1);
+
     // 清空条件按钮：重置全部过滤控件
     const clearBtn = document.getElementById('deck-filter-clear');
     clearBtn.click();
     await waitFor(() => document.getElementById('deck-search-input').value === ''
       && document.getElementById('deck-filter-race').textContent.includes('（无）'));
     record('clear-filters', true);
+
+    // ---- 禁限卡表（P2）：编辑器标记 + 按表校验同名上限。
+    // mock 表内容：Dark Magician 准限(2)、Trap Card 限制(1)（lfListContent） ----
+    record('lflist-name-shown', document.getElementById('deck-lflist-name').textContent.includes('禁限卡表'));
+    const dmChip = document.querySelector('.deck-grid .deck-card-chip[title="Dark Magician"]');
+    const trapChip = document.querySelector('.deck-grid .deck-card-chip[title="Trap Card"]');
+    record('lflist-badges-rendered', !!dmChip && !!dmChip.querySelector('.deck-limit-2')
+      && !!trapChip && !!trapChip.querySelector('.deck-limit-1'));
+    // 按表校验：主卡组已有 1 张 DM（准限 2）→ 第 1 张进、第 2 张被拦下
+    await selectOption('deck-add-target', 'main');
+    setInputValue(document.getElementById('deck-search-input'), 'magician');
+    [...document.querySelectorAll('.deck-search-panel .btn')].find((b) => b.textContent.includes('搜索')).click();
+    await waitFor(() => [...document.querySelectorAll('.search-results-grid .deck-card-chip')]
+      .some((c) => c.title.startsWith('Dark Magician')));
+    const dmResult = [...document.querySelectorAll('.search-results-grid .deck-card-chip')]
+      .find((c) => c.title.startsWith('Dark Magician'));
+    const mainCountBeforeLf = mainGrid().querySelectorAll('.deck-card-chip').length;
+    await clickN(dmResult, 2);
+    await waitFor(() => alertMsgs.some((m) => m.includes('最多 2 张')));
+    record('lflist-limit-enforced', mainGrid().querySelectorAll('.deck-card-chip').length === mainCountBeforeLf + 1);
 
     // 删除卡组：走 confirm → DeleteDeck → 列表刷新。
     const deleteBtn = [...document.querySelectorAll('.deck-header .btn')].find((b) => b.textContent.includes('删除'));
@@ -364,6 +400,171 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     await waitFor(() => confirmCalls.some((m) => m.includes('清空正在编辑的卡组')));
     await waitFor(() => mainGrid().querySelectorAll('.deck-card-chip').length === 0);
     record('clear-deck-empties', sideGrid().querySelectorAll('.deck-card-chip').length === 0);
+
+    // ---- 波 H：卡组码导入导出（deck_con.cpp BUTTON_IMPORT/EXPORT_DECK_CODE） ----
+    // 先搜一张卡加进已清空的主卡组，让导出文本含卡号行
+    setInputValue(document.getElementById('deck-search-input'), 'dragon');
+    findSearchBtn().click();
+    await waitFor(() => document.querySelectorAll('.search-results-grid .deck-card-chip').length === 3);
+    document.querySelectorAll('.search-results-grid .deck-card-chip')[0].click(); // Blue-Eyes 89631139
+    await waitFor(() => mainGrid().querySelectorAll('.deck-card-chip').length === 1);
+
+    // 导出：剪贴板桩捕获 ydk 文本（#main/#extra/!side 原版格式）
+    let clipboardText = null;
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (t) => { clipboardText = t; } },
+    });
+    document.getElementById('deck-export-code-btn').click();
+    await waitFor(() => clipboardText !== null);
+    record('export-copies-ydk', clipboardText.includes('#main\n89631139\n#extra\n!side'),
+      JSON.stringify(clipboardText));
+    record('export-alert-shown', alertMsgs.some((m) => m.includes('剪贴板')));
+
+    // 剪贴板被拒 → 回退文本框（内容一致，可手动复制）
+    navigator.clipboard.writeText = async () => { throw new Error('denied'); };
+    document.getElementById('deck-export-code-btn').click();
+    await waitFor(() => document.getElementById('deck-export-text'));
+    record('export-fallback-box', document.getElementById('deck-export-text').value === clipboardText);
+    document.getElementById('deck-export-close').click();
+    await waitFor(() => !document.getElementById('deck-export-overlay'));
+    record('export-fallback-closes', true);
+
+    // 导入：粘贴 ydk 文本 → 编辑器替换（主 2 / 额外 1 / 副 1）+ 标脏 + 命名
+    const setTextareaValue = (el, value) => {
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(el, value);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    document.getElementById('deck-import-code-btn').click();
+    await waitFor(() => document.getElementById('deck-import-text'));
+    setTextareaValue(document.getElementById('deck-import-text'),
+      '#created by test\n#main\n46986414\n46986414\n#extra\n84013237\n!side\n5318639\n');
+    document.getElementById('deck-import-confirm').click();
+    await waitFor(() => mainGrid().querySelectorAll('.deck-card-chip').length === 2);
+    record('import-loads-deck', document.querySelectorAll('.deck-grid')[1].querySelectorAll('.deck-card-chip').length === 1
+      && sideGrid().querySelectorAll('.deck-card-chip').length === 1);
+    record('import-marks-dirty', document.querySelector('#deck-screen h2').textContent.includes('*'));
+    record('import-names-deck', [...document.querySelectorAll('.deck-header input')]
+      .some((i) => i.value === '导入卡组'));
+
+    // 垃圾文本 → 报错且不替换当前卡组
+    document.getElementById('deck-import-code-btn').click();
+    await waitFor(() => document.getElementById('deck-import-text'));
+    setTextareaValue(document.getElementById('deck-import-text'), 'not a deck code');
+    document.getElementById('deck-import-confirm').click();
+    await waitFor(() => alertMsgs.some((m) => m.includes('无法识别卡组码')));
+    record('import-rejects-garbage', mainGrid().querySelectorAll('.deck-card-chip').length === 2);
+    document.getElementById('deck-import-cancel').click();
+    await waitFor(() => !document.getElementById('deck-import-overlay'));
+
+    // ---- 波 H：卡组/分类管理窗口（wDeckManage，Go 侧 deck_manage.go） ----
+    const deckFiles = ['Alpha', 'Beta', 'Tournament/TestDeck'];
+    WailsBridge.listDecks = async () => [...deckFiles];
+    const manageCalls = [];
+    WailsBridge.createDeckCategory = async (n) => { manageCalls.push(['createCat', n]); return null; };
+    WailsBridge.renameDeckCategory = async (o, n) => {
+      manageCalls.push(['renameCat', o, n]);
+      for (let i = 0; i < deckFiles.length; i++) {
+        if (deckFiles[i].startsWith(o + '/')) deckFiles[i] = n + '/' + deckFiles[i].split('/')[1];
+      }
+      return null;
+    };
+    WailsBridge.deleteDeckCategory = async (n) => {
+      manageCalls.push(['deleteCat', n]);
+      for (let i = deckFiles.length - 1; i >= 0; i--) {
+        if (deckFiles[i].startsWith(n + '/')) deckFiles.splice(i, 1);
+      }
+      return null;
+    };
+    WailsBridge.renameDeck = async (o, n) => {
+      manageCalls.push(['renameDeck', o, n]);
+      const cat = o.includes('/') ? o.split('/')[0] + '/' : '';
+      const i = deckFiles.indexOf(o);
+      if (i >= 0) deckFiles[i] = n.includes('/') ? n : cat + n;
+      return null;
+    };
+    WailsBridge.copyDeck = async (n, c) => {
+      manageCalls.push(['copyDeck', n, c]);
+      deckFiles.push((c ? c + '/' : '') + n.split('/').pop());
+      return null;
+    };
+    WailsBridge.moveDeck = async (n, c) => {
+      manageCalls.push(['moveDeck', n, c]);
+      const i = deckFiles.indexOf(n);
+      if (i >= 0) deckFiles.splice(i, 1);
+      deckFiles.push((c ? c + '/' : '') + n.split('/').pop());
+      return null;
+    };
+    WailsBridge.deleteDeck = async (n) => {
+      deleteReqs.push(n);
+      const i = deckFiles.indexOf(n);
+      if (i >= 0) deckFiles.splice(i, 1);
+      return { success: true };
+    };
+
+    document.getElementById('deck-manage-btn').click();
+    await waitFor(() => document.getElementById('deck-manage-modal'));
+    record('manage-modal-opens', !!document.getElementById('dm-category-list'));
+    record('manage-category-list', [...document.querySelectorAll('#dm-category-list .dm-list-item')]
+      .map((d) => d.textContent.trim()).join(',') === '未分类卡组,Tournament');
+
+    // 新建分类（名称走共用输入框，原版 ebDMName）
+    const waitIdle = () => waitFor(() => !document.getElementById('dm-new-category').disabled);
+    setInputValue(document.getElementById('dm-name-input'), 'Friendly');
+    document.getElementById('dm-new-category').click();
+    await waitFor(() => manageCalls.some((c) => c[0] === 'createCat' && c[1] === 'Friendly'));
+    await waitIdle(); // busy 期间全部按钮 disabled，等操作收尾再点下一个
+    record('manage-create-category', true);
+
+    // 选 Tournament 分类 → 卡组列表 TestDeck → 重命名
+    [...document.querySelectorAll('#dm-category-list .dm-list-item')]
+      .find((d) => d.textContent.trim() === 'Tournament').click();
+    await waitFor(() => [...document.querySelectorAll('#dm-deck-list .dm-list-item')]
+      .some((d) => d.textContent.trim() === 'TestDeck'));
+    document.querySelector('#dm-deck-list .dm-list-item').click();
+    setInputValue(document.getElementById('dm-name-input'), 'TestDeck2');
+    document.getElementById('dm-rename-deck').click();
+    await waitFor(() => manageCalls.some((c) => c[0] === 'renameDeck'
+      && c[1] === 'Tournament/TestDeck' && c[2] === 'TestDeck2'));
+    await waitIdle();
+    record('manage-rename-deck', deckFiles.includes('Tournament/TestDeck2'));
+
+    // 复制到未分类（原版 cbDMCategory 目标分类，同名另存）
+    document.getElementById('dm-copy-deck').click();
+    await waitFor(() => manageCalls.some((c) => c[0] === 'copyDeck'
+      && c[1] === 'Tournament/TestDeck2' && c[2] === ''));
+    await waitIdle();
+    record('manage-copy-deck', deckFiles.includes('TestDeck2'));
+
+    // 把根目录副本移动到 Tournament
+    [...document.querySelectorAll('#dm-category-list .dm-list-item')]
+      .find((d) => d.textContent.trim() === '未分类卡组').click();
+    await waitFor(() => [...document.querySelectorAll('#dm-deck-list .dm-list-item')]
+      .some((d) => d.textContent.trim() === 'TestDeck2'));
+    [...document.querySelectorAll('#dm-deck-list .dm-list-item')]
+      .find((d) => d.textContent.trim() === 'TestDeck2').click();
+    await selectOption('dm-target-category', 'Tournament');
+    document.getElementById('dm-move-deck').click();
+    await waitFor(() => manageCalls.some((c) => c[0] === 'moveDeck'
+      && c[1] === 'TestDeck2' && c[2] === 'Tournament'));
+    await waitIdle();
+    record('manage-move-deck', deckFiles.includes('Tournament/TestDeck2') && !deckFiles.includes('TestDeck2'));
+
+    // 删除分类（连带其中卡组）
+    [...document.querySelectorAll('#dm-category-list .dm-list-item')]
+      .find((d) => d.textContent.trim() === 'Tournament').click();
+    await waitFor(() => !document.getElementById('dm-delete-category').disabled);
+    document.getElementById('dm-delete-category').click();
+    await waitFor(() => manageCalls.some((c) => c[0] === 'deleteCat' && c[1] === 'Tournament'));
+    await waitIdle();
+    record('manage-delete-category', !deckFiles.some((n) => n.startsWith('Tournament/')));
+
+    // 管理操作同步刷新编辑器清单：分类下拉不再含 Tournament
+    const catOptsAfter = await readOptions('deck-category-select');
+    record('manage-refresh-syncs', !catOptsAfter.some((o) => o.value === 'Tournament'));
+    document.getElementById('dm-close').click();
+    await waitFor(() => !document.getElementById('deck-manage-modal'));
+    record('manage-modal-closes', true);
 
     record('no-fatal', true);
   } catch (err) {

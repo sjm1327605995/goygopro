@@ -4,9 +4,10 @@
  * 数据源：duelStore（显示座 0=本方 1=对方）。LP 血条宽度按初始 LP 归一，
  * 与原版 drawing.cpp 的 292px 满条成比例。
  */
-import React, { useSyncExternalStore } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { duelStore } from '../duel/store.ts';
 import { settingsStore } from '../domain/settings.ts';
+import { soundManager } from '../audio/sound_manager.ts';
 import type { PileCounts } from '../domain/reducer.ts';
 
 const PILE_LABELS: [keyof PileCounts, string][] = [
@@ -18,6 +19,45 @@ function fmtTimer(sec: number | null): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+/**
+ * LP 数字滚动（原版 LP 数字直接刷新，这里是表现层增强）：LP 变化时
+ * requestAnimationFrame 二次插值 700ms，滚动中按 ~110ms 间隔接
+ * playLPTick 音效（原版 LP 变化音 lp_count.wav 的合成本）。血条宽度仍
+ * 用真实 LP（.lp-fill 自带 0.4s CSS transition）。
+ */
+function useRollingLP(lp: number): number {
+  const [display, setDisplay] = useState(lp);
+  const displayRef = useRef(lp);
+  const rafRef = useRef(0);
+
+  useEffect(() => {
+    const from = displayRef.current;
+    if (from === lp) return undefined;
+    const start = performance.now();
+    const duration = 700;
+    let lastTick = 0;
+    const step = (now: number): void => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - (1 - t) * (1 - t);
+      const value = Math.round(from + (lp - from) * eased);
+      if (value !== displayRef.current) {
+        displayRef.current = value;
+        setDisplay(value);
+        if (now - lastTick >= 110) {
+          lastTick = now;
+          soundManager.playLPTick();
+        }
+      }
+      if (t < 1) rafRef.current = requestAnimationFrame(step);
+    };
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [lp]);
+
+  return display;
 }
 
 /**
@@ -48,6 +88,7 @@ export default function PlayerPanel({ side }: { side: 'player' | 'opponent' }) {
   // 隐藏玩家名（原版 chkHidePlayerName，聊天显示 [********]）
   const shownName = settings.hide_player_name ? '[********]' : state.names[disp];
   const lp = state.lp[disp];
+  const shownLP = useRollingLP(lp);
   // 归一化基准 = 自己的初始基本分（drawing.cpp:591 maxLP = start_lp）
   const maxLP = state.startLP || Math.max(8000, state.lp[0], state.lp[1]);
   const { fgRow, bgRow, fgPct, layered } = lpBarLayers(lp, maxLP);
@@ -79,7 +120,7 @@ export default function PlayerPanel({ side }: { side: 'player' | 'opponent' }) {
           {layered && <div className="lp-fill lp-fill-bg" style={{ width: '100%', ...rowStyle(bgRow) }} />}
           <div className="lp-fill" style={{ width: `${fgPct}%`, ...rowStyle(fgRow) }} />
         </div>
-        <span id={`${side}-panel-lp`} className="lp-value">{lp}</span>
+        <span id={`${side}-panel-lp`} className="lp-value">{shownLP}</span>
       </div>
       {showTimeBar && (
         <div className="time-limit-bar" id={`${side}-time-bar`}>

@@ -5,8 +5,13 @@
  * #duel-canvas-container 派发 'ygo:cardhover' / 'ygo:cardhoverend'
  * CustomEvent。原版是白底 80% 不透明小块，文字居中；这里按卡种着色
  * 左边框（怪兽红/魔法绿/陷阱紫，同原版卡名颜色约定）。
+ *
+ * 选择进行中（store.selectHintText 非空）首行附带选择提示文本——原版
+ * stHintMsg 的 `提示(min-max)` 在选择期间常驻（event_handler.cpp 悬停
+ * 期间 stTip 与选择提示并存的语义）。
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { duelStore } from '../duel/store.ts';
 
 interface HoverDetail {
   code?: number;
@@ -33,6 +38,10 @@ function borderFor(info: any): string {
 export default function CardTooltip() {
   const [tip, setTip] = useState<TipState | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
+  const selectHintText = useSyncExternalStore(
+    duelStore.subscribe,
+    () => duelStore.getState().selectHintText,
+  );
 
   useEffect(() => {
     const container = document.getElementById('duel-canvas-container');
@@ -77,6 +86,14 @@ export default function CardTooltip() {
         boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
       }}
     >
+      {selectHintText && (
+        <div
+          id="st-tip-select-hint"
+          style={{ color: '#b45309', borderBottom: '1px dashed #d4d4d4', marginBottom: '2px', paddingBottom: '2px' }}
+        >
+          {selectHintText}
+        </div>
+      )}
       {tip.text}
     </div>
   );

@@ -17,10 +17,14 @@
  * .modal-overlay.active、.pos-opt、.rps-hand-btn、#counter-confirm、
  * .btn-flash-gold……），断言可平移。
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { eventBus, WailsBridge } from '../wails_bridge.ts';
 import chainPrefs from '../duel/chain_prefs.ts';
+import { duelStore } from '../duel/store.ts';
+import { respondCardSelection, cancelCardSelection } from '../duel/card_select.ts';
 import { RACES, ATTRS } from '../domain/constants.ts';
+import { sysString } from '../domain/sys_strings.ts';
+import { settingsStore } from '../domain/settings.ts';
 import GameDialog from './GameDialog.tsx';
 import { YesNoModal } from './prompts/YesNoModal.tsx';
 import { CardSelectModal } from './prompts/CardSelectModal.tsx';
@@ -32,6 +36,7 @@ import { SortModal } from './prompts/SortModal.tsx';
 import { BitmaskModal } from './prompts/BitmaskModal.tsx';
 import { OptionListModal } from './prompts/OptionListModal.tsx';
 import { AnnounceCardModal } from './prompts/AnnounceCardModal.tsx';
+import { StoreCardSelectModal } from './prompts/StoreCardSelectModal.tsx';
 import type { SelectCard } from './prompts/CardTile.tsx';
 
 // ---- 事件→弹窗路由 ----
@@ -39,6 +44,8 @@ import type { SelectCard } from './prompts/CardTile.tsx';
 interface Prompt {
   key: number;
   body: React.ReactNode;
+  /** 'cardSelect' = store.cardSelect 驱动的弹窗：选择态清空时自动关闭 */
+  kind?: string;
 }
 
 const withName = async (c: { code: number }): Promise<{ code: number; name: string }> => {
@@ -46,21 +53,46 @@ const withName = async (c: { code: number }): Promise<{ code: number; name: stri
   return { code: c.code, name: (info && info.name) || `卡牌 #${c.code}` };
 };
 
+/**
+ * HINT_SELECTMSG 的选择提示（原版 DuelClient::select_hint）：系统 id 走
+ * sysString 表，卡效果 desc id 走 Go ResolveDesc；解析不出返回 ''。
+ */
+const resolveHintText = async (id: number): Promise<string> =>
+  sysString(id) || (await WailsBridge.resolveDesc(id)) || '';
+
+/**
+ * 取当前 selectHint 的解析文本。consume=true 时同时取走（原版 select_hint=0
+ * ——一次性）；select_unselect 传 false（原版 select_unselect_hint 跨多次
+ * unselect 询问持续，duelclient.cpp:1690-1696）。
+ */
+const takeSelectHintText = async (consume: boolean): Promise<string> => {
+  const id = duelStore.getState().selectHint;
+  if (!id) return '';
+  const text = await resolveHintText(id);
+  if (consume) duelStore.consumeSelectHint();
+  return text;
+};
+
 export default function PromptHost() {
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const seqRef = useRef(0);
+  // 场上点选控制条与 cardSelect 弹窗都直接读 store 选择态
+  const storeState = useSyncExternalStore(duelStore.subscribe, duelStore.getState);
+  // hide_hint_button 设置变更时刷新场形态选择条
+  useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
 
   useEffect(() => {
     let alive = true;
-    const show = (body: React.ReactNode) => {
+    const show = (body: React.ReactNode, kind?: string) => {
       if (!alive) return;
       seqRef.current += 1;
-      setPrompt({ key: seqRef.current, body });
+      setPrompt({ key: seqRef.current, body, kind });
     };
     // 应答即关弹窗（原版 hud 应答后销毁模态；下一个询问会再 show）
     const answer = <A extends unknown[]>(respond: (...args: A) => void) => (...args: A) => {
       if (!alive) return;
       setPrompt(null);
+      duelStore.disarmSelectHint();
       respond(...args);
     };
     // 弹窗打开即从 store 清掉 stHintMsg（reducer 的 HINT_CLEARING 同步做；
@@ -110,9 +142,13 @@ export default function PromptHost() {
         return text || `选项 ${i + 1}`;
       }));
       const cards = names.map((name, i: number) => ({ code: i, name }));
+      // 原版 ShowSelectOption：select_hint 优先，否则 SysString 555
+      const hint = await takeSelectHintText(true);
+      const title = hint || sysString(555) || '选择一个效果';
+      if (hint) duelStore.armSelectHint(hint);
       show(
         <CardSelectModal
-          title="选择一个效果"
+          title={title}
           cards={cards}
           min={1}
           max={1}
@@ -186,10 +222,38 @@ export default function PromptHost() {
     });
 
     reg('duel:select_card', async (data) => {
+      // 原版 duelclient.cpp:1601：select_hint 优先，标题格式 `提示(min-max)`
+      // （modal 自身会补「（选择 min-max 张）」后缀）
+      const hint = await takeSelectHintText(true);
+      if (hint) duelStore.armSelectHint(`${hint}(${data.min}-${data.max})`);
+      // reducer 已为非 tribute 的询问建好共享选择态：场上卡（mzone/szone）
+      // 走 3D 高亮点选（duel_manager 布框），非场上卡走本弹窗；混合来源时
+      // 两者并存、经 store.cardSelect.selected 同步。纯场上时不开弹窗，
+      // 由 #card-select-bar 承担提示与完成/取消（原版 stHintMsg +
+      // btnCancelOrFinish 的场形态）。
+      const cs = duelStore.getState().cardSelect;
+      if (cs && cs.kind === 'card') {
+        if (!cs.cards.some((c) => !c.onField)) return;
+        const named = await Promise.all(cs.cards.map((c) => withName({ code: c.code })));
+        if (!alive) return;
+        show(
+          <StoreCardSelectModal
+            title={hint || '选择卡牌'}
+            cards={named}
+            respond={({ indices }) => {
+              if (indices === null) cancelCardSelection();
+              else respondCardSelection();
+            }}
+          />,
+          'cardSelect',
+        );
+        return;
+      }
+      // tribute（MSG_SELECT_TRIBUTE）：保持原弹窗路径（不在场上点选范围）
       const cards = await Promise.all((data.cards || []).map(withName));
       show(
         <CardSelectModal
-          title="选择卡牌"
+          title={hint || '选择卡牌'}
           cards={cards}
           min={data.min}
           max={data.max}
@@ -231,9 +295,12 @@ export default function PromptHost() {
       const must = await Promise.all((data.must || []).map(async (c: { code: number; param: number }) => ({
         ...c, name: (await withName(c)).name,
       })));
+      // 原版 ShowSelectSum：标题用 select_hint（client_field.cpp:1124）
+      const hint = await takeSelectHintText(true);
+      if (hint) duelStore.armSelectHint(hint);
       show(
         <SumSelectModal
-          title="选择卡牌"
+          title={hint || '选择卡牌'}
           cards={cards}
           must={must}
           acc={data.acc}
@@ -267,17 +334,41 @@ export default function PromptHost() {
 
     // MSG_SELECT_UNSELECT_CARD: 回包下标跨两张列表（select 在前，unselect 在后）
     reg('duel:select_unselect', async (data) => {
+      if (!((data.cards || []).length + (data.unselectList || []).length)) {
+        WailsBridge.sendResponseI(-1);
+        return;
+      }
+      // 原版 select_unselect_hint：select_hint 落入后跨多次 unselect 询问
+      // 持续（duelclient.cpp:1690-1696），这里不 consume
+      const hint = await takeSelectHintText(false);
+      if (hint) duelStore.armSelectHint(`${hint}(${data.min ?? 1}-${data.max ?? 1})`);
+      // 与 select_card 同套共享选择态：场上卡可 3D 点选（点中即应答），
+      // 混合来源时弹窗与场上并存同步
+      const cs = duelStore.getState().cardSelect;
+      if (cs && cs.kind === 'unselect') {
+        if (!cs.cards.some((c) => !c.onField)) return;
+        const named = await Promise.all(cs.cards.map((c) => withName({ code: c.code })));
+        if (!alive) return;
+        show(
+          <StoreCardSelectModal
+            title={hint || (data.cancelable || data.finishable ? '选择/取消选择卡牌' : '选择卡牌')}
+            cards={named}
+            respond={({ indices }) => {
+              if (indices === null) cancelCardSelection();
+              else respondCardSelection();
+            }}
+          />,
+          'cardSelect',
+        );
+        return;
+      }
       const cards = await Promise.all((data.cards || []).map(withName));
       const unselect = await Promise.all((data.unselectList || []).map(withName));
       const combined = cards.map((c: SelectCard) => ({ ...c, kind: 'select' }))
         .concat(unselect.map((c: SelectCard) => ({ ...c, kind: 'unselect' })));
-      if (!combined.length) {
-        WailsBridge.sendResponseI(-1);
-        return;
-      }
       show(
         <CardSelectModal
-          title={data.cancelable || data.finishable ? '选择/取消选择卡牌' : '选择卡牌'}
+          title={hint || (data.cancelable || data.finishable ? '选择/取消选择卡牌' : '选择卡牌')}
           cards={combined}
           min={1}
           max={1}
@@ -291,22 +382,27 @@ export default function PromptHost() {
     });
 
     // MSG_ANNOUNCE_RACE / ATTRIB: 回包是 int32 位掩码，恰好 count 位来自 available
-    reg('duel:announce_race', (data) => {
+    // （原版标题：select_hint 优先，否则 SysString 563/562）
+    reg('duel:announce_race', async (data) => {
       const available = data.available >>> 0;
+      const hint = await takeSelectHintText(true);
+      if (hint) duelStore.armSelectHint(hint);
       show(
         <BitmaskModal
-          title="请选择要宣言的种族"
+          title={hint || sysString(563) || '请选择要宣言的种族'}
           options={RACES.filter(([v]) => available & (v as number)) as [number, string][]}
           count={data.count}
           respond={answer((mask) => WailsBridge.sendResponseI(mask))}
         />,
       );
     });
-    reg('duel:announce_attrib', (data) => {
+    reg('duel:announce_attrib', async (data) => {
       const available = data.available >>> 0;
+      const hint = await takeSelectHintText(true);
+      if (hint) duelStore.armSelectHint(hint);
       show(
         <BitmaskModal
-          title="请选择要宣言的属性"
+          title={hint || sysString(562) || '请选择要宣言的属性'}
           options={ATTRS.filter(([v]) => available & (v as number)) as [number, string][]}
           count={data.count}
           respond={answer((mask) => WailsBridge.sendResponseI(mask))}
@@ -314,10 +410,12 @@ export default function PromptHost() {
       );
     });
 
-    // MSG_ANNOUNCE_NUMBER: 回包是所选选项下标
-    reg('duel:announce_number', (data) => {
+    // MSG_ANNOUNCE_NUMBER: 回包是所选选项下标（原版标题：select_hint 或 SysString 565）
+    reg('duel:announce_number', async (data) => {
       const options = (data.options || []).map((v: number, i: number) => `选项 ${i + 1}（${v}）`);
-      show(<OptionListModal title="请选择一个数字" optionLabels={options} respond={answer((idx) => WailsBridge.sendResponseI(idx))} />);
+      const hint = await takeSelectHintText(true);
+      if (hint) duelStore.armSelectHint(hint);
+      show(<OptionListModal title={hint || sysString(565) || '请选择一个数字'} optionLabels={options} respond={answer((idx) => WailsBridge.sendResponseI(idx))} />);
     });
 
     // MSG_ANNOUNCE_CARD: Go 已解码 opcode 表达式（candidates/decodable，
@@ -326,7 +424,10 @@ export default function PromptHost() {
     reg('duel:announce_card', async (data) => {
       const raw = (data.decodable ? (data.candidates || []) : []) as (number | { code: number })[];
       const named = await Promise.all(raw.map((c) => withName(typeof c === 'object' ? c : { code: c })));
-      show(<AnnounceCardModal title="请宣言一个卡名" candidates={named} respond={answer((code) => WailsBridge.sendResponseI(code))} />);
+      // 原版标题：select_hint 优先，否则 SysString 564
+      const hint = await takeSelectHintText(true);
+      if (hint) duelStore.armSelectHint(hint);
+      show(<AnnounceCardModal title={hint || sysString(564) || '请宣言一个卡名'} candidates={named} respond={answer((code) => WailsBridge.sendResponseI(code))} />);
     });
 
     // MSG_ROCK_PAPER_SCISSORS：出拳值与 STOC 选择手牌同套（f1/f2/f3）
@@ -334,17 +435,58 @@ export default function PromptHost() {
       show(<RpsModal respond={answer((choice) => WailsBridge.sendResponseI(choice))} />);
     });
 
+    // cardSelect 驱动的弹窗：选择态被清空（应答/取消，含场上点选与选满
+    // 自动应答路径）时同步关弹窗
+    const unsubStore = duelStore.subscribe(() => {
+      if (!alive || duelStore.getState().cardSelect) return;
+      setPrompt((cur) => (cur && cur.kind === 'cardSelect' ? null : cur));
+    });
+
     return () => {
       alive = false;
+      unsubStore();
       subs.forEach(([event, fn]) => off(event, fn));
     };
   }, []);
 
   // Radix Dialog 壳：焦点圈定 + 背景滚动锁；视觉与冒烟 DOM 契约不变
   // （#modal-overlay 常驻、active 切换、内容仍是 overlay 后代）。
+  const cs = storeState.cardSelect;
+  // hide_hint_button（原版 ClientField::ShowCancelOrFinishButton，
+  // event_handler.cpp:2425）：开时隐藏场形态选择条的完成/取消按钮
+  const hideHintBtns = !!settingsStore.get('hide_hint_button');
   return (
-    <GameDialog open={!!prompt}>
-      {prompt ? <div key={prompt.key}>{prompt.body}</div> : null}
-    </GameDialog>
+    <>
+      <GameDialog open={!!prompt}>
+        {prompt ? <div key={prompt.key}>{prompt.body}</div> : null}
+      </GameDialog>
+      {/* 纯场上 select_card/unselect：不开弹窗——3D 高亮点选 + 本控制条
+          （原版 stHintMsg 提示文本 + btnCancelOrFinish 的场形态） */}
+      {cs && cs.cards.length > 0 && cs.cards.every((c) => c.onField) && (
+        <div id="card-select-bar" className="card-select-bar">
+          <span id="card-select-bar-text">
+            {storeState.selectHintText || `${sysString(560) || '请选择'}(${cs.min}-${cs.max})`}
+          </span>
+          {cs.kind === 'card' && (
+            <span id="card-select-bar-count">{`已选 ${cs.selected.length} / ${cs.max} 张`}</span>
+          )}
+          {cs.kind === 'card' && cs.max > cs.min && !hideHintBtns && (
+            <button
+              id="card-select-bar-finish"
+              className={`btn btn-gold${cs.selected.length >= cs.min ? ' btn-flash-gold' : ''}`}
+              disabled={cs.selected.length < cs.min}
+              onClick={() => respondCardSelection()}
+            >完成</button>
+          )}
+          {cs.cancelable && !hideHintBtns && (
+            <button
+              id="card-select-bar-cancel"
+              className="btn btn-secondary"
+              onClick={() => cancelCardSelection()}
+            >取消</button>
+          )}
+        </div>
+      )}
+    </>
   );
 }

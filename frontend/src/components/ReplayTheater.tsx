@@ -356,6 +356,15 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
                 {isPlaying ? '⏸ 暂停' : '▶ 播放'}
               </button>
               <button className="gfw-btn btn" style={{ width: '48px' }} onClick={stepForward} disabled={!stageReady || currentStep >= events.length}>⏭</button>
+              {/* btnReplaySwap（game.cpp:901 → ReplayMode::SwapField）：交换双方视角 */}
+              <button
+                id="replay-swap-btn"
+                className="gfw-btn btn"
+                style={{ width: '96px' }}
+                title="交换双方视角（场地旋转 180°）"
+                onClick={() => duelStore.toggleViewSwap()}
+                disabled={!stageReady || !events.length}
+              >切换视角</button>
               <GfwSelect
                 aria-label="回放速度"
                 width={90}
