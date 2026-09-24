@@ -139,7 +139,10 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     f.placeCard(1, 'szone', 2, 89631139, null, 0xa); // 对方盖卡
     f.placeCard(0, 'grave', 0, 83764718, null, 0x1);
     f.placeCard(1, 'grave', 0, 44095762, null, 0x1);
-    record('orientation-gallery-placed', f.cardsOnField[0].mzone[0] && f.cardsOnField[1].mzone[0]);
+    // 注意只记录可 JSON 化的精简值：checks 会被 returnByValue 回传给 CDP
+    // runner，直接把 THREE.Mesh 写进去会序列化成数 MB 的 toJSON 大图，
+    // 导致轮询响应丢失、runner 永远 TIMEOUT
+    record('orientation-gallery-placed', !!f.cardsOnField[0].mzone[0] && !!f.cardsOnField[1].mzone[0]);
 
     // ---- 3D 朝向语义：表侧攻击正面朝上（p1 平面转 180°）、守备顶边指向
     // 己方右手边（原版 client_field.cpp Z=∓PI/2）、盖卡 x=PI 背面朝上 ----
@@ -196,17 +199,15 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     const ratio = tf2 / tb2;
     record('time-limit-half', ratio > 0.4 && ratio < 0.6, String(ratio));
 
-    // LP 超过初始值 → 分层彩条（drawing.cpp:590-619：底层满条 + 前景余数条）。
-    // .lp-fill 有 0.4s width transition，等比例到位再断言。
+    // LP 超过初始值 → 分层彩条（drawing.cpp:590-619：底层满条 + 前景余数
+    // 条）。startLP 取本方初始 LP（playerSlot=1 → lp1=4000）：4000+5000=9000
+    // = 2×4000+1000 → layerCount=2、前景 1000/4000=25%、fgRow=2(50%)、
+    // bgRow=1(25%)。宽度断言读内联样式（React 同步写入；bounding rect 受
+    // 0.4s CSS transition 时序影响，无头虚拟时间下不可靠）。
     eventBus.emit('duel:recover', { player: 1, amount: 5000 }); // 4000 → 9000
-    const fgWidth = () => $('#player-panel .lp-fill:not(.lp-fill-bg)').getBoundingClientRect().width;
-    const trackWidth = () => $('#player-panel .lp-track').getBoundingClientRect().width;
-    await waitFor(() => {
-      if (!$('#player-panel .lp-fill-bg')) return false;
-      const r = fgWidth() / trackWidth();
-      return r > 0.2 && r < 0.3;
-    }, 'layered LP settles');
-    record('lp-layered-partial', true);
+    const fgPct = () => ($('#player-panel .lp-fill:not(.lp-fill-bg)').style.width || '');
+    await waitFor(() => $('#player-panel .lp-fill-bg') && fgPct() === '25%', 'layered LP settles');
+    record('lp-layered-partial', fgPct() === '25%');
     record('lp-layered-rows',
       $('#player-panel .lp-fill-bg').style.backgroundPositionY === '25%'
       && $('#player-panel .lp-fill:not(.lp-fill-bg)').style.backgroundPositionY === '50%',
@@ -230,6 +231,67 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     eventBus.emit('duel:player_hint', { player: 0, type: 6, data: 38723936 });
     record('grave-lock-ignores-opponent',
       !f.graveLockSprites.some((s) => s.visible));
+
+    // ---- MSG_FIELD_DISABLED：禁用格白叉（drawing.cpp:210-241 对角线）
+    // 回放剧场 interactive=false 同样渲染（非协议路径）----
+    eventBus.emit('duel:field_disabled', { zones: 0x10001 });
+    await waitFor(() => f.disabledMarks.length === 4, 'disabled crosses render');
+    record('field-disabled-crosses', f.disabledMarks.length === 4
+      && f.disabledMarks.every((l) => l.material.color.getHexString() === 'ffffff'));
+    eventBus.emit('duel:field_disabled', { zones: 0 });
+    await waitFor(() => f.disabledMarks.length === 0, 'disabled crosses clear');
+    record('field-disabled-cleared', f.disabledMarks.length === 0);
+
+    // ---- MSG_BATTLE：攻防对撞浮层挂到 DuelStage（回放里也展示）----
+    eventBus.emit('duel:battle', {
+      attacker: { c: 1, l: 0x4, s: 0 }, attackerATK: 3000, attackerDEF: 2500, attackerDestroyed: false,
+      target: { c: 0, l: 0x4, s: 0 }, targetATK: 1200, targetDEF: 2100, targetDestroyed: true,
+    });
+    await waitFor(() => !!document.getElementById('battle-overlay'), 'battle overlay mounts');
+    record('battle-overlay-shows', document.getElementById('battle-overlay').innerText.includes('3000'));
+    await waitFor(() => !document.getElementById('battle-overlay'), 'battle overlay fades', 6000);
+    record('battle-overlay-fades', !document.getElementById('battle-overlay'));
+
+    // ---- LP 数字滚动：变化滚动到位（rAF 插值）+ 滚动中接入 playLPTick ----
+    // 虚拟时间下中间值采样不稳定，改用 playLPTick 计数证明滚动确实发生
+    // （该音效只由 useRollingLP 调用）。
+    const { soundManager } = await import('../src/audio/sound_manager.ts');
+    let lpTicks = 0;
+    const origTick = soundManager.playLPTick.bind(soundManager);
+    soundManager.playLPTick = () => { lpTicks += 1; origTick(); };
+    const lpText = () => $('#player-panel-lp').innerText;
+    eventBus.emit('duel:damage', { player: 1, amount: 2000 }); // 9000 → 7000
+    await waitFor(() => lpText() === '7000', 'lp settles');
+    record('lp-rolls-to-target', lpText() === '7000');
+    record('lp-tick-sound', lpTicks > 0, `ticks=${lpTicks}`);
+    soundManager.playLPTick = origTick;
+
+    // ---- 交换视角（btnSpectatorSwap/btnReplaySwap → SwapField）：store 显示座
+    // 翻转（LP/手牌坞对调）+ 相机绕到场地另一侧；再换一次复原 ----
+    const { duelStore } = await import('../src/duel/store.ts');
+    // 波 4 段重发过 duel:start（手牌已清空），先给本方 seat 补 3 张手牌
+    eventBus.emit('duel:draw', { player: 1, count: 3, cards: [89631139, 46986414, 55144522] });
+    await waitFor(() => $('#hand-cards-dock').children.length === 3, 'hand reseeded');
+    const lpBefore = [duelStore.getState().lp[0], duelStore.getState().lp[1]];
+    const handBefore = $('#hand-cards-dock').children.length;
+    duelStore.toggleViewSwap();
+    record('swap-flips-lp-display', duelStore.getState().lp[0] === lpBefore[1]
+      && duelStore.getState().lp[1] === lpBefore[0], JSON.stringify(duelStore.getState().lp));
+    await waitFor(() => f.camera.position.z < 0, 'camera flips to far side');
+    record('swap-flips-camera', true);
+    // 手牌坞改看对侧手牌（对面 seat 没抽过牌 → 空坞）
+    await waitFor(() => $('#hand-cards-dock').children.length === 0, 'hand dock swaps to far side');
+    record('swap-hand-dock-other-side', handBefore === 3);
+    // 翻转后 seat1 的 LP 事件落入显示座 1（换算连续）
+    eventBus.emit('duel:lp_update', { player: 1, lp: 6500 });
+    await waitFor(() => duelStore.getState().lp[1] === 6500, 'lp lands on flipped seat');
+    record('swap-keeps-event-mapping', duelStore.getState().lp[0] === lpBefore[1],
+      JSON.stringify(duelStore.getState().lp));
+    duelStore.toggleViewSwap();
+    await waitFor(() => f.camera.position.z > 0, 'camera back');
+    record('swap-back-restores', duelStore.getState().lp[0] === 6500
+      && $('#hand-cards-dock').children.length === handBefore,
+      JSON.stringify(duelStore.getState().lp));
   } catch (err) {
     checks.fatalMsg = String(err && err.stack || err);
     record('fatal', false);

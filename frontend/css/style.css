@@ -529,6 +529,36 @@ body, html {
   object-fit: cover;
 }
 
+/* 零码手牌（观战/回放里服务端抹零的卡）：渲染为卡背，不显示「卡牌 #0」 */
+.hand-card-item.hand-card-back {
+  cursor: default;
+}
+.hand-card-item.hand-card-back .hand-card-img {
+  background: url('../textures/cover.jpg') center / cover no-repeat;
+}
+
+/* MSG_SHUFFLE_HAND：手牌洗乱重排抖动（原版客户端场卡重排插值的 2D 版）。
+   动画挂在容器类上，每张卡按序延迟错位抖动，营造出重排感 */
+.hand-cards.shuffling .hand-card-item {
+  animation: hand-shuffle-anim 0.6s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+  pointer-events: none; /* 抖动期间禁点，避免误出牌 */
+}
+.hand-cards.shuffling .hand-card-item:nth-child(2) { animation-delay: 0.04s; }
+.hand-cards.shuffling .hand-card-item:nth-child(3) { animation-delay: 0.08s; }
+.hand-cards.shuffling .hand-card-item:nth-child(4) { animation-delay: 0.12s; }
+.hand-cards.shuffling .hand-card-item:nth-child(5) { animation-delay: 0.16s; }
+.hand-cards.shuffling .hand-card-item:nth-child(6) { animation-delay: 0.20s; }
+.hand-cards.shuffling .hand-card-item:nth-child(7) { animation-delay: 0.24s; }
+.hand-cards.shuffling .hand-card-item:nth-child(8) { animation-delay: 0.28s; }
+.hand-cards.shuffling .hand-card-item:nth-child(9) { animation-delay: 0.32s; }
+.hand-cards.shuffling .hand-card-item:nth-child(10) { animation-delay: 0.36s; }
+@keyframes hand-shuffle-anim {
+  0%   { transform: rotate(var(--fan-rot, 0deg)) translateY(var(--fan-lift, 0px)); }
+  30%  { transform: rotate(calc(var(--fan-rot, 0deg) * -1.2)) translateY(calc(var(--fan-lift, 0px) - 22px)) scale(1.06); }
+  60%  { transform: rotate(var(--fan-rot, 0deg)) translateY(calc(var(--fan-lift, 0px) + 8px)) scale(0.98); }
+  100% { transform: rotate(var(--fan-rot, 0deg)) translateY(var(--fan-lift, 0px)); }
+}
+
 /* Action Command Popup */
 .action-popup {
   pointer-events: auto;
@@ -833,6 +863,23 @@ body, html {
   border: 1px solid var(--accent-gold);
   pointer-events: none;
 }
+
+/* 禁限卡表角标（原版 DrawThumb 左上 lim 贴图：禁 0/限 1/准 2） */
+.deck-limit-badge {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 4px;
+  pointer-events: none;
+  background: rgba(8, 12, 24, 0.85);
+}
+.deck-limit-0 { color: #ff5252; border: 1px solid #ff5252; }
+.deck-limit-1 { color: #ffb454; border: 1px solid #ffb454; }
+.deck-limit-2 { color: #7ee787; border: 1px solid #7ee787; }
 
 /* 攻守/等级区间小输入框 */
 .deck-filter-num {

@@ -39,12 +39,12 @@ function HandCardItem({ code, selected, interactive, onClick, fanStyle }: {
 
   return (
     <div
-      className={`hand-card-item${selected ? ' selected' : ''}`}
+      className={`hand-card-item${selected ? ' selected' : ''}${code ? '' : ' hand-card-back'}`}
       data-code={code}
       style={fanStyle}
-      onMouseEnter={() => duelStore.inspect(code)}
+      onMouseEnter={() => { if (code) duelStore.inspect(code); }}
       onClick={(e) => {
-        if (!interactive) return;
+        if (!interactive || !code) return;
         e.stopPropagation();
         onClick(code, e.currentTarget as HTMLElement);
       }}
@@ -57,9 +57,11 @@ function HandCardItem({ code, selected, interactive, onClick, fanStyle }: {
           backgroundPosition: 'center',
         } : undefined}
       >
-        <div style={{ padding: '6px', fontSize: '11px', fontWeight: 700, color: '#38bdf8' }}>
-          {name || `卡牌 #${code}`}
-        </div>
+        {code ? (
+          <div style={{ padding: '6px', fontSize: '11px', fontWeight: 700, color: '#38bdf8' }}>
+            {name || `卡牌 #${code}`}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -68,6 +70,20 @@ function HandCardItem({ code, selected, interactive, onClick, fanStyle }: {
 export default function HandDock({ interactive = true }: { interactive?: boolean }) {
   const hand = useSyncExternalStore(duelStore.subscribe, duelStore.getState).hand;
   const [selectedCode, setSelectedCode] = useState<number | null>(null);
+  // 洗牌抖动动画序号：duel:shuffle_hand（本方）触发，动画结束后复位
+  const [shuffleSeq, setShuffleSeq] = useState(0);
+
+  useEffect(() => {
+    const onShuffle = (d: any) => {
+      // 只有本方手牌重排在 2D 坞可见；对方手牌是 3D 卡背行，无需动画
+      const st = duelStore.getState();
+      if (d && d.player !== undefined && d.player !== st.playerSlot) return;
+      setShuffleSeq((s) => s + 1);
+      window.setTimeout(() => setShuffleSeq(0), 750);
+    };
+    eventBus.on('duel:shuffle_hand', onShuffle);
+    return () => eventBus.off('duel:shuffle_hand', onShuffle);
+  }, []);
 
   const onClick = (code: number, el: HTMLElement) => {
     setSelectedCode(code);
@@ -82,7 +98,7 @@ export default function HandDock({ interactive = true }: { interactive?: boolean
 
   return (
     <div className="hand-dock-container">
-      <div id="hand-cards-dock" className="hand-cards">
+      <div id="hand-cards-dock" className={`hand-cards${shuffleSeq ? ' shuffling' : ''}`}>
         {hand.map((c, i) => (c ? (
           <HandCardItem
             key={`${c.code}-${i}`}

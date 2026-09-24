@@ -1,5 +1,5 @@
 // Headless smoke test for practice mode: drives the real interactive stack —
-// DuelField3D + React widgets (HandDock/ActionPopup/PromptHost/LogDrawer) +
+// DuelField3D + React widgets (HandDock/ActionPopup/PromptHost/CardPreviewPanel) +
 // DuelManager + AISimulator — through real player actions and checks that
 // each action actually drove the corresponding state transition, exactly as
 // it would in a network duel. The simulator emits the same eventBus events
@@ -19,7 +19,7 @@ import chainPrefs from '../src/duel/chain_prefs.ts';
 import { soundManager } from '../src/audio/sound_manager.ts';
 import PromptHost from '../src/components/PromptHost.tsx';
 import HintBar from '../src/components/HintBar.tsx';
-import LogDrawer from '../src/components/LogDrawer.tsx';
+import CardPreviewPanel from '../src/components/CardPreviewPanel.tsx';
 import HandDock from '../src/components/HandDock.tsx';
 import ActionPopup from '../src/components/ActionPopup.tsx';
 // 原版样式（动作弹窗/提示条的视觉断言需要真样式表）
@@ -34,7 +34,7 @@ root.render(
   <React.Fragment>
     <PromptHost />
     <HintBar />
-    <LogDrawer />
+    <CardPreviewPanel />
     <HandDock interactive={true} />
     <ActionPopup />
   </React.Fragment>
@@ -189,6 +189,15 @@ window.__practiceSmoke = { field, manager, aiSimulator, store: duelStore, transc
   await potPrompt;
   checks.popupActivateResponded = protocolSends.some((s) => s.kind === 'idleCmd' && s.cmdType === 5);
   checks.potDrewTwo = state().hand.length === 6 && emitted('duel:chaining');
+
+  // ---- P3: MSG_SHUFFLE_HAND 手牌重排——手牌坞播抖动动画并应用新顺序 ----
+  const beforeShuffle = state().hand.map((c) => c.code);
+  const shuffled = [...beforeShuffle].reverse();
+  eventBus.emit('duel:shuffle_hand', { player: manager.playerSlot, cards: shuffled });
+  await waitFor(() => document.getElementById('hand-cards-dock').className.includes('shuffling'));
+  checks.shuffleAnimatesDock = document.getElementById('hand-cards-dock').className.includes('shuffling');
+  await waitFor(() => JSON.stringify(state().hand.map((c) => c.code)) === JSON.stringify(shuffled));
+  checks.shuffleReordersHand = JSON.stringify(state().hand.map((c) => c.code)) === JSON.stringify(shuffled);
 
   // Player summons Blue-Eyes face-up through the same entry point the popup
   // uses (handlePlayerAction). The rules-correct popup only offered 盖放

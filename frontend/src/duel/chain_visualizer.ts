@@ -6,6 +6,7 @@
 import * as THREE from '../../libs/three.module.js';
 import * as TWEEN from '../../libs/tween.esm.js';
 import { soundManager } from '../audio/sound_manager.ts';
+import { TYPE_TRAP, TYPE_SPELL, TYPE_CONTINUOUS, TYPE_FIELD } from '../domain/constants.ts';
 
 /** field3d 提供给连锁可视化依赖的最小面（field3d.ts strict 化后收敛为真实类型） */
 interface ChainHost {
@@ -34,6 +35,8 @@ interface ChainSlot {
 interface ChainStackItem {
   linkNumber: number;
   cardCode: number;
+  /** ocgcore TYPE_* 位（chaining 时由 getCard 带出），连锁处理音效按它区分 */
+  cardType: number;
   slot: ChainSlot | null;
   badgeMesh: any;
   /** 贴卡连锁角标（chain.png + number.png，原版 drawing.cpp:541-562） */
@@ -93,11 +96,23 @@ export class ChainVisualizer {
     this.chainStack.push({
       linkNumber: linkNum,
       cardCode,
+      cardType: (cardInfo && cardInfo.type) || 0,
       slot,
       badgeMesh: badge,
       iconMesh,
       pinMesh
     });
+  }
+
+  /** 连锁成立（MSG_CHAINED）的轻量表现：最新徽章顿点一下 */
+  stampLatestLink() {
+    const item = this.chainStack[this.chainStack.length - 1];
+    if (!item || !item.badgeMesh) return;
+    this.field3D.makeTween(item.badgeMesh.scale)
+      .to({ x: 1.3, y: 1.15, z: 1.3 }, 120)
+      .yoyo(true)
+      .repeat(1)
+      .start();
   }
 
   /**
@@ -198,7 +213,13 @@ export class ChainVisualizer {
     const item = this.chainStack.find(c => c.linkNumber === linkNum);
     if (!item || !item.badgeMesh) return;
 
-    soundManager.playSpellActivate();
+    // 音效按连锁卡类型区分：陷阱/永续·场地魔陷 → 陷阱警报（原版 trap.wav），
+    // 其余（怪兽效果/普通魔法等）→ 魔法晶音（原版 activate.wav）
+    const t = item.cardType;
+    const isTrapLike = (t & TYPE_TRAP) !== 0
+      || ((t & TYPE_SPELL) !== 0 && (t & (TYPE_CONTINUOUS | TYPE_FIELD)) !== 0);
+    if (isTrapLike) soundManager.playTrapActivate();
+    else soundManager.playSpellActivate();
 
     // Pulsing highlight
     this.field3D.makeTween(item.badgeMesh.scale)

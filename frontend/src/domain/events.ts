@@ -168,17 +168,19 @@ export interface DuelAttackEvent {
   target: LocEntry;
 }
 
-/** MSG_BATTLE 26 字节结算体（原版用它刷新攻守双方的 ATK/DEF 显示） */
+/** MSG_BATTLE 26 字节结算体（攻防对撞浮层消费；reducer 不落盘） */
 export interface DuelBattleEvent {
   event: 'duel:battle';
   attacker: LocEntry;
   attackerATK: number;
   attackerDEF: number;
-  attackerDirect: boolean;
+  /** ocgcore 战破旗标 bd[0]：攻击方将被战斗破坏 */
+  attackerDestroyed: boolean;
   target: LocEntry;
   targetATK: number;
   targetDEF: number;
-  targetDirect: boolean;
+  /** ocgcore 战破旗标 bd[1]：防守方将被战斗破坏（直接攻击时无目标） */
+  targetDestroyed: boolean;
 }
 
 export interface DuelBecomeTargetEvent {
@@ -353,6 +355,19 @@ export interface DuelSwapEvent {
   cp2: number;
 }
 
+/** MSG_TAG_SWAP — TAG 队友换手（手牌/额外码对非当前操作者已被服务端抹零） */
+export interface DuelTagSwapEvent {
+  event: 'duel:tag_swap';
+  player: number;
+  deckCount: number;
+  extraCount: number;
+  extraFaceUpCount: number;
+  handCount: number;
+  topCode: number;
+  hand: number[];
+  extra: number[];
+}
+
 export interface DuelFieldDisabledEvent {
   event: 'duel:field_disabled';
   zones: number;
@@ -407,6 +422,22 @@ export interface DuelPlayerHintEvent {
   data: number;
 }
 
+/**
+ * MSG_HINT — 提示消息（ocgcore common.go HINT_*）：
+ *   1 EVENT / 2 MESSAGE（提示条文本，duel_manager 异步 ResolveDesc）
+ *   3 SELECTMSG（后续 select 类询问的标题 id，reducer 存 selectHint）
+ *   4 OPSELECTED / 6 RACE / 7 ATTRIB / 8 CODE / 9 NUMBER（宣言展示：
+ *     reducer 日志 + SpecOverlay ACMessage 浮条）
+ *   5 EFFECT / 10 CARD（showcard 揭示，SpecOverlay）
+ *   11 ZONE（区域高亮位掩码，格式同 select_place：每 16bit 一区）
+ */
+export interface DuelHintEvent {
+  event: 'duel:hint';
+  type: number;
+  player: number;
+  data: number;
+}
+
 /** MSG_MATCH_KILL — 比赛击杀（胜利画面展示这张卡图） */
 export interface DuelMatchKillEvent {
   event: 'duel:match_kill';
@@ -446,6 +477,8 @@ export interface DuelSelectPlaceEvent {
   count: number;
   /** 0x7f 主怪兽区 / 0x3f00 魔法陷阱区 / 0xc000 灵摆（MR2020 位域） */
   flag: number;
+  /** true = MSG_SELECT_DISFIELD（不应用 automonsterpos/autospellpos 自动落点） */
+  disfield?: boolean;
   /** Go decorateSelectPlace 解码好的可选落点（含区域归属 player） */
   zones?: { player?: number; loc: number; seq: number }[];
   /** P1 落点是否交换左右（引擎对对手 seat 的镜像标记） */
@@ -633,6 +666,7 @@ export type DuelEvent =
   | DuelShuffleSetCardEvent
   | DuelDeckTopEvent
   | DuelSwapEvent
+  | DuelTagSwapEvent
   | DuelFieldDisabledEvent
   | DuelCardSelectedEvent
   | DuelEquipEvent
@@ -641,6 +675,7 @@ export type DuelEvent =
   | DuelMissedEffectEvent
   | DuelCardHintEvent
   | DuelPlayerHintEvent
+  | DuelHintEvent
   | DuelMatchKillEvent
   | DuelAINameEvent
   | DuelShowHintEvent

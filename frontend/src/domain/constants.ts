@@ -93,6 +93,18 @@ export const ATTRS = [
   [0x10, '光'], [0x20, '暗'], [0x40, '神'],
 ];
 
+/**
+ * 原版 data_manager.cpp FormatRace/FormatAttribute：位掩码 → 「/」连接的名
+ * 称串（HINT_RACE/HINT_ATTRIB 宣言展示与 reducer 日志共用）。未知位忽略。
+ */
+export function formatRace(mask: number): string {
+  return RACES.filter(([v]) => mask & (v as number)).map(([, n]) => n).join('/');
+}
+
+export function formatAttribute(mask: number): string {
+  return ATTRS.filter(([v]) => mask & (v as number)).map(([, n]) => n).join('/');
+}
+
 // ---- 玩家提示（MSG_PLAYER_HINT；ocgcore/common.go PHINT_*、
 // gframe client_field.h:166 CARD_QUESTION）----
 // CARD_QUESTION 加到本方 → 全场墓地禁查（duelclient.cpp:3757-3768）。

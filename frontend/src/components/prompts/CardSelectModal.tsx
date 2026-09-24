@@ -2,15 +2,24 @@ import { CardTile } from './CardTile.tsx';
 import type { SelectCard } from './CardTile.tsx';
 import { useCardSelection } from './useCardSelection.ts';
 
-export function CardSelectModal({ title, cards, min, max, cancelable, respond }: {
+export function CardSelectModal({ title, cards, min, max, cancelable, respond, external }: {
   title: string;
   cards: SelectCard[];
   min: number;
   max: number;
   cancelable: boolean;
   respond: (result: { indices: number[] | null }) => void;
+  /**
+   * 外置选择集（store.cardSelect 驱动）：select_card/select_unselect 的
+   * 弹窗与场上 3D 点选共用同一份 selected，保证两条路径状态同步；
+   * 不传则沿用本地 useCardSelection（option/chain 等单源弹窗）。
+   */
+  external?: { selected: number[]; toggle: (idx: number) => void };
 }) {
-  const { selected, toggle, minMet } = useCardSelection(min, max);
+  const local = useCardSelection(min, max);
+  const selected = external ? external.selected : local.selected;
+  const toggle = external ? external.toggle : local.toggle;
+  const minMet = selected.length >= min;
   const done = (indices: number[] | null) => respond({ indices });
 
   return (

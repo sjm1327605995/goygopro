@@ -90,6 +90,19 @@ try {
   await waitFor(() => !!$('lobby-duel-rule-select') && !!$('lobby-duel-mode-select'));
   record('lobby-renders-rule-select', true);
 
+  // ---- LAN 房间发现（UDP 广播找房）：打开联机窗自动刷一轮 → 列表渲染 →
+  // 点击行回填主机信息（原版 LISTBOX_LAN_HOST）→ 刷新按钮生效 ----
+  await waitFor(() => !!$('lobby-host-0'));
+  const hostRow = $('lobby-host-0');
+  record('lan-host-list-populated', hostRow.textContent.includes('局域网测试房')
+    && hostRow.textContent.includes('Test List') && hostRow.textContent.includes('ＴＡＧ')
+    && hostRow.textContent.includes('标准'));
+  hostRow.click();
+  record('lan-host-row-fills-join', $('lobby-join-host').value === '127.0.0.1'
+    && $('lobby-join-port').value === '7911');
+  $('lobby-refresh-hosts').click();
+  record('lan-refresh-btn-works', await tryWaitFor(() => !$('lobby-refresh-hosts').disabled));
+
   // Find the 确定 button inside the room-create-panel（docs 原型 wCreateHost 底部按钮）.
   const createBtn = [...document.querySelectorAll('.room-create-panel .btn')].find((b) => b.textContent.includes('确定'));
   record('lobby-has-create-btn', !!createBtn);
@@ -108,6 +121,19 @@ try {
   await waitFor(() => createGameReqs.length === 2);
   record('dropdown-drives-duelrule-4', createGameReqs[1].req.duelRule === 4);
   record('dropdown-drives-mode-1', createGameReqs[1].req.mode === 1);
+
+  // --- 波 G-5：建房下拉补全（wCreateHost cbDuelRule 5 项 / cbRule 6 项） ---
+  record('duelrule-option-count-5', (await optionCount('lobby-duel-rule-select')) === 5);
+  record('cardrule-option-count-6', (await optionCount('lobby-rule-select')) === 6);
+  await selectOption('lobby-duel-rule-select', '大师规则２');
+  await selectOption('lobby-rule-select', '无独有卡');
+  createBtn.click();
+  await waitFor(() => createGameReqs.length === 3);
+  record('dropdown-drives-duelrule-2', createGameReqs[2].req.duelRule === 2);
+  record('dropdown-drives-cardrule-4', createGameReqs[2].req.rule === 4);
+  // 复原默认值，后续用例不受影响
+  await selectOption('lobby-duel-rule-select', '大师规则（2020）');
+  await selectOption('lobby-rule-select', 'ＯＣＧ');
 
   // --- 波 G-3：建房高级参数（gframe wCreateHost 控件） ---
   record('default-lflist-na', defReq.lflist === 0); // mock 首项 N/A 哈希 0
@@ -128,8 +154,8 @@ try {
   $('lobby-nocheck').click();
   $('lobby-noshuffle').click();
   createBtn.click();
-  await waitFor(() => createGameReqs.length === 3);
-  const req3 = createGameReqs[2].req;
+  await waitFor(() => createGameReqs.length === 4);
+  const req3 = createGameReqs[3].req;
   record('advanced-passthrough', req3.lflist === 0x7dfcee6a && req3.rule === 1
     && req3.startLp === 16000 && req3.startHand === 6 && req3.drawCount === 2 && req3.timeLimit === 300
     && req3.noCheckDeck === true && req3.noShuffleDeck === true,
@@ -212,7 +238,7 @@ try {
   record('watch-btn-visible', !!watchBtn && watchBtn.offsetParent !== null);
   watchBtn.click();
   await waitFor(() => toObserverSends.length === 1);
-  eventBus.emit('stoc:type_change', { type: 0x02, isHost: false, pos: 2 });
+  eventBus.emit('stoc:type_change', { type: 7, isHost: false, pos: 7 });
   await waitFor(() => !!$('lobby-to-duelist'));
   record('observer-hides-ready-panel', !$('lobby-deck-select'));
   record('observer-shows-watch-count', $('lobby-watch-count').offsetParent !== null);
@@ -244,6 +270,50 @@ try {
   await waitFor(() => document.body.textContent.includes('Blue-Eyes White Dragon'));
   record('deckerror-lflist-cardname', true);
   $('lobby-errmsg-ok').click();
+
+  // --- TAG 组队：HostInfo.Mode=2 → 4 座位渲染/事件/开始使能 ---
+  // error_msg 段把 isHost 重置了（JOINERROR 回连接态）：先重建房主身份
+  eventBus.emit('stoc:type_change', { type: 0x10, isHost: true, pos: 0 });
+  const startBtn = () => [...document.querySelectorAll('#room-lobby-panel .btn')].find((b) => b.textContent === '开始');
+  // 座位行 = 「决斗者」列下 20px 行高的昵称 span（与 netplay_lobby_smoke 同选择器）
+  const seatTexts = () => [...document.querySelectorAll('#room-lobby-panel div div span')]
+    .filter((s) => s.style.height === '20px').map((s) => s.textContent);
+  eventBus.emit('stoc:join_game', { Info: { LFList: 0, Rule: 0, Mode: 2, DuelRule: 5, StartLp: 8000, StartHand: 5, DrawCount: 1, TimeLimit: 180 } });
+  await waitFor(() => seatTexts().length === 4);
+  record('tag-renders-4-seats', true);
+  // 1/2 号位（0/1 的队友）入座与准备
+  eventBus.emit('stoc:player_enter', { pos: 2, name: 'MateA' });
+  eventBus.emit('stoc:player_enter', { pos: 3, name: 'MateB' });
+  await waitFor(() => seatTexts()[2].includes('MateA') && seatTexts()[3].includes('MateB'));
+  record('tag-teammates-seated', true);
+  // 4 人全部准备前开始按钮不可用
+  record('tag-start-disabled-until-all-ready', (() => { const b = startBtn(); return !!b && b.disabled; })());
+  eventBus.emit('stoc:player_change', { pos: 0, status: 0x9, ready: true });
+  eventBus.emit('stoc:player_change', { pos: 1, status: 0x9, ready: true });
+  eventBus.emit('stoc:player_change', { pos: 2, status: 0x9, ready: true });
+  eventBus.emit('stoc:player_change', { pos: 3, status: 0x9, ready: true });
+  await waitFor(() => startBtn() && !startBtn().disabled);
+  record('tag-start-enabled-when-4-ready', true);
+  // 队友离开清 3 号位 → 开始按钮回落禁用
+  eventBus.emit('stoc:player_change', { pos: 3, status: 0xb, ready: false });
+  await waitFor(() => startBtn() && startBtn().disabled);
+  record('tag-leave-disables-start', true);
+  // TAG 2/3 号位是决斗者不是观战者：selftype=2 时准备按钮/卡组行仍可见。
+  // joinerror 段把 inRoom 重置了（准备按钮 gated by inRoom）：先重新加入房间
+  $('lobby-join-btn').click();
+  await waitFor(() => $('lobby-join-btn').offsetParent === null);
+  eventBus.emit('stoc:type_change', { type: 0x02, isHost: false, pos: 2 });
+  await waitFor(() => !!$('lobby-deck-select') && (() => {
+    const b = [...document.querySelectorAll('#room-lobby-panel .btn')].find((x) => x.textContent.includes('准备'));
+    return b && b.offsetParent !== null;
+  })());
+  record('tag-seat2-is-duelist-not-observer', true);
+  // 观战者 selftype=7 才隐藏卡组行
+  eventBus.emit('stoc:type_change', { type: 0x10, isHost: true, pos: 0 });
+  eventBus.emit('stoc:type_change', { type: 7, isHost: false, pos: 7 });
+  await tryWaitFor(() => !$('lobby-deck-select'));
+  record('observer-selftype7-hides-deck-row', !$('lobby-deck-select'));
+  eventBus.emit('stoc:type_change', { type: 0x10, isHost: true, pos: 0 });
 
   record('no-fatal', true);
 } catch (err) {

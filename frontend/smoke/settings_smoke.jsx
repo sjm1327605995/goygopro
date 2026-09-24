@@ -20,6 +20,7 @@ import ChatOverlay from '../src/components/ChatOverlay.tsx';
 import { settingsStore } from '../src/domain/settings.ts';
 import chainPrefs from '../src/duel/chain_prefs.ts';
 import { soundManager } from '../src/audio/sound_manager.ts';
+import { bgmManager } from '../src/audio/bgm_manager.ts';
 import { duelStore } from '../src/duel/store.ts';
 
 soundManager.muted = true; // smoke 里别真的出声
@@ -104,6 +105,8 @@ const chatText = document.getElementById('chat-overlay')
 check('opponent-chat-filtered', !chatText.includes('对手的话应该被屏蔽'));
 check('own-chat-shown', chatText.includes('自己的话要显示'));
 check('spectator-chat-filtered', !chatText.includes('观战者的话应该被屏蔽'));
+// 聊天颜色分档（drawing.cpp:1041 chatColor）：自己的行带 chat-self 类
+check('own-chat-self-class', !!document.querySelector('#chat-overlay .chat-line.chat-self'));
 
 // ---------- 4. 设置面板 UI 回填 ----------
 document.getElementById('btn-open-settings').click();
@@ -113,6 +116,9 @@ const volInput = document.querySelector('[data-setting="sound_volume"]');
 check('volume-backfilled', volInput && volInput.value === '80');
 check('mute-opponent-checked', document.querySelector('[data-setting="mute_opponent"]').checked === true);
 check('volume-shown', document.querySelector('[data-value-for="sound_volume"]').textContent === '80');
+// 新增两项系统设置（swap_yes_no_button / hide_hint_button）出现在系统页
+check('swap-yes-no-row-exists', !!document.querySelector('[data-setting="swap_yes_no_button"]'));
+check('hide-hint-row-exists', !!document.querySelector('[data-setting="hide_hint_button"]'));
 
 // ---------- 5. 页签切换 + helper 页回填 ----------
 document.querySelector('[data-tab="helper"]').click();
@@ -151,6 +157,47 @@ check('lobby-port-prefilled', g('lobby-join-port') && g('lobby-join-port').value
 check('lobby-nickname-prefilled', g('lobby-nickname') && g('lobby-nickname').value === '海马瀬人');
 check('lobby-localport-prefilled', g('lobby-local-port') && g('lobby-local-port').value === '7920');
 check('lobby-roomname-prefilled', g('lobby-room-name') && g('lobby-room-name').value === ' kc 杯 ');
+
+// ---------- 10. BGM 系统（P3-1）：路由/决斗状态/设置三源驱动场景 ----------
+// fakeConf 未设 enable_music/music_mode → 默认开、按场景细分；路由 menu
+await waitFor(() => bgmManager.currentScene === 'menu', 3000, 'bgm menu scene');
+check('bgm-menu-scene', bgmManager.currentScene === 'menu' && bgmManager.isPlaying());
+check('bgm-volume-applied', Math.abs(bgmManager.volume - 0.3) < 1e-9);
+
+// 决斗内 LP 优劣 → advantage/disadvantage/duel；胜负 → win/lose。
+// App 挂载时由「路由 effect + duelStore 订阅」驱动这两路输入；这里直接调
+// API 验证场景计算本身（不 dispatch store，避免与 App 订阅交叉）
+bgmManager.setRoute('duel');
+bgmManager.syncDuel({ started: true, win: null, lp: [8000, 8000] });
+check('bgm-duel-scene-even-lp', bgmManager.currentScene === 'duel');
+bgmManager.syncDuel({ started: true, win: null, lp: [8000, 3000] });
+check('bgm-advantage-scene', bgmManager.currentScene === 'advantage');
+bgmManager.syncDuel({ started: true, win: null, lp: [3000, 8000] });
+check('bgm-disadvantage-scene', bgmManager.currentScene === 'disadvantage');
+bgmManager.syncDuel({ started: true, win: { winner: 0 }, lp: [8000, 0] });
+check('bgm-win-scene', bgmManager.currentScene === 'win');
+bgmManager.syncDuel({ started: true, win: { winner: 1 }, lp: [0, 8000] });
+check('bgm-lose-scene', bgmManager.currentScene === 'lose');
+// 决斗结束（started=false）→ 覆盖失效，回到路由基础场景
+bgmManager.syncDuel({ started: false, win: null, lp: [8000, 8000] });
+check('bgm-duel-ended-back-to-route', bgmManager.currentScene === 'duel');
+bgmManager.setRoute('menu');
+await waitFor(() => bgmManager.currentScene === 'menu', 3000, 'bgm back to menu');
+check('bgm-reset-to-menu', bgmManager.currentScene === 'menu');
+
+// music_mode 0 → 通用音型（原版 BGM_ALL 语义）
+settingsStore.set('music_mode', 0);
+check('bgm-mode-all', bgmManager.currentScene === 'duel');
+settingsStore.set('music_mode', 1);
+await waitFor(() => bgmManager.currentScene === 'menu', 3000, 'bgm mode restore');
+check('bgm-mode-scene-restore', bgmManager.currentScene === 'menu');
+
+// enable_music 关 → 停止
+settingsStore.set('enable_music', false);
+check('bgm-disabled-stops', !bgmManager.isPlaying() && bgmManager.currentScene === null);
+settingsStore.set('enable_music', true);
+await waitFor(() => bgmManager.isPlaying(), 3000, 'bgm re-enabled');
+check('bgm-reenabled', bgmManager.isPlaying());
 
 // 汇总
 const total = Object.keys(checks).length;

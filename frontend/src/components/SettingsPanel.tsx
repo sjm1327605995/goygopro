@@ -75,6 +75,8 @@ export default function SettingsPanel({ open, onClose }: { open: boolean; onClos
               <CheckRow k="enable_music" label="开启音乐" />
               <VolumeRow k="music_volume" label="音乐音量" />
               <CheckRow k="draw_field_spell" label="显示场地魔法背景" />
+              <CheckRow k="swap_yes_no_button" label="左右互换「是/否」按钮位置" />
+              <CheckRow k="hide_hint_button" label="隐藏提示按钮（完成/取消）" />
             </div>
           ) : (
             <div className="settings-body" data-page="helper">

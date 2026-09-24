@@ -13,6 +13,7 @@ import { eventBus, WailsBridge } from '../wails_bridge.ts';
 import chainPrefs from '../duel/chain_prefs.ts';
 import type { ChainPrefMode } from '../duel/chain_prefs.ts';
 import { duelStore } from '../duel/store.ts';
+import { settingsStore } from '../domain/settings.ts';
 
 const MODES: { key: ChainPrefMode; label: string; title: string }[] = [
   { key: 'ignore', label: '忽略时点', title: '自动放弃一切连锁机会' },
@@ -37,6 +38,17 @@ export default function RightControls({ onSurrendered, onLeaveObserver }: {
     eventBus.on('stoc:teammate_surrender', onMate);
     return () => { eventBus.off('stoc:teammate_surrender', onMate); };
   }, []);
+  useEffect(() => {
+    // 标记是单局语义：下一局开始/决斗结束即复位（原版 btnLeaveGame 文案在
+    // STOC_DUEL_START 重置为 SysString 1351，teammate_surrender 时再换 1355）
+    const reset = (): void => setTeammateSurrender(false);
+    eventBus.on('stoc:duel_start', reset);
+    eventBus.on('stoc:duel_end', reset);
+    return () => {
+      eventBus.off('stoc:duel_start', reset);
+      eventBus.off('stoc:duel_end', reset);
+    };
+  }, []);
 
   const pick = (key: ChainPrefMode) => {
     chainPrefs.set(key);
@@ -49,10 +61,19 @@ export default function RightControls({ onSurrendered, onLeaveObserver }: {
     if (onSurrendered) onSurrendered();
   };
 
-  // 观战者：连锁/投降都不适用，只留「离开」
+  // 观战者：连锁/投降都不适用，只留「离开」与「切换视角」
+  // （btnSpectatorSwap，game.cpp:913 → DuelClient::SwapField）
   if (state.isObserver) {
     return (
       <div id="right-controls" className="right-controls">
+        <button
+          id="spectator-swap-btn"
+          className={`leave-game-btn${state.viewSwapped ? ' pressed' : ''}`}
+          title="交换双方视角（场地旋转 180°）"
+          onClick={() => duelStore.toggleViewSwap()}
+        >
+          切换视角
+        </button>
         <button
           id="leave-game-btn"
           className={`leave-game-btn${teammateSurrender ? ' btn-hint-glow' : ''}`}
@@ -88,9 +109,22 @@ export default function RightControls({ onSurrendered, onLeaveObserver }: {
       {confirming && (
         <div className="surrender-confirm">
           <div className="surrender-confirm-title">是否确定投降？</div>
+          {teammateSurrender && (
+            <div style={{ fontSize: '12px', color: '#fbbf24', marginBottom: '6px' }}>
+              队友已请求投降，确认后整队判负。
+            </div>
+          )}
           <div className="surrender-confirm-row">
-            <button id="surrender-yes" className="btn btn-gold" onClick={doSurrender}>是</button>
-            <button id="surrender-no" className="btn btn-secondary" onClick={() => setConfirming(false)}>否</button>
+            {/* swap_yes_no_button 交换是/否位置（原版 SwapYesNoButtons 的 btnSurrenderYes/No） */}
+            {(() => {
+              const yes = (
+                <button key="y" id="surrender-yes" className="btn btn-gold" onClick={doSurrender}>是</button>
+              );
+              const no = (
+                <button key="n" id="surrender-no" className="btn btn-secondary" onClick={() => setConfirming(false)}>否</button>
+              );
+              return settingsStore.get('swap_yes_no_button') ? [no, yes] : [yes, no];
+            })()}
           </div>
         </div>
       )}

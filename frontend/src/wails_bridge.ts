@@ -276,8 +276,8 @@ export const WailsBridge = {
   // CTOS_LEAVE_GAME 离开（single_duel.cpp:328-331），由服务端裁决。
   toObserver() {
     if (isWails) callWails("ToObserver");
-    // selftype>1 即观战（gframe），type 低 4 位=座位、bit4=宿主
-    else eventBus.emit("stoc:type_change", { type: 0x02, isHost: false, pos: 2 });
+    // selftype=7 即观战（network.h NETPLAYER_TYPE_OBSERVER=7），低 4 位=座位
+    else eventBus.emit("stoc:type_change", { type: 7, isHost: false, pos: 7 });
   },
 
   toDuelist() {
@@ -369,6 +369,12 @@ export const WailsBridge = {
   respondSelectPlace(player: number, loc: number, seq: number) {
     if (isWails) callWails("RespondSelectPlace", player, loc, seq);
     else console.log("[MockBridge] RespondSelectPlace:", player, loc, seq);
+  },
+
+  // count>1 的落点选择：累计选满后一次回传扁平 [player,loc,seq,...]
+  respondSelectPlaces(places: number[]) {
+    if (isWails) callWails("RespondSelectPlaces", places);
+    else console.log("[MockBridge] RespondSelectPlaces:", places);
   },
 
   respondSortCard(perm: number[]) {
@@ -545,12 +551,41 @@ export const WailsBridge = {
     return [{ hash: 0, name: 'N/A' }, { hash: 0x7dfcee6a, name: 'Test List' }];
   },
 
+  // 禁限卡表内容（app.go LFListContent）：卡码 → 0 禁/1 限/2 准限。
+  // 空表 = 无限制（3）。卡组编辑器显示标记 + 校验同名上限用。
+  async lfListContent(hash: number): Promise<Record<number, number>> {
+    if (isWails) {
+      return (await callWails("LFListContent", hash)) || {};
+    }
+    // mock：准限 Dark Magician / 限制 Trap Card，供冒烟断言标记与校验
+    return { 46986414: 2, 5318639: 1 };
+  },
+
   async listDecks() {
     if (isWails) {
       return await callWails("ListDecks");
     }
     // 相对路径名（'/' 分隔分类层级）；根目录 = 未分类
     return ["Blue-Eyes Beatdown", "Dark Magician Control", "Meta/Cyber Dragon OTK"];
+  },
+
+  // ---- LAN 房间发现（app 侧 lan_discovery.go RefreshHosts：UDP 广播找房，
+  // duelclient.cpp BeginRefreshHost/BroadcastReply 的 Go 版）----
+  async refreshHosts(timeoutMs?: number): Promise<{
+    ip: string; port: number; name: string;
+    lflist: number; rule: number; mode: number; duelRule: number;
+    startLp: number; startHand: number; drawCount: number; timeLimit: number;
+    noCheckDeck: number; noShuffleDeck: number;
+  }[]> {
+    if (isWails) {
+      return (await callWails("RefreshHosts", timeoutMs ?? 3000)) || [];
+    }
+    return [{
+      ip: '127.0.0.1', port: 7911, name: '局域网测试房',
+      lflist: 0x7dfcee6a, rule: 0, mode: 2, duelRule: 5,
+      startLp: 8000, startHand: 5, drawCount: 1, timeLimit: 180,
+      noCheckDeck: 0, noShuffleDeck: 0,
+    }];
   },
 
   async loadDeck(name: string) {
@@ -618,6 +653,46 @@ export const WailsBridge = {
     }
     console.log("[MockBridge] Deleted deck:", name);
     return { success: true };
+  },
+
+  // ---- 卡组/分类管理（原版 wDeckManage，Go 侧 deck_manage.go）----
+
+  async createDeckCategory(name: string) {
+    if (isWails) return await callWails("CreateDeckCategory", name);
+    console.log("[MockBridge] CreateDeckCategory:", name);
+    return null;
+  },
+
+  async renameDeckCategory(oldName: string, newName: string) {
+    if (isWails) return await callWails("RenameDeckCategory", oldName, newName);
+    console.log("[MockBridge] RenameDeckCategory:", oldName, "->", newName);
+    return null;
+  },
+
+  async deleteDeckCategory(name: string) {
+    if (isWails) return await callWails("DeleteDeckCategory", name);
+    console.log("[MockBridge] DeleteDeckCategory:", name);
+    return null;
+  },
+
+  // 重命名卡组：新名不带 '/' 时沿用原分类（Go resolveDeckTarget）
+  async renameDeck(oldName: string, newName: string) {
+    if (isWails) return await callWails("RenameDeck", oldName, newName);
+    console.log("[MockBridge] RenameDeck:", oldName, "->", newName);
+    return null;
+  },
+
+  // 复制/移动卡组到目标分类（'' = 未分类根目录），保持卡组名不变
+  async copyDeck(name: string, category: string) {
+    if (isWails) return await callWails("CopyDeck", name, category);
+    console.log("[MockBridge] CopyDeck:", name, "->", category || '(root)');
+    return null;
+  },
+
+  async moveDeck(name: string, category: string) {
+    if (isWails) return await callWails("MoveDeck", name, category);
+    console.log("[MockBridge] MoveDeck:", name, "->", category || '(root)');
+    return null;
   },
 
   // ---- 回放文件管理 ----

@@ -10,24 +10,16 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { duelStore } from '../duel/store.ts';
 import { WailsBridge } from '../wails_bridge.ts';
+import { PHASE_LABELS } from '../domain/sys_strings.ts';
 import {
   PHASE_DRAW, PHASE_STANDBY, PHASE_MAIN1, PHASE_BATTLE_START,
   PHASE_BATTLE, PHASE_MAIN2, PHASE_END,
 } from '../domain/constants.ts';
 
-const PHASE_LABELS: [number, string][] = [
-  [PHASE_DRAW, '抽卡阶段'],
-  [PHASE_STANDBY, '准备阶段'],
-  [PHASE_MAIN1, '主要阶段 1'],
-  [PHASE_BATTLE_START, '战斗阶段'],
-  [PHASE_MAIN2, '主要阶段 2'],
-  [PHASE_END, '结束阶段'],
-];
-
 function phaseName(phase: number): string {
-  if (phase & PHASE_BATTLE_START) return PHASE_LABELS[3][1];
-  for (const [bit, label] of PHASE_LABELS) {
-    if (phase & bit) return label;
+  if (phase & PHASE_BATTLE_START) return PHASE_LABELS[PHASE_BATTLE_START];
+  for (const bit of [PHASE_DRAW, PHASE_STANDBY, PHASE_MAIN1, PHASE_BATTLE_START, PHASE_MAIN2, PHASE_END]) {
+    if (phase & bit) return PHASE_LABELS[bit];
   }
   return '';
 }
@@ -37,7 +29,7 @@ function inBattle(phase: number): boolean {
   return (phase & (PHASE_BATTLE_START | PHASE_BATTLE)) !== 0;
 }
 
-export default function PhaseStrip() {
+export default function PhaseStrip({ bannerOnly = false }: { bannerOnly?: boolean } = {}) {
   const state = useSyncExternalStore(duelStore.subscribe, duelStore.getState);
   const [folded, setFolded] = useState(false);
   const [banner, setBanner] = useState<{ key: number; text: string } | null>(null);
@@ -64,6 +56,18 @@ export default function PhaseStrip() {
   const canBP = !!prompt && prompt.mode === 'idle' && prompt.canBP;
   const canM2 = !!prompt && prompt.mode === 'battle' && prompt.canM2;
   const canEP = !!prompt && prompt.canEP;
+
+  // bannerOnly（回放剧场 compact）：原版回放也有中央大字阶段横幅
+  // （DrawSpec 的 showcard 文本），但阶段条按钮/回合块不渲染——回放里
+  // phase 每步都变，actionable 闪光会一直闪。无 id：theater 冒烟的
+  // compactHudHidden 断言 #phase-strip 不得出现在 compact 模式。
+  if (bannerOnly) {
+    return banner ? (
+      <div className="phase-strip" data-banner-only="1">
+        <div key={banner.key} className="phase-banner">{banner.text}</div>
+      </div>
+    ) : null;
+  }
 
   const onBP = () => { if (canBP) WailsBridge.respondIdleCmd(0, 6); };
   const onM2 = () => { if (canM2) WailsBridge.respondBattleCmd(0, 2); };

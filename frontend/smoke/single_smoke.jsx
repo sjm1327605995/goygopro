@@ -146,9 +146,9 @@ try {
   record('puzzle-hand-rebuilt',
     hand.length === 3 && hand[0].code === 89631139 && hand[1].code === 46986414 && hand[2] === null);
 
-  // DuelManager：reload_field 直接定对手手背行数
+  // DuelManager：reload_field 直接定双座手牌数，远侧（显示座 1）落手背行
   const handCounts = [];
-  const stubField = { setOpponentHandCount: (c) => handCounts.push(c) };
+  const stubField = { setFarHandCount: (c) => handCounts.push(c) };
   const manager = new DuelManager(stubField, { interactive: false });
   eventBus.emit('duel:reload_field', {
     rule: 1, chainCount: 0,

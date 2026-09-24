@@ -198,6 +198,14 @@ const setInputVal = (el, v) => {
       '.chat-overlay'].every((sel) => !$(sel));
     checks.lpPanelsKept = !!$('.player-state-panel');
     checks.handDockKept = !!$('#hand-cards-dock');
+
+    // compact 模式仍保留中央大字阶段横幅（原版回放的 DrawSpec showcard 文本）：
+    // 手动推一个 new_phase，横幅应在 1.4s 自动消退前出现。
+    eventBus.emit('duel:new_phase', { phase: 0x04 });
+    await waitFor(() => !!document.querySelector('.phase-banner'), 'compact phase banner', 3000);
+    checks.compactPhaseBanner = document.querySelector('.phase-banner').textContent === '主要阶段 1';
+    await waitFor(() => !document.querySelector('.phase-banner'), 'banner auto-dismiss', 5000);
+    checks.compactPhaseBannerExpires = !document.querySelector('.phase-banner');
     // 自己的手牌：playerType=1 → 视角玩家是 seat1，开局抽 5 → 手牌坞 5 张
     checks.ownHandCards = document.querySelectorAll('#hand-cards-dock .hand-card-item').length === 5;
 
@@ -251,6 +259,23 @@ const setInputVal = (el, v) => {
     await waitFor(() => replayMutations.saved.length === 2, 'auto saved');
     checks.autoSavePath = replayMutations.saved[1] === 'auto_one'
       && !document.getElementById('replay-save-prompt');
+
+    // ---- btnReplaySwap（game.cpp:901 → ReplayMode::SwapField）：交换视角
+    // —— store 显示座翻转 + 相机绕到另一侧，再换一次复原 ----
+    const swapBtn = document.getElementById('replay-swap-btn');
+    record('replay-swap-btn-shown', !!swapBtn && !swapBtn.disabled);
+    const lpBeforeSwap = [duelStore.getState().lp[0], duelStore.getState().lp[1]];
+    swapBtn.click();
+    await waitFor(() => duelStore.getState().viewSwapped === true, 'view swapped');
+    record('replay-swap-flips-store', duelStore.getState().lp[0] === lpBeforeSwap[1]
+      && duelStore.getState().lp[1] === lpBeforeSwap[0], JSON.stringify(duelStore.getState().lp));
+    const fSwap = window.__theaterProbe.field;
+    await waitFor(() => fSwap.camera.position.z < 0, 'camera flips');
+    record('replay-swap-flips-camera', true);
+    swapBtn.click();
+    await waitFor(() => duelStore.getState().viewSwapped === false
+      && fSwap.camera.position.z > 0, 'view restored');
+    record('replay-swap-back', duelStore.getState().lp[0] === lpBeforeSwap[0]);
 
     record('no-fatal', true);
   } catch (err) {
