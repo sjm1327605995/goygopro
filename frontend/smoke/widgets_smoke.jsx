@@ -179,6 +179,27 @@ const run = async () => {
   assert('previewDesc', $('preview-card-desc').innerText.includes('legendary dragon'),
     `desc=${$('preview-card-desc').innerText.slice(0, 40)}`);
 
+  // ---- 互连箭头：LINK 怪兽预览显示 LINK-N + 箭头（替代无意义的 DEF 0）。
+  // 对齐 gframe game.cpp:1684-1690（adBuffer = "atk/-   <墓碑 FormatLinkMarker>"
+  // ）与 data_manager.cpp:410-430 FormatLinkMarker 顺序。Decode Talker
+  // def=133=0x85 → [↑][↙][↘]（CDB 里 def 存 link_marker 位掩码）。 ----
+  const origGetCard = WailsBridge.getCard;
+  const LINK_MONSTER = {
+    code: 1861629, name: 'Decode Talker',
+    type: 0x4000000 | 0x1 | 0x20, // TYPE_LINK | TYPE_MONSTER | TYPE_EFFECT
+    attack: 2300, defense: 0, level: 3,
+    race: 0x1000000, attribute: 0x10, linkMarker: 133,
+    desc: '2+ Effect Monsters',
+  };
+  WailsBridge.getCard = async (code) => (code === 1861629 ? LINK_MONSTER : origGetCard(code));
+  duelStore.inspect(1861629);
+  await waitFor(() => $('preview-card-name').innerText === 'Decode Talker');
+  const statsEl = document.querySelector('.preview-stats');
+  // textContent 保留多空格（innerText 会折叠），核对与格式串的空格一致
+  assert('previewLinkArrows', statsEl && statsEl.textContent === 'LINK-3  2300/-   [↑][↙][↘]',
+    `got ${statsEl && statsEl.textContent}`);
+  WailsBridge.getCard = origGetCard;
+
   // ---- turn/phase ----
   eventBus.emit('duel:new_turn', { player: 1 });
   eventBus.emit('duel:new_phase', { phase: 0x04 });

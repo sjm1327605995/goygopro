@@ -494,13 +494,21 @@ export class DuelManager {
     });
 
     // MSG_UPDATE_DATA：引擎的权威同步点。用它对比网格槽与 store.board，
-    // 漂移时清盘重建（ Step E 的 store 重同步路径）。
+    // 漂移时清盘重建（ Step E 的 store 重同步路径）；随后把连接怪的
+    // type/linkMarker 写进 mesh userData（悬停互连高亮的数据源），并按
+    // 新场面重算悬停中的高亮（场面变化清除/刷新语义）。
     sub('duel:update_data', () => {
-      this.resyncFromStore();
+      this.resyncFromStore().then(() => {
+        this.syncLinkData();
+        this.field3D.updateLinkedZones();
+      });
     });
-    // MSG_UPDATE_CARD 不走整板 resync，但 status 可能变化 → 只刷新无效化徽章
+    // MSG_UPDATE_CARD 不走整板 resync，但 status/linkMarker 可能变化 →
+    // 刷新无效化徽章 + 连接数据 + 悬停高亮
     sub('duel:update_card', () => {
       this.syncNegatedBadges();
+      this.syncLinkData();
+      this.field3D.updateLinkedZones();
     });
   }
 
@@ -836,6 +844,27 @@ export class DuelManager {
       const sb = state.board[disp];
       this.field3D.syncNegatedBadges(seat, 'mzone', sb.mzone);
       this.field3D.syncNegatedBadges(seat, 'szone', sb.szone);
+    }
+  }
+
+  // 连接怪数据同步（drawing.cpp DrawLinkedZones 的数据源）：把 store.board
+  // 的 type/linkMarker（QUERY_TYPE/QUERY_LINK，update_data 携带）写到对应
+  // mesh 的 userData；只有主怪兽区需要（连接怪只存在于 mzone）。悬停高亮
+  // 本身由 field3d.updateLinkedZones 按 hoveredCard 重算。
+  syncLinkData(): void {
+    const state = duelStore.getState();
+    const bottom = bottomEngineSeat(state);
+    for (let disp = 0; disp < 2; disp++) {
+      const seat = disp === 0 ? bottom : 1 - bottom;
+      const zone = (this.field3D.cardsOnField[seat] || {}).mzone || [];
+      const cards = state.board[disp].mzone;
+      for (let i = 0; i < zone.length; i++) {
+        const mesh = zone[i];
+        if (!mesh) continue;
+        const card = cards[i] || null;
+        mesh.userData.cardType = card ? (card.type || 0) : 0;
+        mesh.userData.linkMarker = card ? (card.linkMarker || 0) : 0;
+      }
     }
   }
 

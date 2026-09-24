@@ -132,12 +132,14 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     await waitFor(() => !!document.getElementById('deck-screen'));
     await waitFor(() => document.querySelectorAll('.deck-grid .deck-card-chip').length > 0);
 
-    // 卡图格子：每个 chip 渲染 <img>（mock 卡图），比例锁定 59x86。
+    // 卡图格子：每个 chip 渲染 <img>（mock 卡图），比例锁定 44x64（CARD_THUMB）。
     const chips = [...document.querySelectorAll('.deck-grid .deck-card-chip')];
     record('chips-rendered', chips.length === 5); // 3 main + 1 extra + 1 side
-    await waitFor(() => chips.every((c) => c.querySelector('img'))); // 卡图为异步 promise
+    // 卡图为异步 promise；缺图兜底是 unknown.jpg（img 一开始就存在），所以要
+    // 等到 src 真正换成 mock 卡图 FAKE_PIC 才算加载完成。
+    await waitFor(() => chips.every((c) => c.querySelector('img') && c.querySelector('img').src === FAKE_PIC));
     record('chips-show-card-images', chips.every((c) => c.querySelector('img') && c.querySelector('img').src === FAKE_PIC));
-    record('chip-aspect-ratio', /59\s*\/\s*86/.test(getComputedStyle(chips[0]).aspectRatio || ''));
+    record('chip-aspect-ratio', /44\s*\/\s*64/.test(getComputedStyle(chips[0]).aspectRatio || ''));
 
     // 过滤控件齐备：种族/属性下拉由 constants.ts RACES/ATTRS 驱动
     const raceSel = document.getElementById('deck-filter-race');
@@ -234,6 +236,14 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     await waitFor(() => document.getElementById('deck-search-input').value === ''
       && document.getElementById('deck-filter-race').textContent.includes('（无）'));
     record('clear-filters', true);
+
+    // separate_clear_button（game.cpp:792-794）：关闭时隐藏独立清空按钮
+    settingsStore.set('separate_clear_button', 0);
+    await waitFor(() => !document.getElementById('deck-filter-clear'), 2000, 'separate clear btn hidden');
+    record('separate-clear-btn-hidden-when-disabled', !document.getElementById('deck-filter-clear'));
+    settingsStore.set('separate_clear_button', 1);
+    await waitFor(() => !!document.getElementById('deck-filter-clear'), 2000, 'separate clear btn restored');
+    record('separate-clear-btn-visible-when-enabled', !!document.getElementById('deck-filter-clear'));
 
     // ---- 禁限卡表（P2）：编辑器标记 + 按表校验同名上限。
     // mock 表内容：Dark Magician 准限(2)、Trap Card 限制(1)（lfListContent） ----
@@ -340,7 +350,9 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     record('linkmarks-passthrough', lastFilter().linkMarks === 0x42, String(lastFilter().linkMarks));
 
     // 清空条件同时重置运算符/效果/箭头
-    clearBtn.click();
+    // 注：上面把 separate_clear_button 切 0→1 会让按钮卸载重挂，早前捕获的
+    // clearBtn 已是脱 DOM 的旧节点，这里必须重新查找而非复用（否则 click 空转）。
+    document.getElementById('deck-filter-clear').click();
     await waitFor(() => document.getElementById('deck-filter-atk').value === '');
     record('clear-resets-new-filters', arrows.every((b) => !b.className.includes('btn-gold')));
 

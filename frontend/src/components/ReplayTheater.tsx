@@ -46,6 +46,9 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
   const [stageVersion, setStageVersion] = useState(0);
 
   const timerRef = useRef<number | null>(null);
+  // 动画推进轮询读真值，避免闭包里的旧 isPlaying/speed state 造成误判
+  const isPlayingRef = useRef(false);
+  const playSpeedRef = useRef(1);
   const toastTimerRef = useRef<number | null>(null);
   const stageRef = useRef<StageHandle | null>(null); // { field3D, duelManager } from DuelStage
   const stepRef = useRef(0);              // mirror of currentStep for the play timer
@@ -59,7 +62,7 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
       const names = await WailsBridge.listReplays();
       setReplays(names || []);
     })();
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    return () => { if (timerRef.current) window.clearTimeout(timerRef.current); };
   }, []);
 
   const refreshList = async (): Promise<void> => {
@@ -205,29 +208,59 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
     seek(Math.round(ratio * eventsRef.current.length));
   };
 
+  // 动画驱动的推进：emit 一个事件后，等它触发的 3D tween 播完再进下一步
+  // （代替固定 1 秒时钟——动作动画 ~300ms 就结束，一刀切时钟会让动作一闪
+  // 而过、流程割裂）。速度档作 timeScale；minGap 保证纯数据事件（无动画）
+  // 不瞬间连发，maxAnim 是动画等待上限（tween 卡死时兜底推进）。
+  const MIN_GAP_MS = 350;
+  const MAX_ANIM_MS = 2500;
+  const advance = (): void => {
+    if (!isPlayingRef.current) return;
+    if (stepRef.current >= eventsRef.current.length) {
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+      timerRef.current = null;
+      return;
+    }
+    emitEvent(eventsRef.current[stepRef.current], false);
+    setStep(stepRef.current + 1);
+    waitThenAdvance(Date.now());
+  };
+  const waitThenAdvance = (started: number): void => {
+    const sp = playSpeedRef.current || 1;
+    const minGap = Math.max(120, Math.round(MIN_GAP_MS / sp));
+    const maxAnim = Math.round(MAX_ANIM_MS / sp);
+    const poll = (): void => {
+      if (!isPlayingRef.current) return; // 暂停/变速时被 timer 清空打断
+      const field = stageRef.current;
+      const animating = !!(field && field.field3D.hasActiveTweens());
+      const elapsed = Date.now() - started;
+      if (animating && elapsed < maxAnim) {
+        timerRef.current = window.setTimeout(poll, 16);
+      } else if (elapsed < minGap) {
+        timerRef.current = window.setTimeout(poll, 16);
+      } else {
+        advance();
+      }
+    };
+    timerRef.current = window.setTimeout(poll, 16);
+  };
+
   const play = (speedOverride?: number): void => {
     if (!stageReady) return;
-    setIsPlaying(true);
-    // Accept an explicit speed: changeSpeed() restarts the interval while the
+    // Accept an explicit speed: changeSpeed() restarts the timer while the
     // state update from setSpeed() has not landed in this render's closure.
-    const effectiveSpeed = speedOverride ?? speed;
-    const ms = Math.max(60, Math.round(1000 / (effectiveSpeed || 1)));
-    clearInterval(timerRef.current ?? undefined);
-    timerRef.current = setInterval(() => {
-      if (stepRef.current >= eventsRef.current.length) {
-        setIsPlaying(false);
-        clearInterval(timerRef.current ?? undefined);
-        timerRef.current = null;
-        return;
-      }
-      emitEvent(eventsRef.current[stepRef.current], false);
-      setStep(stepRef.current + 1);
-    }, ms);
+    playSpeedRef.current = speedOverride ?? speed;
+    isPlayingRef.current = true;
+    setIsPlaying(true);
+    if (timerRef.current) { window.clearTimeout(timerRef.current); timerRef.current = null; }
+    advance();
   };
 
   const pause = (): void => {
+    isPlayingRef.current = false;
     setIsPlaying(false);
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (timerRef.current) { window.clearTimeout(timerRef.current); timerRef.current = null; }
   };
 
   const togglePlay = (): void => { if (isPlaying) pause(); else play(); };

@@ -14,7 +14,7 @@ import {
   TYPE_FUSION, TYPE_RITUAL, TYPE_SYNCHRO, TYPE_XYZ, TYPE_LINK,
   TYPE_PENDULUM, TYPE_QUICKPLAY, TYPE_CONTINUOUS, TYPE_EQUIP, TYPE_FIELD,
   TYPE_TUNER, TYPE_FLIP, TYPE_SPIRIT, TYPE_UNION, TYPE_DUAL,
-  RACES, ATTRS,
+  RACES, ATTRS, formatLinkMarker,
 } from '../domain/constants.ts';
 
 const TYPE_SEGMENTS: [number, string][] = [
@@ -103,7 +103,9 @@ export default function CardPreviewPanel() {
             ) : null}
             {info && isMonster ? (
               <div className="preview-stats">
-                ATK {info.attack != null ? String(info.attack) : '?'} / DEF {info.defense != null ? String(info.defense) : '?'}
+                {type & TYPE_LINK
+                  ? `LINK-${info.level != null ? String(info.level) : '?'}  ${info.attack != null ? String(info.attack) : '?'}/-   ${formatLinkMarker(Number(info.linkMarker || 0))}`
+                  : `ATK ${info.attack != null ? String(info.attack) : '?'} / DEF ${info.defense != null ? String(info.defense) : '?'}`}
               </div>
             ) : null}
             <div id="preview-card-desc" className="preview-desc">
