@@ -7,7 +7,12 @@ import * as THREE from '../../libs/three.module.js';
 import * as TWEEN from '../../libs/tween.esm.js';
 import { settingsStore } from '../domain/settings.ts';
 import { ChainVisualizer } from './chain_visualizer.ts';
-import { LOC_NAMES } from '../domain/constants.ts';
+import {
+  LOC_NAMES, TYPE_LINK,
+  LINK_MARKER_BOTTOM_LEFT, LINK_MARKER_BOTTOM, LINK_MARKER_BOTTOM_RIGHT,
+  LINK_MARKER_LEFT, LINK_MARKER_RIGHT,
+  LINK_MARKER_TOP_LEFT, LINK_MARKER_TOP, LINK_MARKER_TOP_RIGHT,
+} from '../domain/constants.ts';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_DEPTH, ZONE_COORDS } from './field3d_geometry.ts';
 import { generateCardTexture as buildCardTexture } from './field3d_textures.ts';
 import {
@@ -88,6 +93,12 @@ export class DuelField3D {
   // 样式区分——绿色实线+浅填充；瞬态展示，duel_manager 定时清除）
   hintZoneMarks: any[] = [];
   hintZoneTexture: any = null;
+  // ---- 连接怪互连区域高亮（原版 drawing.cpp:278-359 DrawLinkedZones +
+  // CheckMutual）：悬停场上连接怪时把它箭头指向的格画成半透明色块，
+  // 单向链接 = 原版 0xff0261a2 蓝、互连（目标格上的连接怪有指回来的
+  // 标记）= 0xff009900 绿 ----
+  linkZoneMarks: { mesh: any; mutual: boolean }[] = [];
+  linkZoneTextures: { link: any; mutual: any } | null = null;
   // 点选/右键回调由 DuelStage 挂到 manager 方法上（构造时还没有 manager）
   onPlaceZoneClick: ((zone: { player: number; loc: number; seq: number }) => void) | null = null;
   onCardSelectPick: ((idx: number) => void) | null = null;
@@ -521,6 +532,135 @@ export class DuelField3D {
     this.hintZoneMarks = [];
   }
 
+  // ---- 连接怪互连区域高亮（DrawLinkedZones / CheckMutual）----
+  // 区域计算全在引擎座标做：cardsOnField 的下标即引擎 seat/seq，
+  // ZONE_COORDS 已把双方镜像布局烤进坐标（p1 的 seq 0-4 与额外怪区 5/6
+  // 共享格的编号都按引擎序），视角交换只搬相机，这里无需任何换算。
+  // 原版 dInfo.duel_rule>=4 的分支恒取——本前端场地固定 MR2020 布局。
+
+  /** 单向=原版 0xff0261a2 蓝、互连=0xff009900 绿（CheckMutual 的两种着色） */
+  ensureLinkZoneTextures(): { link: any; mutual: any } {
+    if (this.linkZoneTextures) return this.linkZoneTextures;
+    const build = (fill: string, stroke: string): any => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 184;
+      const ctx = canvas.getContext('2d')!;
+      ctx.clearRect(0, 0, 128, 184);
+      ctx.fillStyle = fill;
+      ctx.fillRect(0, 0, 128, 184);
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 7;
+      ctx.strokeRect(4, 4, 120, 176);
+      return new (THREE as any).CanvasTexture(canvas);
+    };
+    this.linkZoneTextures = {
+      link: build('rgba(2, 97, 162, 0.30)', '#2a9bf0'),
+      mutual: build('rgba(0, 153, 0, 0.30)', '#00cc44'),
+    };
+    return this.linkZoneTextures;
+  }
+
+  /** mesh 是带 arrow 回指标记的连接怪？（CheckMutual 的 pcard2 判定） */
+  isMutualLink(mesh: any, arrow: number): boolean {
+    return !!mesh
+      && (((mesh.userData.cardType || 0) & TYPE_LINK) !== 0)
+      && (((mesh.userData.linkMarker || 0) & arrow) !== 0);
+  }
+
+  /**
+   * 原版 drawing.cpp:278-350 DrawLinkedZones 的逐行移植（引擎座标）。
+   * 返回该卡 link_marker 指向的 mzone 格及互连标记；mark=0 或主怪区
+   * 边界外的方向按原版规则跳过。
+   */
+  computeLinkedZones(
+    controler: number, seq: number, mark: number,
+  ): { player: number; seq: number; mutual: boolean }[] {
+    const at = (c: number, s: number): any =>
+      (this.cardsOnField[c] && this.cardsOnField[c].mzone[s]) || null;
+    const out: { player: number; seq: number; mutual: boolean }[] = [];
+    // other：共享额外怪区的另一方编号（己方 5/6 与对方 6/5 是同物理格），
+    // 主查格为空时用于互连判定（原版 pcard2 的落空替换）
+    const push = (c: number, s: number, arrow: number,
+      other?: { c: number; s: number; arrow: number }): void => {
+      const target = at(c, s);
+      const mutual = this.isMutualLink(target, arrow)
+        || (!target && !!other && this.isMutualLink(at(other.c, other.s), other.arrow));
+      out.push({ player: c, seq: s, mutual });
+    };
+    if (seq < 5) {
+      if (mark & LINK_MARKER_LEFT && seq > 0) push(controler, seq - 1, LINK_MARKER_RIGHT);
+      if (mark & LINK_MARKER_RIGHT && seq < 4) push(controler, seq + 1, LINK_MARKER_LEFT);
+      if ((mark & LINK_MARKER_TOP_LEFT && seq === 2)
+        || (mark & LINK_MARKER_TOP && seq === 1)
+        || (mark & LINK_MARKER_TOP_RIGHT && seq === 0)) {
+        const arrow = seq === 2 ? LINK_MARKER_BOTTOM_RIGHT : seq === 1 ? LINK_MARKER_BOTTOM : LINK_MARKER_BOTTOM_LEFT;
+        const otherArrow = seq === 2 ? LINK_MARKER_TOP_LEFT : seq === 1 ? LINK_MARKER_TOP : LINK_MARKER_TOP_RIGHT;
+        push(controler, 5, arrow, { c: 1 - controler, s: 6, arrow: otherArrow });
+      }
+      if ((mark & LINK_MARKER_TOP_LEFT && seq === 4)
+        || (mark & LINK_MARKER_TOP && seq === 3)
+        || (mark & LINK_MARKER_TOP_RIGHT && seq === 2)) {
+        const arrow = seq === 4 ? LINK_MARKER_BOTTOM_RIGHT : seq === 3 ? LINK_MARKER_BOTTOM : LINK_MARKER_BOTTOM_LEFT;
+        const otherArrow = seq === 4 ? LINK_MARKER_TOP_LEFT : seq === 3 ? LINK_MARKER_TOP : LINK_MARKER_TOP_RIGHT;
+        push(controler, 6, arrow, { c: 1 - controler, s: 5, arrow: otherArrow });
+      }
+    } else {
+      const swap = seq === 5 ? 0 : 2;
+      if (mark & LINK_MARKER_BOTTOM_LEFT) push(controler, 0 + swap, LINK_MARKER_TOP_RIGHT);
+      if (mark & LINK_MARKER_BOTTOM) push(controler, 1 + swap, LINK_MARKER_TOP);
+      if (mark & LINK_MARKER_BOTTOM_RIGHT) push(controler, 2 + swap, LINK_MARKER_TOP_LEFT);
+      if (mark & LINK_MARKER_TOP_LEFT) push(1 - controler, 4 - swap, LINK_MARKER_TOP_LEFT);
+      if (mark & LINK_MARKER_TOP) push(1 - controler, 3 - swap, LINK_MARKER_TOP);
+      if (mark & LINK_MARKER_TOP_RIGHT) push(1 - controler, 2 - swap, LINK_MARKER_TOP_RIGHT);
+    }
+    return out;
+  }
+
+  /**
+   * 按当前悬停卡重算互连高亮（悬停切换/离场/update_data 后都要调）。
+   * 原版触发点：悬停在连接怪上（drawing.cpp:252-254，type & TYPE_LINK）。
+   */
+  updateLinkedZones(): void {
+    this.clearLinkedZones();
+    const mesh = this.hoveredCard;
+    const slot = mesh && mesh.userData.slot;
+    if (!mesh || !slot || slot.loc !== 'mzone') return;
+    if (!((mesh.userData.cardType || 0) & TYPE_LINK)) return;
+    const mark = mesh.userData.linkMarker || 0;
+    if (!mark) return;
+    // 悬停引用可能已离场（mesh 退休时 hoveredCard 未清），以登记槽位为准
+    const zone = this.cardsOnField[slot.player] && this.cardsOnField[slot.player].mzone;
+    if (!zone || zone[slot.seq] !== mesh) return;
+    const tex = this.ensureLinkZoneTextures();
+    for (const z of this.computeLinkedZones(slot.player, slot.seq, mark)) {
+      const coord = this.getZonePosition(z.player, 'mzone', z.seq);
+      const geo = new (THREE as any).PlaneGeometry(CARD_WIDTH + 0.16, CARD_HEIGHT + 0.16);
+      const mat = new (THREE as any).MeshBasicMaterial({
+        map: z.mutual ? tex.mutual : tex.link,
+        transparent: true,
+        depthWrite: false,
+        opacity: 0.9,
+      });
+      const m = new (THREE as any).Mesh(geo, mat);
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(coord.x, 0.055, coord.z);
+      m.renderOrder = 6;
+      m.userData.linkZone = { player: z.player, seq: z.seq, mutual: z.mutual };
+      this.scene.add(m);
+      this.linkZoneMarks.push({ mesh: m, mutual: z.mutual });
+    }
+  }
+
+  clearLinkedZones(): void {
+    for (const m of this.linkZoneMarks) {
+      this.scene.remove(m.mesh);
+      m.mesh.geometry.dispose();
+      m.mesh.material.dispose();
+    }
+    this.linkZoneMarks = [];
+  }
+
   // ---- MSG_FIELD_DISABLED 禁用格（drawing.cpp:210-241：格上画白色对角叉线）----
   // flag 位域与 decorateSelectPlace 同构：低 16 位 = 操作方 mzone(0-6)/
   // szone(8-13+灵摆 14/15)，高 16 位 = 对手同构区域。
@@ -733,6 +873,12 @@ export class DuelField3D {
     return tween;
   }
 
+  // 回放动画驱动：场上是否还有未播完的 tween。ReplayTheater 用它等一个
+  // 事件触发的动画自然结束再推进下一步（代替固定时钟，避免动作一闪而过）。
+  hasActiveTweens(): boolean {
+    return this.tweenGroup.getAll().some((t) => t.isPlaying());
+  }
+
   createCardMesh(cardCode: number, cardInfo: any = null): any {
     const geo = new (THREE as any).BoxGeometry(CARD_WIDTH, CARD_DEPTH, CARD_HEIGHT);
     const borderMat = new (THREE as any).MeshStandardMaterial({ color: 0x111827 });
@@ -927,6 +1073,7 @@ export class DuelField3D {
     this.clearPlaceSelectZones();
     this.clearCardSelectMarks();
     this.clearHintZones();
+    this.clearLinkedZones();
     this.tweenGroup.removeAll();
     // Force the field-spell background to re-evaluate (and fade out).
     this.fieldSpellCode = -1;
@@ -1364,6 +1511,8 @@ export class DuelField3D {
             x: this._lastClientX, y: this._lastClientY,
           },
         }));
+        // 悬停连接怪 → 互连区域高亮（原版 DrawBackGround 的 DrawLinkedZones 分支）
+        this.updateLinkedZones();
       }
     } else if (this.hoveredCard) {
       this.makeTween(this.hoveredCard.position)
@@ -1371,6 +1520,7 @@ export class DuelField3D {
         .start();
       this.hoveredCard = null;
       this.container.dispatchEvent(new CustomEvent('ygo:cardhoverend'));
+      this.clearLinkedZones();
     }
   }
 
@@ -1453,6 +1603,7 @@ export class DuelField3D {
       this.clearPlaceSelectZones();
       this.clearCardSelectMarks();
       this.clearHintZones();
+      this.clearLinkedZones();
       this.setFieldDisabled(0);
     }
     this.cardTextureCache.forEach((tex) => tex.dispose());
@@ -1496,6 +1647,11 @@ export class DuelField3D {
       this.cardSelectTextures.on.dispose();
       this.cardSelectTextures.off.dispose();
       this.cardSelectTextures = null;
+    }
+    if (this.linkZoneTextures) {
+      this.linkZoneTextures.link.dispose();
+      this.linkZoneTextures.mutual.dispose();
+      this.linkZoneTextures = null;
     }
     if (this.renderer) {
       this.renderer.dispose();

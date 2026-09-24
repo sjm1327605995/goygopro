@@ -292,6 +292,95 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     record('swap-back-restores', duelStore.getState().lp[0] === 6500
       && $('#hand-cards-dock').children.length === handBefore,
       JSON.stringify(duelStore.getState().lp));
+
+    // ---- 连接怪互连区域高亮（drawing.cpp:278-359 DrawLinkedZones +
+    // CheckMutual）：悬停连接怪 → 箭头指向的格画色块，互连（对方格上的
+    // 连接怪有指回来的标记）画绿色、单向画蓝色；悬停移开/非连接怪清除 ----
+    const LINK_TYPE = 0x4000000 | 0x1 | 0x20; // TYPE_LINK|TYPE_MONSTER|TYPE_EFFECT
+    f.placeCard(0, 'mzone', 0, 10000001, null, 0x1); // link-1，标记 →右
+    f.placeCard(0, 'mzone', 1, 10000002, null, 0x1); // link-1，标记 ←左（与 mzone0 互连）
+    f.placeCard(0, 'mzone', 3, 10000003, null, 0x1); // link-1，标记 ←左（指向空格 mzone2）
+    f.placeCard(0, 'mzone', 5, 10000004, null, 0x1); // EMZ link-2，标记 ↓+↑
+    // 经 update_data 事件走完整数据链（reducer 合并 → manager syncLinkData
+    // 写 mesh userData）；本次 update_data 会触发一次漂移重建（上面直接
+    // placeCard 的画廊卡不在 store.board），重建后 mesh 与 board 一致
+    eventBus.emit('duel:update_data', { player: 0, location: 0x04, cards: [
+      { code: 10000001, position: { c: 0, l: 0x04, s: 0, p: 1 }, type: LINK_TYPE, link: 1, linkMarker: 0x20 },
+      { code: 10000002, position: { c: 0, l: 0x04, s: 1, p: 1 }, type: LINK_TYPE, link: 1, linkMarker: 0x08 },
+      null,
+      { code: 10000003, position: { c: 0, l: 0x04, s: 3, p: 1 }, type: LINK_TYPE, link: 1, linkMarker: 0x08 },
+      null,
+      { code: 10000004, position: { c: 0, l: 0x04, s: 5, p: 1 }, type: LINK_TYPE, link: 2, linkMarker: 0x82 },
+      null,
+    ] });
+    await waitFor(() => {
+      const m = f.cardsOnField[0].mzone[0];
+      return m && (m.userData.linkMarker || 0) === 0x20
+        && (m.userData.cardType & 0x4000000) !== 0;
+    }, 'linkMarker synced to mesh');
+    record('linkzones-data-reaches-mesh', true);
+    // store.board 也携带（player 0 在本局是对方 seat → 显示座 1）
+    record('linkzones-in-store',
+      (duelStore.getState().board[1].mzone[5] || {}).linkMarker === 0x82,
+      JSON.stringify(duelStore.getState().board[1].mzone[5]));
+
+    // 悬停：把 mesh 中心投影到 NDC 后走真实 raycast（handleHover 路径）
+    const hoverMesh = (mesh) => {
+      const v = mesh.position.clone().project(f.camera);
+      f.mouse.set(v.x, v.y);
+      f.handleHover();
+    };
+    const markInfo = () => f.linkZoneMarks.map((m) => {
+      const z = m.mesh.userData.linkZone;
+      return `${z.player}:${z.seq}:${z.mutual ? 'mutual' : 'link'}@${m.mesh.position.x},${m.mesh.position.z}`;
+    });
+
+    // 悬停 mzone0（标记 →右）：只高亮 mzone1，且 mzone1 的 ←左 指回来 → 互连绿
+    hoverMesh(f.cardsOnField[0].mzone[0]);
+    record('linkzones-adjacent-mutual', f.linkZoneMarks.length === 1
+      && f.linkZoneMarks[0].mutual === true
+      && f.linkZoneMarks[0].mesh.userData.linkZone.seq === 1, JSON.stringify(markInfo()));
+
+    // 悬停 mzone3（标记 ←左）：指向空格 mzone2 → 单向蓝
+    hoverMesh(f.cardsOnField[0].mzone[3]);
+    record('linkzones-one-way-blue', f.linkZoneMarks.length === 1
+      && f.linkZoneMarks[0].mutual === false
+      && f.linkZoneMarks[0].mesh.userData.linkZone.seq === 2, JSON.stringify(markInfo()));
+
+    // 悬停 EMZ（seq5，标记 ↓+↑）：↓ → 己方 mzone1（对方的 ←左 不是回指 →
+    // 单向），↑ → 对方 mzone3（空 → 单向）；坐标跨边正确（engine 座标）
+    hoverMesh(f.cardsOnField[0].mzone[5]);
+    const emzZones = f.linkZoneMarks.map((m) => m.mesh.userData.linkZone);
+    record('linkzones-emz-down-up', f.linkZoneMarks.length === 2
+      && emzZones.some((z) => z.player === 0 && z.seq === 1 && !z.mutual)
+      && emzZones.some((z) => z.player === 1 && z.seq === 3 && !z.mutual),
+      JSON.stringify(markInfo()));
+    const crossMark = f.linkZoneMarks.find((m) => m.mesh.userData.linkZone.player === 1);
+    record('linkzones-cross-side-coords', !!crossMark
+      && crossMark.mesh.position.x === -2.3 && crossMark.mesh.position.z === -2.8,
+      JSON.stringify(markInfo()));
+
+    // 悬停非连接怪 → 无标记；悬停移开 → 清除
+    f.placeCard(1, 'mzone', 0, 89631139, null, 0x1); // 普通怪（无 type/linkMarker）
+    hoverMesh(f.cardsOnField[1].mzone[0]);
+    record('linkzones-non-link-clears', f.linkZoneMarks.length === 0, JSON.stringify(markInfo()));
+    hoverMesh(f.cardsOnField[0].mzone[0]);
+    record('linkzones-rehover-works', f.linkZoneMarks.length === 1);
+    f.mouse.set(0, 0); // 盘面正上方两 EMZ 之间的空缝
+    f.handleHover();
+    record('linkzones-clear-on-hover-end', f.linkZoneMarks.length === 0 && !f.hoveredCard,
+      `marks=${f.linkZoneMarks.length}`);
+
+    // 视角交换：高亮在世界座标（引擎座标）上，交换只搬相机 —— 交换后重算
+    // 仍指向同一批格
+    hoverMesh(f.cardsOnField[0].mzone[0]);
+    const beforeSwap = markInfo();
+    duelStore.toggleViewSwap();
+    f.updateLinkedZones();
+    record('linkzones-view-swap-stable', JSON.stringify(markInfo()) === JSON.stringify(beforeSwap),
+      `${beforeSwap} vs ${markInfo()}`);
+    duelStore.toggleViewSwap();
+    f.clearLinkedZones();
   } catch (err) {
     checks.fatalMsg = String(err && err.stack || err);
     record('fatal', false);

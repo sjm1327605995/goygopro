@@ -86,11 +86,8 @@ function CardChip({ code, count, lfLimit, onInspect, onRemove, onZoom, onContext
       {pic
         ? <img src={pic} alt={info ? info.name : String(code)} draggable={false}
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-        : <div style={{
-            width: '100%', height: '100%', background: '#0f172a',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '9px', color: '#38bdf8', textAlign: 'center', padding: '2px',
-          }}>{info ? info.name : code}</div>}
+        : <img src="textures/unknown.jpg" alt={info ? info.name : String(code)} draggable={false}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
       {count && count > 1
         ? <span className="deck-count-badge">{`×${count}`}</span>
         : null}
@@ -179,10 +176,8 @@ function SearchResultChip({ card, lfLimit, onInspect, onAdd, onAddSide, onZoom }
       title={card.name}
     >
       <div className="deck-result-thumb">
-        {pic
-          ? <img src={pic} alt={card.name} draggable={false}
-              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-          : <div className="deck-result-thumb-fallback">{card.name}</div>}
+        <img src={pic || 'textures/unknown.jpg'} alt={card.name} draggable={false}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
       </div>
       <div className="deck-result-text">
         <div className="deck-result-name">{card.name}</div>
@@ -365,9 +360,13 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
     buildCounts(deck).then(setCounts);
   };
 
-  // 未存保护：切卡组/新建/删除/返回主菜单前，脏卡组要确认
+  // 未存保护：切卡组/新建/删除/返回主菜单前，脏卡组要确认。
+  // ignore_deck_changes（deck_con.cpp:259/296/861/877 的 chkIgnoreDeckChanges）
+  // 勾选时跳过确认，仍保留 isModified 的「*」标记。
   const discardGuard = (): boolean =>
-    isModified && !window.confirm('当前卡组有未保存的修改，确定丢弃？');
+    !settingsSnap.ignore_deck_changes
+    && isModified
+    && !window.confirm('当前卡组有未保存的修改，确定丢弃？');
 
   const loadDeck = async (name: string): Promise<void> => {
     const deck = await WailsBridge.loadDeck(name);
@@ -902,7 +901,11 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
                 效果过滤{effectBits.size > 0 ? `（${effectBits.size}）` : ''}
               </button>
               <button className="btn btn-primary" onClick={performSearch}>搜索</button>
-              <button id="deck-filter-clear" className="btn btn-secondary" onClick={clearFilters}>清空</button>
+              {/* separate_clear_button（game.cpp:792-794）：关闭时不显示独立的
+                  清空按钮（btnClearFilter），过滤条件仍需逐项手改 */}
+              {!!settingsSnap.separate_clear_button && (
+                <button id="deck-filter-clear" className="btn btn-secondary" onClick={clearFilters}>清空</button>
+              )}
             </div>
             {showEffectPanel ? (
               <div id="deck-effect-panel" style={{

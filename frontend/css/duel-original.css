@@ -764,17 +764,22 @@
 
 /* 决斗者着色（gframe：主玩家蓝/对手红/观战灰） */
 .chat-line.chat-p0 .chat-name { color: #5eb2ff; }
-/* 聊天着色分档（gframe drawing.cpp:1041 chatColor 20 档取主要档）：
-   自己白、对手决斗者红、系统蓝紫、观战者绿/青/蓝/品红/黄轮换。
-   chat-self/opp/sys/spec 类优先于上面的旧 chat-p0..p3 规则。 */
+/* 聊天着色分档（gframe drawing.cpp:1041 chatColor 20 档逐槽对位）：
+   0-3 决斗者 self 白 / opp 红，8 系统蓝紫，观战者 10-19 逐槽定色：
+   10/11 红、12 绿、13 蓝、14 青、15 品红、16 黄、17 白、18 灰、19 深灰。
+   chat-self/opp/sys/chat-* 类优先于上面的旧 chat-p0..p3 规则。 */
 .chat-line.chat-self .chat-name { color: #ffffff; }
 .chat-line.chat-opp .chat-name { color: #ff4040; }
 .chat-line.chat-sys .chat-name { color: #8080ff; }
-.chat-line.chat-spec-spec0 .chat-name { color: #40ff40; }
-.chat-line.chat-spec-spec1 .chat-name { color: #40ffff; }
-.chat-line.chat-spec-spec2 .chat-name { color: #5eb2ff; }
-.chat-line.chat-spec-spec3 .chat-name { color: #ff40ff; }
-.chat-line.chat-spec-spec4 .chat-name { color: #ffff40; }
+.chat-line.chat-red .chat-name { color: #ff4040; }
+.chat-line.chat-green .chat-name { color: #40ff40; }
+.chat-line.chat-blue .chat-name { color: #4040ff; }
+.chat-line.chat-cyan .chat-name { color: #40ffff; }
+.chat-line.chat-magenta .chat-name { color: #ff40ff; }
+.chat-line.chat-yellow .chat-name { color: #ffff40; }
+.chat-line.chat-white .chat-name { color: #ffffff; }
+.chat-line.chat-gray .chat-name { color: #808080; }
+.chat-line.chat-darkgray .chat-name { color: #404040; }
 .chat-line.chat-p1 .chat-name { color: #ff6a6a; }
 .chat-line.chat-p2 .chat-name,
 .chat-line.chat-p3 .chat-name { color: #b0b0b0; }

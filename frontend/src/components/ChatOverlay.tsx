@@ -14,15 +14,33 @@ const FADE_MS = 12000;
 type ChatMsg = { id: number; pos: number; cls: string; name: string; text: string };
 
 /**
- * 原版 chatColor 分档（drawing.cpp:1041 的 20 档表取主要几档）：
- * 自己白、对手决斗者红、系统消息蓝紫、观战者按序号轮换绿/青/蓝/品红/黄。
+ * 原版 chatColor 20 档逐槽对位表（drawing.cpp:1041 chatColor[]，chatType=玩家槽位）：
+ *   0-3 决斗者（下方按 self/opp 上色，此处 null 落空）
+ *   4-7 保留
+ *   8   系统消息 0xff8080ff 蓝紫
+ *   9-11 红 0xffff4040
+ *   12 绿 / 13 蓝 / 14 青 / 15 品红 / 16 黄 / 17 白 / 18 灰 / 19 深灰
  * （duelclient.cpp STOC_CHAT：决斗者 0-3 经 ChatLocalPlayer 本地化，8 系统，
- * 10-19 观战者统一按观战档上色。）
+ * 10-19 观战者；观战者槽位 10-19 原版按此表逐位定色，非轮换。）
  */
-const SPECTATOR_COLORS = ['spec0', 'spec1', 'spec2', 'spec3', 'spec4'];
+const CHAT_COLOR_BY_SLOT: (string | null)[] = [
+  null, null, null, null, null, null, null, null, // 0-7
+  'chat-sys',         // 8
+  'chat-red',         // 9
+  'chat-red',         // 10
+  'chat-red',         // 11
+  'chat-green',       // 12
+  'chat-blue',        // 13
+  'chat-cyan',        // 14
+  'chat-magenta',     // 15
+  'chat-yellow',      // 16
+  'chat-white',       // 17
+  'chat-gray',        // 18
+  'chat-darkgray',    // 19
+];
 function chatClass(player: number, selfSlot: number): string {
-  if (player === 8) return 'chat-sys';
-  if (player >= 10) return `chat-spec-${SPECTATOR_COLORS[(player - 10) % SPECTATOR_COLORS.length]}`;
+  const slotClass = CHAT_COLOR_BY_SLOT[player];
+  if (slotClass) return slotClass;
   return player === selfSlot ? 'chat-self' : 'chat-opp';
 }
 

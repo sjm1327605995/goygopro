@@ -33,6 +33,12 @@ export interface BoardCard {
   pos: number;
   /** 引擎卡状态（QUERY_STATUS，update_data/update_card 携带；0=未知/无） */
   status?: number;
+  /** 卡类型位（QUERY_TYPE；连接怪判定 TYPE_LINK 用；0=未知） */
+  type?: number;
+  /** 连接值（QUERY_LINK 前半；0=未知/非连接） */
+  link?: number;
+  /** 连接标记位掩码（QUERY_LINK 后半，LINK_MARKER_*；0=未知/非连接） */
+  linkMarker?: number;
 }
 
 /** 一个显示座的场地区（只追踪有 mesh 的区；deck/extra 走 piles 计数） */
@@ -692,8 +698,12 @@ const boardHandlers: Record<string, EventHandler> = {
         code: q.code ?? cur?.code ?? 0,
         pos: q.position?.p ?? cur?.pos ?? 0,
         status: q.status ?? cur?.status ?? 0,
+        type: q.type ?? cur?.type ?? 0,
+        link: q.link ?? cur?.link ?? 0,
+        linkMarker: q.linkMarker ?? cur?.linkMarker ?? 0,
       };
-      if (!cur || cur.code !== card.code || cur.pos !== card.pos || (cur.status ?? 0) !== card.status) {
+      if (!cur || cur.code !== card.code || cur.pos !== card.pos || (cur.status ?? 0) !== card.status
+        || (cur.type ?? 0) !== card.type || (cur.linkMarker ?? 0) !== card.linkMarker) {
         zone[seq] = card;
         changed = true;
       }
@@ -711,8 +721,12 @@ const boardHandlers: Record<string, EventHandler> = {
       code: ev.code ?? cur?.code ?? 0,
       pos: ev.position?.p ?? cur?.pos ?? 0,
       status: ev.status ?? cur?.status ?? 0,
+      type: ev.type ?? cur?.type ?? 0,
+      link: ev.link ?? cur?.link ?? 0,
+      linkMarker: ev.linkMarker ?? cur?.linkMarker ?? 0,
     };
-    if (cur && cur.code === card.code && cur.pos === card.pos && (cur.status ?? 0) === card.status) return state;
+    if (cur && cur.code === card.code && cur.pos === card.pos && (cur.status ?? 0) === card.status
+      && (cur.type ?? 0) === card.type && (cur.linkMarker ?? 0) === card.linkMarker) return state;
     zone[ev.sequence] = card;
     return { ...state, board };
   },

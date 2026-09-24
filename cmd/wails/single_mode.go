@@ -293,9 +293,10 @@ func (a *App) SaveSingleReplay(name string) map[string]interface{} {
 
 // refreshLocations 把双方 mzone/szone/hand 同步成 MSG_UPDATE_DATA 事件
 // （single_mode.cpp SinglePlayRefresh：0,1 × mzone → 0,1 × szone → 0,1 × hand，
-// flag 0x681fff）。与原版一致不做遮码 —— 单人/故事决斗只有一条事件流，
-// 前端只按 playerSlot 取用；遮码需要像服务器那样按座位分包发送。
-// 引擎查询与 Run 同 goroutine，无并发问题。
+// flag 0xf81fff，single_mode.h:24 默认值——含 QUERY_LINK，场上连接怪的
+// link_marker 随刷新到达前端供互连高亮）。与原版一致不做遮码 —— 单人/故事
+// 决斗只有一条事件流，前端只按 playerSlot 取用；遮码需要像服务器那样按
+// 座位分包发送。引擎查询与 Run 同 goroutine，无并发问题。
 func refreshLocations(d *ocgcore.Duel, collector *WailsDuelClient) {
 	for _, loc := range []uint8{ocgcore.LOCATION_MZONE, ocgcore.LOCATION_SZONE, ocgcore.LOCATION_HAND} {
 		for player := 0; player < 2; player++ {
@@ -305,7 +306,7 @@ func refreshLocations(d *ocgcore.Duel, collector *WailsDuelClient) {
 }
 
 func refreshLocation(d *ocgcore.Duel, collector *WailsDuelClient, player int, location uint8) {
-	flag := uint32(0x681fff) | ocgcore.QUERY_CODE | ocgcore.QUERY_POSITION
+	flag := uint32(0xf81fff) | ocgcore.QUERY_CODE | ocgcore.QUERY_POSITION
 	buf := make([]byte, 3+ocgcore.SIZE_QUERY_BUFFER)
 	buf[0] = ocgcore.MSG_UPDATE_DATA
 	buf[1] = byte(player)

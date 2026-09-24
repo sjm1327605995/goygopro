@@ -350,3 +350,43 @@
   窗口分类与卡组全操作 + 清单同步）；prompts_smoke 新增 7 断言（过滤框
   出现、卡名/卡号过滤、清空恢复、点选应答、无候选自由检索点选）；
   typecheck / build / build:smoke 全绿。
+
+## 连接怪互连高亮（DrawLinkedZones/CheckMutual）+ 装饰设置键定格（2026-09，对照 drawing.cpp:243-359）
+
+- [x] **连接怪互连箭头/区域高亮（drawing.cpp:252-254 触发 + 278-359
+  DrawLinkedZones/CheckMutual）**：数据链路走 Go 权威源——引擎 mzone
+  刷新 flag 本就含 QUERY_LINK（服务端 0x881fff/RefreshSingle 0xf81fff），
+  `decodeQueryBody` 已解出 `link/linkMarker` 键；本次把单人谜题刷新 flag
+  由 0x681fff 修正为原版 SinglePlayRefresh 的默认 0xf81fff
+  （single_mode.h:24），单人路径同享。前端 `BoardCard` 新增
+  `type/link/linkMarker`（update_data/update_card 合并语义：query flag
+  被缓存剔除时沿用旧值），DuelManager.syncLinkData 在
+  update_data/update_card 后把它们写进 mzone mesh 的 userData。
+  field3d 新增 computeLinkedZones（DrawLinkedZones 逐行移植，引擎座标
+  运算，共享额外怪区 5/6↔6/5 的互连回指查空替换也照原版）+
+  updateLinkedZones/clearLinkedZones：悬停 type&TYPE_LINK 的场怪时把
+  箭头指向的格画半透明色块，单向 = 原版 0xff0261a2 蓝、互连（目标格
+  连接怪带指回来的标记，CheckMutual）= 0xff009900 绿；悬停切换/移开/
+  清盘/update_* 场面变化时清除或重算。视角交换无需换算（高亮在世界
+  座标，setViewSwapped 只搬相机），观战/回放经同一 manager 生效。
+  原版 duel_rule>=4 的分支恒取（本前端场地固定 MR2020 布局）。
+- 验证：stage_smoke 新增 10 断言（数据到达 mesh/store、邻格互连绿、
+  单向蓝、EMZ ↓↑ 跨边指向对方 mzone、非连接怪清除、移开清除、视角
+  交换后重算稳定），54/54 全绿；prompts 131、practice 27、single 19、
+  replay 12 回归全绿；typecheck / build / build:smoke 全绿；
+  `go test ./core/duel/ ./cmd/wails/` 全绿。
+
+## 刻意不做（装饰设置键）
+
+下列 system.conf 键在 React 固定布局与本仓库资源约束下语义不成立，
+保留键位（settings.ts 默认值与 Go config 读写同步）但不做行为实现：
+
+- **separate_clear_button**：原版把「清除」从卡组编辑器按钮行拆成独立
+  按钮的纯布局开关；React 工具行固定排布，无对应两种形态。
+- **resize_select_window / resize_popup_menu**：原版按条目数动态改变
+  wCardSelect/弹窗高度的窗口管理行为；Web 侧弹窗是 CSS 自适应的固定
+  布局，resize 语义弱化到不可辨。
+- **prefer_expansion_script**：依赖 expansions/ 卡包目录（先行卡脚本包），
+  本仓库没有该目录结构，无可择优对象。
+- **ignore_deck_changes**：原版在卡组与上次提交不一致时弹提醒的提示类
+  功能；联机准备流程已有服务端 LoadDeck 校验兜底，提醒屬纯装饰。

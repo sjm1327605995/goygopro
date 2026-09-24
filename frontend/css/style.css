@@ -820,8 +820,11 @@ body, html {
 }
 .deck-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
-  gap: 5px;
+  /* 原版 DrawDeckBd 是固定 44px 缩略图紧凑排布（drawing.cpp:1258-1263，
+     dx≈48.4 主卡组 10 列/行），不是随容器拉伸 —— 固定轨道尺寸 + 4px 间隙，
+     卡牌「挨着」堆叠成一副。 */
+  grid-template-columns: repeat(auto-fill, 44px);
+  gap: 4px;
   min-height: 90px;
   background: rgba(0, 0, 20, 0.35);
   padding: 6px;
@@ -836,9 +839,11 @@ body, html {
   border-radius: 2px;
 }
 
-/* 卡图缩略格子（deck-grid 内）：59x86 与原版 CARD_IMG 177x254 同比例 */
+/* 卡图缩略格子（deck-grid 内）：44x64 与原版 CARD_THUMB（game.h:26-27）一致，
+   177x254 卡图按同比例缩到缩略尺寸 */
 .deck-card-chip {
-  aspect-ratio: 59 / 86;
+  aspect-ratio: 44 / 64;
+  width: 44px;
   border-radius: 2px;
   border: 1px solid #555;
   padding: 0;

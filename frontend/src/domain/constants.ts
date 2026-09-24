@@ -105,6 +105,34 @@ export function formatAttribute(mask: number): string {
   return ATTRS.filter(([v]) => mask & (v as number)).map(([, n]) => n).join('/');
 }
 
+// ---- 连接标记（LINK_MARKER_* 位掩码；ocgcore/common.go 与 cdb def 字段）----
+export const LINK_MARKER_BOTTOM_LEFT = 0x001;
+export const LINK_MARKER_BOTTOM = 0x002;
+export const LINK_MARKER_BOTTOM_RIGHT = 0x004;
+export const LINK_MARKER_LEFT = 0x008;
+export const LINK_MARKER_RIGHT = 0x020;
+export const LINK_MARKER_TOP_LEFT = 0x040;
+export const LINK_MARKER_TOP = 0x080;
+export const LINK_MARKER_TOP_RIGHT = 0x100;
+
+/**
+ * 原版 data_manager.cpp:410-430 FormatLinkMarker：位掩码 → 带括号箭头串，
+ * 顺序 TOP_LEFT→TOP→TOP_RIGHT→LEFT→RIGHT→BOTTOM_LEFT→BOTTOM→BOTTOM_RIGHT。
+ */
+export function formatLinkMarker(mask: number): string {
+  const marks: [number, string][] = [
+    [LINK_MARKER_TOP_LEFT, '[↖]'],
+    [LINK_MARKER_TOP, '[↑]'],
+    [LINK_MARKER_TOP_RIGHT, '[↗]'],
+    [LINK_MARKER_LEFT, '[←]'],
+    [LINK_MARKER_RIGHT, '[→]'],
+    [LINK_MARKER_BOTTOM_LEFT, '[↙]'],
+    [LINK_MARKER_BOTTOM, '[↓]'],
+    [LINK_MARKER_BOTTOM_RIGHT, '[↘]'],
+  ];
+  return marks.filter(([bit]) => mask & bit).map(([, s]) => s).join('');
+}
+
 // ---- 玩家提示（MSG_PLAYER_HINT；ocgcore/common.go PHINT_*、
 // gframe client_field.h:166 CARD_QUESTION）----
 // CARD_QUESTION 加到本方 → 全场墓地禁查（duelclient.cpp:3757-3768）。
