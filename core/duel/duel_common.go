@@ -38,7 +38,8 @@ type duelRoom interface {
 	// （single: 仅对手 players[1-player]；tag: 除当前操作者外的所有玩家）。
 	waitingNotifyRecipients(player byte) []*DuelPlayer
 	// timeLimitToObservers 报告广播 STOC_TIME_LIMIT 时是否同时重发给观察者
-	// （single: 是；tag: 否——原版 TagDuel 不发）。
+	// （single/tag 均为否——原版 single_duel.cpp:1451-1452 只发 players[0]/[1]，
+	// tag_duel 同样不发观战者）。
 	timeLimitToObservers() bool
 	// isResponder 报告 dp 是否是当前等待响应的玩家（TimeConfirm 用；
 	// single: dp.Type == lastResponse；tag: dp == curPlayer[lastResponse]）。
@@ -111,9 +112,9 @@ type duelRoom interface {
 	// refreshOnDuelStart 是 TPResult 末尾、Duel.Start 之前的开局额外卡组刷新
 	// （single: RefreshExtraDef(0)/(1)；tag: RefreshExtra(0/1, 0x81fff4, 0)）。
 	refreshOnDuelStart()
-	// armDuelTimer 在限时开启时武装决斗秒表（single: 每秒 SingleTimer 且
-	// 超时处理自行重新武装；tag: TagTimer，原版非超时路径不重新武装——
-	// 两种语义各自保留在模式的 timer 回调里，此处只做首次武装）。
+	// armDuelTimer 在限时开启时武装决斗秒表（single: 每秒 SingleTimer；
+	// tag: 每秒 TagTimer——两种模式的回调都在非超时路径每秒自行重新武装，
+	// 与原版 SingleTimer/TagTimer 一致，此处只做首次武装）。
 	armDuelTimer()
 }
 

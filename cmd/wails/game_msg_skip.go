@@ -10,8 +10,9 @@ import (
 // skipEngineMessageBody advances pbuf past the body of an engine message that
 // has no entry in engineBindings (engine_bindings.go). Most message layouts now
 // live in that table as restruct structs; this residual switch only covers
-// messages whose body restruct cannot express (TAG_SWAP derived lengths)
-// or that carry no struct at all.
+// messages that carry no struct at all (RETRY/无体消息) or whose body restruct
+// cannot express and that have no UI consumer (TAG_SWAP 已接入 engineBindings
+// 转发 duel:tag_swap)。
 // It mirrors the skip offsets of the C++ ReplayMode::ReplayAnalyze
 // (source/ygopro/gframe/replay_mode.cpp) so the parser never loses message
 // alignment, even for messages the UI ignores.
@@ -36,13 +37,7 @@ func skipEngineMessageBody(pbuf *utils.YGOBuffer, engType uint8) error {
 		return skip(16)
 
 	// MSG_MATCH_KILL 已迁入 engineBindings（MatchKillMsg，emit duel:match_kill）
-
-	case ocgcore.MSG_TAG_SWAP:
-		// player(1) .. mcount at body[2] .. ecount at body[4] ..
-		// body = mcount*4 + ecount*4 + 9 (matches C++ replay_mode.cpp).
-		mcount := int(pbuf.At(2))
-		ecount := int(pbuf.At(4))
-		return skip(mcount*4 + ecount*4 + 9)
+	// MSG_TAG_SWAP 已迁入 engineBindings（tagSwapMsg，emit duel:tag_swap）
 
 	default:
 		return &unknownEngineMessageError{engType: engType}

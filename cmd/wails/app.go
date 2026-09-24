@@ -15,6 +15,7 @@ import (
 
 	"github.com/sjm1327605995/goygopro/core/duel"
 	"github.com/sjm1327605995/goygopro/protocol"
+	"github.com/panjf2000/gnet/v2/pkg/logging"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -117,6 +118,15 @@ func (a *App) StartLocalServer(port int) map[string]interface{} {
 		return map[string]interface{}{"success": false, "error": fmt.Sprintf("init error: %v", err)}
 	}
 
+	// 对齐原版 netserver.cpp:313（CTOS_CREATE_GAME 即 StartBroadcast）与
+	// cmd/server 的写法：建房后启动 LAN 发现广播应答。UDP :7920 被占用
+	// （如同机另一实例已在应答）只记录日志，不影响建房本身。
+	if bs, err := duel.StartBroadcast(uint16(port)); err != nil {
+		logging.Infof("failed to start broadcast: %v", err)
+	} else {
+		duel.BroadcastInstance = bs
+	}
+
 	// gnet.Run 绑定端口失败会立刻返回错误，成功则阻塞运行到 Stop；这里后台
 	// 起 goroutine，用短超时探测启动错误，避免把 err 静默丢弃。
 	errCh := make(chan error, 1)
@@ -175,6 +185,25 @@ func (a *App) ListLFLists() []LFListEntry {
 		entries = append(entries, LFListEntry{Hash: l.Hash, Name: l.ListName})
 	}
 	return entries
+}
+
+// LFListContent 返回指定禁限卡表的内容（卡码 → 0 禁/1 限/2 准限），供卡组
+// 编辑器显示禁限标记并按表校验同名上限（deck_con.cpp check_limit /
+// deck_manager.cpp CheckDeck 的前端对应）。哈希 0（N/A）或无此表返回空表，
+// 前端按「无限制（3）」处理。
+func (a *App) LFListContent(hash uint32) map[uint32]int {
+	if len(duel.DeckManager.LFList) == 0 {
+		duel.DeckManager.LoadLFList()
+	}
+	l := duel.DeckManager.GetLFList(hash)
+	if l == nil {
+		return map[uint32]int{}
+	}
+	out := make(map[uint32]int, len(l.Content))
+	for code, limit := range l.Content {
+		out[code] = limit
+	}
+	return out
 }
 
 func (a *App) CreateGame(req HostInfoReq, roomName string, pass string) map[string]interface{} {

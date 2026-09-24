@@ -32,8 +32,9 @@ func packedLocEntry(loc uint32) map[string]interface{} {
 	return map[string]interface{}{"c": cc, "l": cl, "s": cs, "p": cp}
 }
 
-// decorateSelectCard 转换 MSG_SELECT_CARD：cancelable 布尔化，条目展开。
-func decorateSelectCard(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error {
+// decorateSelectCard 转换 MSG_SELECT_CARD / MSG_SELECT_TRIBUTE：cancelable
+// 布尔化，条目展开；engType 区分祭品来源（tribute 标志）。
+func decorateSelectCard(c *WailsDuelClient, engType byte, _ *utils.YGOBuffer, msg any) error {
 	m := msg.(*protocol.SelectCardMsg)
 	cards := make([]selectCardEntryDTO, len(m.Cards))
 	for i, cd := range m.Cards {
@@ -51,6 +52,7 @@ func decorateSelectCard(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any)
 		Min:        m.Min,
 		Max:        m.Max,
 		Cards:      cards,
+		Tribute:    engType == ocgcore.MSG_SELECT_TRIBUTE,
 	})
 	return nil
 }
@@ -195,19 +197,22 @@ func decorateBecomeTarget(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg an
 	return nil
 }
 
-// decorateBattle 转换 MSG_BATTLE：26 字节结算体完整透传（原版 gframe
-// duelclient.cpp:3480-3519 用 aa/ad/da/dd 刷新攻守双方的 ATK/DEF 显示）。
+// decorateBattle 转换 MSG_BATTLE：26 字节结算体完整透传。末位的两个单
+// 字节是 ocgcore 的战破旗标 bd[0]/bd[1]（processor.cpp:2982-2987：
+// calculate_battle_damage 的输出，true = 该方将被战斗破坏），payload 里
+// 译为 attackerDestroyed/targetDestroyed；双方 ATK/DEF 数值与位置供
+// 前端攻防对撞浮层消费（原版 duelclient.cpp:3480-3519 刷卡片攻守显示）。
 func decorateBattle(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error {
 	m := msg.(*protocol.BattleMsg)
 	c.emit("duel:battle", battleDTO{
-		Attacker:       newLocPosRef(m.AttackerInfo),
-		AttackerATK:    m.AttackerATK,
-		AttackerDEF:    m.AttackerDEF,
-		AttackerDirect: m.AttackerDirect != 0,
-		Target:         newLocPosRef(m.TargetInfo),
-		TargetATK:      m.TargetATK,
-		TargetDEF:      m.TargetDEF,
-		TargetDirect:   m.TargetDirect != 0,
+		Attacker:          newLocPosRef(m.AttackerInfo),
+		AttackerATK:       m.AttackerATK,
+		AttackerDEF:       m.AttackerDEF,
+		AttackerDestroyed: m.AttackerDirect != 0,
+		Target:            newLocPosRef(m.TargetInfo),
+		TargetATK:         m.TargetATK,
+		TargetDEF:         m.TargetDEF,
+		TargetDestroyed:   m.TargetDirect != 0,
 	})
 	return nil
 }
@@ -254,6 +259,58 @@ func decorateUpdateCard(c *WailsDuelClient, _ byte, pbuf *utils.YGOBuffer, msg a
 		Location: m.Location,
 		Sequence: m.Sequence,
 		Card:     card,
+	})
+	return nil
+}
+
+// tagSwapMsg 的消息体 = player/mcount/ecount/pcount/hcount 五字节 +
+// topcode(4) + hcount*4 手牌码 + ecount*4 额外码（变长，restruct 表达不了，
+// decorate 里用 pbuf 消费）。布局依据原版 duelclient.cpp:3782-3788 与
+// tag_duel.cpp 的 RefreshExtra 段。
+type tagSwapMsg struct {
+	Player  uint8 `struct:"uint8"`
+	MCount  uint8 `struct:"uint8"`
+	ECount  uint8 `struct:"uint8"`
+	PCount  uint8 `struct:"uint8"`
+	HCount  uint8 `struct:"uint8"`
+	TopCode int32 `struct:"int32"`
+}
+
+// decorateTagSwap 转换 MSG_TAG_SWAP（TAG 队友换手）。手牌码/额外码对非当前
+// 操作者已被服务端就地抹零（core/duel/tag_duel.go analyzeTagSwap），这里
+// 原样透传；前端据 deck/extra/hand 计数刷新牌堆与手牌（原版用同一消息重排
+// dField.deck/extra/hand 并播 5 帧移动动画）。额外码按原版 & 0x7fffffff
+// 去公开标记位。
+func decorateTagSwap(c *WailsDuelClient, _ byte, pbuf *utils.YGOBuffer, msg any) error {
+	m := msg.(*tagSwapMsg)
+	readCodes := func(n int) ([]int32, error) {
+		codes := make([]int32, 0, n)
+		for i := 0; i < n; i++ {
+			var code int32
+			if err := pbuf.Read(&code); err != nil {
+				return nil, err
+			}
+			codes = append(codes, code&0x7fffffff)
+		}
+		return codes, nil
+	}
+	hand, err := readCodes(int(m.HCount))
+	if err != nil {
+		return err
+	}
+	extra, err := readCodes(int(m.ECount))
+	if err != nil {
+		return err
+	}
+	c.emit("duel:tag_swap", map[string]interface{}{
+		"player":           m.Player,
+		"deckCount":        m.MCount,
+		"extraCount":       m.ECount,
+		"extraFaceUpCount": m.PCount,
+		"handCount":        m.HCount,
+		"topCode":          m.TopCode,
+		"hand":             hand,
+		"extra":            extra,
 	})
 	return nil
 }
@@ -587,7 +644,17 @@ func decorateAnnounceCard(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg an
 // 低 16 位是当前操作玩家的 0x7f 主怪兽区 seq0-6、0x3f00 魔法陷阱区 seq0-5、
 // 0xc000 灵摆区 seq6/7；高 16 位（0x7f0000/0x3f000000/0xc0000000）是对手的
 // 同构区域（SELECT_DISFIELD 会用到），响应时 player 字节须带区域归属方。
+// disfield= true 表示 MSG_SELECT_DISFIELD：前端据此禁用自动落点
+// （gframe 只在 MSG_SELECT_PLACE 时查 automonsterpos/autospellpos）。
 func decorateSelectPlace(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error {
+	return emitSelectPlace(c, msg, false)
+}
+
+func decorateSelectDisfield(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error {
+	return emitSelectPlace(c, msg, true)
+}
+
+func emitSelectPlace(c *WailsDuelClient, msg any, disfield bool) error {
 	m := msg.(*protocol.SelectPlaceMsg)
 	avail := ^uint32(m.Flag)
 	type zoneRef struct {
@@ -627,10 +694,11 @@ func decorateSelectPlace(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any
 		zoneMaps[i] = map[string]interface{}{"player": z.player, "loc": z.loc, "seq": z.seq}
 	}
 	c.emit("duel:select_place", map[string]interface{}{
-		"player": m.Player,
-		"count":  m.Count,
-		"flag":   m.Flag,
-		"zones":  zoneMaps,
+		"player":   m.Player,
+		"count":    m.Count,
+		"flag":     m.Flag,
+		"disfield": disfield,
+		"zones":    zoneMaps,
 	})
 	return nil
 }
@@ -940,6 +1008,8 @@ var engineBindings = map[byte]engineBinding{
 	ocgcore.MSG_SELECT_BATTLECMD:     {name: "SELECT_BATTLECMD", newMsg: func() any { return &protocol.SelectBattleCmdMsg{} }, event: "duel:select_battlecmd", decorate: decorateBattleCmd},
 	ocgcore.MSG_UPDATE_DATA:          {name: "UPDATE_DATA", newMsg: func() any { return &updateDataMsg{} }, event: "duel:update_data", decorate: decorateUpdateData},
 	ocgcore.MSG_UPDATE_CARD:          {name: "UPDATE_CARD", newMsg: func() any { return &updateCardMsg{} }, event: "duel:update_card", decorate: decorateUpdateCard},
+	// TAG 队友换手（变长体：5 字节计数 + topcode + hcount*4 手牌码 + ecount*4 额外码）
+	ocgcore.MSG_TAG_SWAP:             {name: "TAG_SWAP", newMsg: func() any { return &tagSwapMsg{} }, event: "duel:tag_swap", decorate: decorateTagSwap},
 
 	// ---- 交互提示（结构体直接 emit）----
 	ocgcore.MSG_SELECT_EFFECTYN: {name: "SELECT_EFFECTYN", newMsg: func() any { return &protocol.SelectEffectYNMsg{} }, event: "duel:select_effectyn"},
@@ -947,10 +1017,14 @@ var engineBindings = map[byte]engineBinding{
 	ocgcore.MSG_SELECT_OPTION:   {name: "SELECT_OPTION", newMsg: func() any { return &protocol.SelectOptionMsg{} }, event: "duel:select_option"},
 	ocgcore.MSG_SELECT_POSITION: {name: "SELECT_POSITION", newMsg: func() any { return &protocol.SelectPositionMsg{} }, event: "duel:select_position"},
 	ocgcore.MSG_SELECT_PLACE:    {name: "SELECT_PLACE", newMsg: func() any { return &protocol.SelectPlaceMsg{} }, event: "duel:select_place", decorate: decorateSelectPlace},
-	ocgcore.MSG_SELECT_DISFIELD: {name: "SELECT_DISFIELD", newMsg: func() any { return &protocol.SelectPlaceMsg{} }, event: "duel:select_place", decorate: decorateSelectPlace},
+	ocgcore.MSG_SELECT_DISFIELD: {name: "SELECT_DISFIELD", newMsg: func() any { return &protocol.SelectPlaceMsg{} }, event: "duel:select_place", decorate: decorateSelectDisfield},
 	ocgcore.MSG_SELECT_COUNTER:  {name: "SELECT_COUNTER", newMsg: func() any { return &protocol.SelectCounterMsg{} }, event: "duel:select_counter"},
 	ocgcore.MSG_SELECT_SUM:      {name: "SELECT_SUM", newMsg: func() any { return &protocol.SelectSumMsg{} }, event: "duel:select_sum"},
 	ocgcore.MSG_SORT_CARD:       {name: "SORT_CARD", newMsg: func() any { return &protocol.SortCardMsg{} }, event: "duel:sort_card"},
+	// MSG_SORT_CHAIN（上游 edo9300 核心的 SortCard is_chain 变体）：体布局与
+	// SORT_CARD 相同（player(1)+count(1)+count×7），响应同为排列字节，
+	// 故复用同一消息结构与 duel:sort_card 事件（frontend PromptHost 同一 UI）。
+	ocgcore.MSG_SORT_CHAIN:      {name: "SORT_CHAIN", newMsg: func() any { return &protocol.SortCardMsg{} }, event: "duel:sort_card"},
 	ocgcore.MSG_ANNOUNCE_RACE:   {name: "ANNOUNCE_RACE", newMsg: func() any { return &protocol.AnnounceRaceMsg{} }, event: "duel:announce_race"},
 	ocgcore.MSG_ANNOUNCE_ATTRIB: {name: "ANNOUNCE_ATTRIB", newMsg: func() any { return &protocol.AnnounceAttribMsg{} }, event: "duel:announce_attrib"},
 	ocgcore.MSG_ANNOUNCE_CARD:   {name: "ANNOUNCE_CARD", newMsg: func() any { return &protocol.AnnounceCardMsg{} }, event: "duel:announce_card", decorate: decorateAnnounceCard},

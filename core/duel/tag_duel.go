@@ -290,6 +290,11 @@ func (s *TagDuel) analyzeNewTurn(pbuf, offset *utils.YGOBuffer) int {
 		}
 	}
 	s.turnCount++
+	// 原版 tag_duel.cpp:920-922：每次 MSG_NEW_TURN 清空全部投降标记，
+	// 「队友两人投降判负」只在同一回合内累积，跨回合重新计数。
+	for i := range s.surrender {
+		s.surrender[i] = false
+	}
 	return 0
 }
 
@@ -495,8 +500,8 @@ func (s *TagDuel) refreshOnDuelStart() {
 	s.RefreshExtra(1, 0x81fff4, 0)
 }
 
-// armDuelTimer 武装决斗秒表：TagTimer 非超时路径不重新武装
-//（与原版 TagTimer 一致）。
+// armDuelTimer 武装决斗秒表：TagTimer 非超时路径每秒自行重新武装
+//（与原版 TagTimer 一致，见 TagTimer 方法注释）。
 func (s *TagDuel) armDuelTimer() {
 	s.ETimer = timerWheel.AfterFunc(time.Second, s.TagTimer)
 }
@@ -588,5 +593,8 @@ func (s *TagDuel) TagTimer() {
 		}
 		return
 	}
-	// 注意：与原实现一致，TagTimer 非超时路径不重新武装定时器。
+	// 原版 TagTimer 非超时路径每秒 event_add 重新武装定时器
+	//（source/ygopro/gframe/tag_duel.cpp:1740-1741）；漏掉这行会让
+	// tag 计时器走一秒后停走，超时判负永不触发。
+	s.ETimer = timerWheel.AfterFunc(time.Second, s.TagTimer)
 }

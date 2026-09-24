@@ -83,3 +83,10 @@ func ErrAlreadyInGameAction() *PacketError {
 func ErrJoinError() *PacketError {
 	return NewPacketError(ErrJoinFailed, "room not found or join error")
 }
+
+// ErrWrongRoomPassword 是「密码即房间索引」设计下 GetRoom 失败的密码错误路径：
+// 服务器上存在房间但按密码查不到时按密码错误回报（JOINERROR code=1，
+// 原版 SysString 1404「密码错误」），与进房后密码不符的提示对齐。
+func ErrWrongRoomPassword() *PacketError {
+	return NewPacketError(ErrJoinFailed, "room not found: wrong password")
+}

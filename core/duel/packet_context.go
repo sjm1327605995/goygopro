@@ -138,6 +138,12 @@ func (c *PacketContext) Error(code uint8, msg string, cause ...error) {
 // SendError 向客户端发送 STOC_ERROR_MSG。只有能映射到 ERRMSG_* 的内部错误才
 // 发客户端包；其余内部错误仅服务端处理（原版 netserver 对协议违例同样不回复）。
 func (c *PacketContext) SendError(errCode uint8, msg string) error {
+	return c.SendErrorWithCode(errCode, msg, 0)
+}
+
+// SendErrorWithCode 与 SendError 相同，但可指定 STOC_ErrorMsg.code 字段
+// （如 JOINERROR code=1 = 密码错误，对应原版 SysString 1404 的文案分支）。
+func (c *PacketContext) SendErrorWithCode(errCode uint8, msg string, code uint32) error {
 	if c.Player == nil || c.Player.Conn == nil {
 		return fmt.Errorf("player or connection is nil")
 	}
@@ -149,7 +155,7 @@ func (c *PacketContext) SendError(errCode uint8, msg string) error {
 	buf := make([]byte, 8)
 	buf[0] = stocMsg
 	// padding 3 bytes 保持 0
-	binary.LittleEndian.PutUint32(buf[4:], 0)
+	binary.LittleEndian.PutUint32(buf[4:], code)
 	return c.Reply(network.STOC_ERROR_MSG, buf)
 }
 
@@ -168,6 +174,15 @@ func errmsgCode(errCode uint8) (msg uint8, ok bool) {
 // AbortWithError 中止并发送统一错误响应
 func (c *PacketContext) AbortWithError(err *PacketError) {
 	c.Error(err.Code, err.Message, err.Cause)
+}
+
+// AbortWithErrorCode 与 AbortWithError 类似，但可指定 STOC_ErrorMsg.code 字段。
+func (c *PacketContext) AbortWithErrorCode(err *PacketError, code uint32) {
+	c.errCode = err.Code
+	c.errMsg = err.Message
+	c.errCause = err.Cause
+	c.Abort()
+	_ = c.SendErrorWithCode(err.Code, err.Message, code)
 }
 
 // --------------------------------------------------

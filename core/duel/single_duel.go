@@ -313,10 +313,11 @@ func (s *SingleDuel) GetResponse(dp *DuelPlayer, msgBuffer []byte) {
 	if dp.State != network.CTOS_RESPONSE {
 		return
 	}
-	if s.DuelStage == network.DUEL_STAGE_DUELING {
-		s.lastResponse = dp.Type
-		s.timeElapsed = 0
-	}
+	// 原版 single_duel.cpp:1419-1423：GetResponse 不回写 lastResponse
+	// （lastResponse 由 WaitforResponse 记录，Go 在 waitForResponse 中同步，
+	// 见 duel_common.go），也没有在扣减前清零 timeElapsed——旧代码先
+	// timeElapsed=0 导致下方 timeLimit -= timeElapsed 恒减 0，计时银行
+	// 永不扣减。
 	length := len(msgBuffer)
 	if length > ocgcore.SIZE_RETURN_VALUE {
 		length = ocgcore.SIZE_RETURN_VALUE
@@ -413,7 +414,9 @@ func (s *SingleDuel) waitingNotifyRecipients(player byte) []*DuelPlayer {
 	return []*DuelPlayer{s.players[1-player]}
 }
 
-func (s *SingleDuel) timeLimitToObservers() bool { return true }
+// 原版 single_duel.cpp:1451-1452 的 WaitforResponse 只向 players[0]/[1]
+// 发 STOC_TIME_LIMIT，不重发观战者（与 tag 一致）。
+func (s *SingleDuel) timeLimitToObservers() bool { return false }
 
 func (s *SingleDuel) isResponder(dp *DuelPlayer) bool { return dp.Type == s.lastResponse }
 

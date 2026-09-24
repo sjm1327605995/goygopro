@@ -59,6 +59,17 @@ func encodeSelectPlaceResponse(player, loc, seq int32) []byte {
 	return []byte{byte(player), byte(loc), byte(seq)}
 }
 
+// encodeSelectPlacesResponse 编码多选落点（count>1 的 SELECT_PLACE/DISFIELD）：
+// 每个落点 3 字节，按己方 mzone→己方 szone→对方 mzone→对方 szone 的位序
+// （gframe event_handler.cpp:1328-1366 的 respbuf 排列顺序）。
+func encodeSelectPlacesResponse(places []int32) []byte {
+	out := make([]byte, 0, len(places))
+	for _, v := range places {
+		out = append(out, byte(v))
+	}
+	return out
+}
+
 // encodeSortCardResponse 编码 MSG_SORT_CARD 的响应：
 // 排列字节 —— 第 i 个字节 = 用户给第 i 张卡指定的顺序位置。
 func encodeSortCardResponse(perm []int32) []byte {
@@ -121,6 +132,12 @@ func (a *App) RespondSelectSum(count int32, indices []int32) {
 // RespondSelectPlace 回答 MSG_SELECT_PLACE / MSG_SELECT_DISFIELD。
 func (a *App) RespondSelectPlace(player, loc, seq int32) {
 	_ = a.routeResponseB(encodeSelectPlaceResponse(player, loc, seq))
+}
+
+// RespondSelectPlaces 回答多落点选择（count>1 时前端累计选满后一次性回传；
+// places 为扁平的 [player, loc, seq, ...]）。
+func (a *App) RespondSelectPlaces(places []int32) {
+	_ = a.routeResponseB(encodeSelectPlacesResponse(places))
 }
 
 // RespondSortCard 回答 MSG_SORT_CARD（排列字节）。

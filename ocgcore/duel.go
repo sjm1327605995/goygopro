@@ -2,12 +2,46 @@ package ocgcore
 
 import (
 	"bytes"
-	"fmt"
+	"io"
+	"log"
+	"os"
 	"sync"
 )
 
 // ErrorHandler 错误处理器函数类型
 type ErrorHandler func(message string)
+
+// 引擎日志（OnMessage 收到的 ocgcore 脚本/引擎消息）输出配置。
+// 默认写到 stderr（原版 ygocore 打 stdout，服务化后归并进 stderr 一路），
+// DebugLog=false 时静默——这些消息多为脚本 warn，量大有噪音。
+var (
+	logWriter io.Writer = os.Stderr
+	debugLog              = true
+)
+
+// SetLogOutput 重定向引擎日志输出（传 nil 恢复默认 stderr）。
+func SetLogOutput(w io.Writer) {
+	if w == nil {
+		w = os.Stderr
+	}
+	logWriter = w
+}
+
+// SetDebugLogging 开关引擎日志输出（默认开，保持原有"总是打印"的行为）。
+func SetDebugLogging(on bool) {
+	debugLog = on
+}
+
+var engineLogger = log.New(logWriter, "[ocgcore] ", log.LstdFlags|log.Lmsgprefix)
+
+func logEngineMessage(message string) {
+	if !debugLog {
+		return
+	}
+	// logWriter 可能被 SetLogOutput 替换，惰性同步输出目标。
+	engineLogger.SetOutput(logWriter)
+	engineLogger.Print(message)
+}
 
 // Duel 决斗结构体
 type Duel struct {
@@ -198,7 +232,7 @@ func (d *Duel) OnMessage(size uint32) {
 	arr := make([]byte, 256)
 	API.GetLogMessage(d.duelPtr, arr)
 	message := string(bytes.TrimRight(arr, "\x00"))
-	fmt.Println(message)
+	logEngineMessage(message)
 	d.errorMu.Lock()
 	handler := d.errorHandler
 	d.errorMu.Unlock()

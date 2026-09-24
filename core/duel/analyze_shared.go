@@ -37,7 +37,29 @@ func runAnalyze(m duelRoom, table map[uint8]analyzeHandler, msgBuffer []byte) in
 
 		h, ok := table[engType]
 		if !ok {
-			// 与原版 switch 无匹配 case 一致：仅消费类型字节后继续。
+			// 显式降级。原版 switch 无匹配 case 时只消费类型字节——若该
+			// 消息实际带消息体，体字节会被误读成下一条消息的类型，批次静默
+			// 错位。这里改为：
+			//  - 布局表认识的消息（原版无 case 的保留号码，如 MSG_HAND_RES、
+			//    MSG_REQUEST_DECK 等）：按布局安全跳过整条消息体并记日志；
+			//  - 布局表也不认识的消息：无从得知消息体长度，无法安全跳过，
+			//    记日志后 EndDuel 兜底（返回 2 走 DuelEndProc）。
+			//  win 型消息（MSG_WIN）是终局消息，无 handler 时同样不能跳过继续。
+			layout, known := engineMsgLayouts[engType]
+			if !known || layout.win {
+				log.Printf("[duel] analyze: unknown engine message 0x%02x (offset %d, batch %d bytes): no layout registered, cannot skip safely, duel aborted",
+					engType, pbuf.Offset()-1, len(msgBuffer))
+				m.EndDuel()
+				return 2
+			}
+			bodyStart := pbuf.Offset()
+			skipLayout(pbuf, layout.steps)
+			if pbuf.Overflowed() {
+				log.Printf("[duel] analyze: corrupt engine message 0x%02x (offset %d, batch %d bytes): buffer overflow, duel aborted", engType, pbuf.Offset(), len(msgBuffer))
+				m.EndDuel()
+				return 2
+			}
+			log.Printf("[duel] analyze: engine message 0x%02x not in this mode's analyze table: skipped %d body bytes per layout", engType, pbuf.Offset()-bodyStart)
 			continue
 		}
 		// 解析越界（截断/损坏的引擎消息批次）：handler 内被吞掉的读取失败

@@ -77,6 +77,10 @@ var engineMsgLayouts = map[uint8]engineMsgLayout{
 		fixed(1), fixed(1), fixed(6), countList(11), countList(11),
 	}},
 	ocgcore.MSG_SORT_CARD: {response: true, steps: []layStep{fixed(1), countList(7)}},
+	// MSG_SORT_CHAIN（上游 edo9300 核心的 SortCard 处理器 is_chain 变体）：
+	// 经典线格式与 MSG_SORT_CARD 相同，且同样等待客户端排序响应。
+	// 本项目所用引擎（Fluorohydride 主线）不发出，原版 Analyze 无 case。
+	ocgcore.MSG_SORT_CHAIN: {response: true, steps: []layStep{fixed(1), countList(7)}},
 	ocgcore.MSG_SELECT_UNSELECT_CARD: {response: true, steps: []layStep{
 		fixed(1 + 4), countList(8), countList(8),
 	}},
@@ -97,9 +101,18 @@ var engineMsgLayouts = map[uint8]engineMsgLayout{
 	ocgcore.MSG_FLIPSUMMONED:      {},
 	ocgcore.MSG_CHAIN_END:         {},
 	ocgcore.MSG_WAITING:           {},
+	// 以下四个号码在上游头文件有定义（MSG_REQUEST_DECK 见 edo9300
+	// ocgapi_constants.h；MSG_CUSTOM_MSG 见新旧版 common.h），但主线与
+	// edo9300 引擎均无写入方——原版 Analyze 无 case 且实际不可达。
+	// 登记为空体，把「布局表不认识的字节」挡在显式跳过路径之外，
+	// 防止它们被当作未知消息触发 EndDuel 兜底。
+	ocgcore.MSG_REQUEST_DECK:         {},
+	ocgcore.MSG_ANNOUNCE_CARD_FILTER: {},
+	ocgcore.MSG_CUSTOM_MSG:           {},
+	ocgcore.MSG_DUEL_WINNER:          {},
 
 	// ----- 信息消息 -----
-	ocgcore.MSG_START:            {steps: []layStep{fixed(15)}},
+	ocgcore.MSG_START:            {steps: []layStep{fixed(18)}},
 	ocgcore.MSG_WIN:              {win: true},
 	ocgcore.MSG_HINT:             {steps: []layStep{fixed(6)}},
 	ocgcore.MSG_UPDATE_DATA:      {steps: []layStep{fixed(2), {kind: layQueryBlobs}}},
