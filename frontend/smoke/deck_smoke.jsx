@@ -132,14 +132,15 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     await waitFor(() => !!document.getElementById('deck-screen'));
     await waitFor(() => document.querySelectorAll('.deck-grid .deck-card-chip').length > 0);
 
-    // 卡图格子：每个 chip 渲染 <img>（mock 卡图），比例锁定 44x64（CARD_THUMB）。
+    // 卡图格子：每个 chip 渲染 <img>（mock 卡图），比例锁定 52x76
+    //（原版 CARD_THUMB 44x64 在窗口拉伸后的等效观感，见 style.css .deck-card-chip）。
     const chips = [...document.querySelectorAll('.deck-grid .deck-card-chip')];
     record('chips-rendered', chips.length === 5); // 3 main + 1 extra + 1 side
     // 卡图为异步 promise；缺图兜底是 unknown.jpg（img 一开始就存在），所以要
     // 等到 src 真正换成 mock 卡图 FAKE_PIC 才算加载完成。
     await waitFor(() => chips.every((c) => c.querySelector('img') && c.querySelector('img').src === FAKE_PIC));
     record('chips-show-card-images', chips.every((c) => c.querySelector('img') && c.querySelector('img').src === FAKE_PIC));
-    record('chip-aspect-ratio', /44\s*\/\s*64/.test(getComputedStyle(chips[0]).aspectRatio || ''));
+    record('chip-aspect-ratio', /52\s*\/\s*76/.test(getComputedStyle(chips[0]).aspectRatio || ''));
 
     // 过滤控件齐备：种族/属性下拉由 constants.ts RACES/ATTRS 驱动
     const raceSel = document.getElementById('deck-filter-race');
@@ -252,7 +253,9 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     const trapChip = document.querySelector('.deck-grid .deck-card-chip[title="Trap Card"]');
     record('lflist-badges-rendered', !!dmChip && !!dmChip.querySelector('.deck-limit-2')
       && !!trapChip && !!trapChip.querySelector('.deck-limit-1'));
-    // 按表校验：主卡组已有 1 张 DM（准限 2）→ 第 1 张进、第 2 张被拦下
+    // 按表校验：准限 2 → 第 2 张进、第 3 张被拦。
+    // 注意原版 check_limit 跨 main+extra+side 三区合计同名（deck_con.cpp:1834-1853），
+    // 前面的用例已往副卡组搬过 DM，必须先清空卡组取干净基线再测。
     await selectOption('deck-add-target', 'main');
     setInputValue(document.getElementById('deck-search-input'), 'magician');
     [...document.querySelectorAll('.deck-search-panel .btn')].find((b) => b.textContent.includes('搜索')).click();
@@ -260,10 +263,23 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
       .some((c) => c.title.startsWith('Dark Magician')));
     const dmResult = [...document.querySelectorAll('.search-results-grid .deck-card-chip')]
       .find((c) => c.title.startsWith('Dark Magician'));
-    const mainCountBeforeLf = mainGrid().querySelectorAll('.deck-card-chip').length;
+    const clearBtnLf = [...document.querySelectorAll('.deck-header .btn')].find((b) => b.textContent.includes('清空'));
+    clearBtnLf.click();
+    await waitFor(() => mainGrid().querySelectorAll('.deck-card-chip').length === 0);
+    await clickN(dmResult, 1);
+    await waitFor(() => mainGrid().querySelectorAll('.deck-card-chip').length === 1);
     await clickN(dmResult, 2);
     await waitFor(() => alertMsgs.some((m) => m.includes('最多 2 张')));
-    record('lflist-limit-enforced', mainGrid().querySelectorAll('.deck-card-chip').length === mainCountBeforeLf + 1);
+    const mainCountAfterLf = mainGrid().querySelectorAll('.deck-card-chip').length;
+    record('lflist-limit-enforced', mainCountAfterLf === 2);
+    if (mainCountAfterLf !== 2) {
+      // 诊断：失败时把现场记下来（chips 标题、alert 尾部）
+      record('lflist-debug', JSON.stringify({
+        after: mainCountAfterLf,
+        chips: [...mainGrid().querySelectorAll('.deck-card-chip')].map((c) => c.title),
+        alerts: alertMsgs.slice(-4),
+      }));
+    }
 
     // 删除卡组：走 confirm → DeleteDeck → 列表刷新。
     const deleteBtn = [...document.querySelectorAll('.deck-header .btn')].find((b) => b.textContent.includes('删除'));
