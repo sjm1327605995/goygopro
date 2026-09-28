@@ -16,6 +16,7 @@ func HandlePlayerInfo(c *PacketContext) {
 	utils.NullTerminate(pkt.Name[:], 0)
 	copy(c.Player.Name[:], pkt.Name[:])
 	c.Player.SetID(string(utf16.Decode(c.Player.Name[:])))
+	utils.NetLogf("server", "PLAYER_INFO: name=%q", utils.WideString(pkt.Name[:]))
 }
 
 // --------------------------------------------------
@@ -72,16 +73,21 @@ func HandleCreateGame(c *PacketContext) {
 	copy(mode.BaseMode().Pass[:], pkt.Pass[:])
 
 	roomId := string(utf16.Decode(pkt.Pass[:]))
+	utils.NetLogf("server", "CREATE_GAME: room=%q pass=%q mode=%d rule=%d duelRule=%d player=%q",
+		utils.WideString(pkt.Name[:]), utils.WideString(pkt.Pass[:]), pkt.Info.Mode, pkt.Info.Rule, pkt.Info.DuelRule,
+		utils.WideString(c.Player.Name[:]))
 
 	// C++: if(dp->game || duel_mode) return;
 	// 玩家已在游戏中 或 服务器已有房间，拒绝创建
 	if DefaultManager.RoomCount() > 0 {
+		utils.NetLogf("server", "CREATE_GAME rejected: room already exists (count=%d)", DefaultManager.RoomCount())
 		c.AbortWithError(ErrAlreadyInGameAction())
 		return
 	}
 
 	room, created := DefaultManager.CreateRoom(roomId, mode)
 	if !created {
+		utils.NetLogf("server", "CREATE_GAME rejected: CreateRoom failed (roomId=%q)", roomId)
 		c.AbortWithError(ErrAlreadyInGameAction())
 		return
 	}
@@ -109,9 +115,12 @@ func HandleJoinGame(c *PacketContext) {
 	// 不解 NUL 截断会把尾随 \x00 算进 roomId，导致按密码永远查不到房间。
 	utils.NullTerminate(pkt.Pass[:], 0)
 	roomId := string(utf16.Decode(pkt.Pass[:]))
+	utils.NetLogf("server", "JOIN_GAME: player=%q pass=%q version=0x%04x gameId=%d",
+		utils.WideString(c.Player.Name[:]), utils.WideString(pkt.Pass[:]), pkt.Version, pkt.GameID)
 
 	room, exist := DefaultManager.GetRoom(roomId)
 	if !exist {
+		utils.NetLogf("server", "JOIN_GAME rejected: room pass=%q not found (rooms=%d)", utils.WideString(pkt.Pass[:]), DefaultManager.RoomCount())
 		// Go 设计密码即房间索引：GetRoom 失败最常见的原因是密码不对。
 		// 对齐原版进房后密码不符的提示（JOINERROR code=1，SysString 1404
 		// 「密码错误」，前端 Lobby describeErrorMsg 的 code=1 分支自动生效）：

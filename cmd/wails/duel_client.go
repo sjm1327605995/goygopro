@@ -15,6 +15,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/go-restruct/restruct"
+	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
@@ -48,10 +49,13 @@ func (c *WailsDuelClient) Connect(addr string, username string, pass string) err
 	// 不要在持有 c.mu 的状态下发送 PlayerInfo：sendPacket 也需要 c.mu
 	// （sync.Mutex 不可重入，嵌套加锁会自死锁）。先完成拨号和状态更新，
 	// 释放锁后再发送。
+	utils.NetLogf("client", "connecting to %s as %q ...", addr, username)
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
+		utils.NetLogf("client", "connect to %s failed: %v", addr, err)
 		return fmt.Errorf("connect failed: %w", err)
 	}
+	utils.NetLogf("client", "connected to %s", addr)
 
 	c.mu.Lock()
 	if c.isConnected && c.conn != nil {
@@ -84,6 +88,7 @@ func (c *WailsDuelClient) Disconnect() {
 	if !c.isConnected {
 		return
 	}
+	utils.NetLogf("client", "disconnecting (local request)")
 	c.running.Store(false)
 	c.isConnected = false
 	if c.conn != nil {
@@ -108,9 +113,11 @@ func (c *WailsDuelClient) sendPacket(proto byte, payload []byte) error {
 	defer c.mu.Unlock()
 
 	if !c.isConnected || c.conn == nil {
+		utils.NetLogf("client", "send CTOS %s (0x%02x) dropped: not connected", network.CTOSName(proto), proto)
 		return fmt.Errorf("not connected")
 	}
 
+	utils.NetLogf("client", "send CTOS %s (0x%02x) len=%d", network.CTOSName(proto), proto, len(payload))
 	pktLen := uint16(1 + len(payload))
 	buf := make([]byte, 2+int(pktLen))
 	binary.LittleEndian.PutUint16(buf[0:2], pktLen)
@@ -309,6 +316,7 @@ func (c *WailsDuelClient) readLoop() {
 		if _, err := io.ReadFull(conn, header); err != nil {
 			if c.running.Load() {
 				log.Printf("[WailsDuelClient] Read header error: %v", err)
+				utils.NetLogf("client", "readLoop exit: read header error: %v", err)
 			}
 			break
 		}
@@ -323,6 +331,7 @@ func (c *WailsDuelClient) readLoop() {
 		if _, err := io.ReadFull(conn, body); err != nil {
 			if c.running.Load() {
 				log.Printf("[WailsDuelClient] Read body error: %v", err)
+				utils.NetLogf("client", "readLoop exit: read body error: %v", err)
 			}
 			break
 		}

@@ -7,6 +7,7 @@ import (
 	"reflect"
 
 	"github.com/go-restruct/restruct"
+	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
 
@@ -66,6 +67,8 @@ func (r *PacketRouter) Dispatch(player *DuelPlayer, data []byte) {
 		return
 	}
 	pktType := data[0]
+	utils.NetLogf("server", "recv CTOS %s (0x%02x) len=%d player=%q state=0x%02x",
+		network.CTOSName(pktType), pktType, len(data), utils.WideString(player.Name[:]), player.State)
 	handlers, ok := r.handlers[pktType]
 	if !ok {
 		// 未注册的消息类型，静默丢弃或记录日志

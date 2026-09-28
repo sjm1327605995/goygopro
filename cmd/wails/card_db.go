@@ -610,8 +610,13 @@ func (m *CardDBManager) LoadDeck(deckPath string) (*DeckData, error) {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
+	// Main/Extra/Side 初始化为空切片而非 nil：nil 切片序列化成 JSON null，
+	// 前端 [...deck.extra] 会抛 "not iterable"。
 	deck := &DeckData{
-		Name: strings.TrimSuffix(filepath.Base(deckPath), filepath.Ext(deckPath)),
+		Name:  strings.TrimSuffix(filepath.Base(deckPath), filepath.Ext(deckPath)),
+		Main:  []uint32{},
+		Extra: []uint32{},
+		Side:  []uint32{},
 	}
 
 	section := 0 // 1: main, 2: extra, 3: side

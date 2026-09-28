@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-restruct/restruct"
 	"github.com/sjm1327605995/goygopro/core/utils"
+	"github.com/sjm1327605995/goygopro/protocol/network"
 )
 
 // ------------------------------------------------------------------
@@ -17,6 +18,11 @@ import (
 // 查表 → restruct.Unpack(包结构体) → decorate 组前端 map → emit。
 // 表内没有的类型记日志后丢弃（以前静默丢弃，便于发现协议偏差）。
 func (c *WailsDuelClient) handleSTOCPacket(proto byte, payload []byte) {
+	utils.NetLogf("client", "recv STOC %s (0x%02x) len=%d", network.STOCName(proto), proto, len(payload))
+	if proto == network.STOC_ERROR_MSG && len(payload) >= 8 {
+		utils.NetLogf("client", "STOC_ERROR_MSG detail: msg=%d code=%d",
+			payload[0], binary.LittleEndian.Uint32(payload[4:8]))
+	}
 	binding, ok := stocBindings[proto]
 	if !ok {
 		log.Printf("[WailsDuelClient] unknown STOC packet 0x%02x (%d bytes), dropped", proto, len(payload))

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -44,7 +45,7 @@ func main() {
 
 	app := NewApp()
 
-	wailsApp := application.New(application.Options{
+	opts := application.Options{
 		Name:        "goygopro",
 		Description: "YGOPro 3D Client",
 		Services: []application.Service{
@@ -53,7 +54,20 @@ func main() {
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(os.DirFS(frontendDir)),
 		},
-	})
+	}
+	// 调试钩子：YGO_CDP_PORT=9222 时给 WebView2 加 CDP 远程调试端口
+	// （自动化测试/无头诊断用，正常启动不受影响）。
+	if port := os.Getenv("YGO_CDP_PORT"); port != "" {
+		opts.Windows.AdditionalBrowserArgs = append(opts.Windows.AdditionalBrowserArgs, "--remote-debugging-port="+port)
+		opts.LogLevel = slog.LevelDebug // 诊断：打印 "Registering bound method: fqn=..." 等
+	}
+	// 调试钩子：YGO_USER_DATA 指定 WebView2 用户数据目录（默认 %APPDATA%\goygopro）。
+	// 同机多开测试时必须各用各的目录，否则 Chromium profile 单例锁会让后启动的实例失效。
+	if dir := os.Getenv("YGO_USER_DATA"); dir != "" {
+		opts.Windows.WebviewUserDataPath = dir
+	}
+
+	wailsApp := application.New(opts)
 
 	wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "YGOPro 3D Client",

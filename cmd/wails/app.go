@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sjm1327605995/goygopro/core/duel"
+	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/panjf2000/gnet/v2/pkg/logging"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -135,10 +136,12 @@ func (a *App) StartLocalServer(port int) map[string]interface{} {
 	}()
 	select {
 	case startErr := <-errCh:
+		utils.NetLogf("server", "local server failed to start on :%d: %v", port, startErr)
 		return map[string]interface{}{"success": false, "error": fmt.Sprintf("server failed to start: %v", startErr)}
 	case <-time.After(500 * time.Millisecond):
 	}
 
+	utils.NetLogf("server", "local server started on :%d (all interfaces)", port)
 	return map[string]interface{}{"success": true, "port": port}
 }
 
