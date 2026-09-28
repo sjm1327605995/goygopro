@@ -811,6 +811,10 @@ body, html {
   gap: 12px;
   overflow-y: auto;
 }
+/* 纵向 flex 容器溢出时子项默认收缩——卡组网格/标题被压扁而不是触发滚动 */
+.deck-zones-container > * {
+  flex-shrink: 0;
+}
 .deck-section-title {
   font-size: 13px;
   font-weight: 700;
@@ -820,11 +824,11 @@ body, html {
 }
 .deck-grid {
   display: grid;
-  /* 原版 DrawDeckBd 是固定 44px 缩略图紧凑排布（drawing.cpp:1258-1263，
-     dx≈48.4 主卡组 10 列/行），不是随容器拉伸 —— 固定轨道尺寸 + 4px 间隙，
-     卡牌「挨着」堆叠成一副。 */
-  grid-template-columns: repeat(auto-fill, 44px);
-  gap: 4px;
+  /* 原版 DrawDeckBd 逻辑分辨率 1024x640、44px 缩略图 10 列/行
+     （drawing.cpp:1258-1263），窗口拉伸时随之放大。我们是固定 px 布局，
+     直接按拉伸后的观感取 52px + 3px 间隙，卡牌「挨着」堆叠成一副。 */
+  grid-template-columns: repeat(auto-fill, 52px);
+  gap: 3px;
   min-height: 90px;
   background: rgba(0, 0, 20, 0.35);
   padding: 6px;
@@ -839,11 +843,11 @@ body, html {
   border-radius: 2px;
 }
 
-/* 卡图缩略格子（deck-grid 内）：44x64 与原版 CARD_THUMB（game.h:26-27）一致，
-   177x254 卡图按同比例缩到缩略尺寸 */
+/* 卡图缩略格子（deck-grid 内）：52x76，卡面比例 59/86（原版 CARD_THUMB
+   game.h:26-27 的 44x64 在窗口拉伸后的等效观感） */
 .deck-card-chip {
-  aspect-ratio: 44 / 64;
-  width: 44px;
+  aspect-ratio: 52 / 76;
+  width: 52px;
   border-radius: 2px;
   border: 1px solid #555;
   padding: 0;
@@ -900,7 +904,7 @@ body, html {
 
 /* 搜索结果纵向列表（DrawDeckBd drawing.cpp:1296-1360）：listbox 风格 */
 .deck-results {
-  flex: 0 0 250px;
+  flex: 0 0 280px;
   min-width: 0;
   background: rgba(40, 60, 160, 0.28);
   border: 2px solid #808080;
@@ -921,13 +925,19 @@ body, html {
   border: 1px solid #aaa;
   padding: 4px;
 }
-/* 结果行：横向「缩略图 + 文本」，覆盖 .deck-card-chip 的 59/86 比例 */
+/* 结果行：横向「缩略图 + 文本」，覆盖 .deck-card-chip 的 59/86 比例。
+   注意必须同时覆盖 width——.deck-card-chip 的 width:44px 会把整行压成
+   44px 宽的竖条（曾经的真实 bug：结果列表文字全部挤碎）。 */
 .search-results-grid .deck-card-chip {
+  width: 100%;
+  /* 父容器是纵向 flex，必须禁止收缩：否则结果多时整列被压缩贴合容器
+     高度（每行只剩 ~10px、文字挤碎），而不是溢出滚动。 */
+  flex: 0 0 auto;
   aspect-ratio: auto;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px;
+  gap: 8px;
+  padding: 4px;
   background: #fff;
   border: 1px solid #ccc;
   border-radius: 2px;
@@ -939,8 +949,8 @@ body, html {
   box-shadow: none;
 }
 .deck-result-thumb {
-  flex: 0 0 32px;
-  height: 44px;
+  flex: 0 0 44px;
+  height: 64px;
   background: #000;
   border: 1px solid #888;
   overflow: hidden;
@@ -964,11 +974,11 @@ body, html {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   overflow: hidden;
 }
 .deck-result-name {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: #222;
   white-space: nowrap;
@@ -976,14 +986,14 @@ body, html {
   text-overflow: ellipsis;
 }
 .deck-result-sub {
-  font-size: 10px;
+  font-size: 11px;
   color: #555;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .deck-result-stats {
-  font-size: 10px;
+  font-size: 11px;
   color: #333;
   white-space: nowrap;
   overflow: hidden;
