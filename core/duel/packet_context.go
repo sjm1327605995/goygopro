@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
 
@@ -156,6 +157,8 @@ func (c *PacketContext) SendErrorWithCode(errCode uint8, msg string, code uint32
 	buf[0] = stocMsg
 	// padding 3 bytes 保持 0
 	binary.LittleEndian.PutUint32(buf[4:], code)
+	utils.NetLogf("server", "send STOC_ERROR_MSG msg=%d code=%d (%s) to player=%q",
+		stocMsg, code, msg, utils.WideString(c.Player.Name[:]))
 	return c.Reply(network.STOC_ERROR_MSG, buf)
 }
 

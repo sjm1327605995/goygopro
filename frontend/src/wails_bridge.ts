@@ -184,9 +184,14 @@ try {
 } catch { /* 非 Wails 环境（浏览器/冒烟） */ }
 export const isWails = !!(wailsCall && wailsCall.ByName);
 
-// Call a bound Go service method (v3 uses fully-qualified names "App.Method")
+// Call a bound Go service method. Wails v3 的 Call.ByName 要求完整 FQN：
+// `<包路径>.<类型名>.<方法名>`，且 main 包在链接产物里 PkgPath 归一为 "main"
+// （实测 bindings_dump：`main.App.GetConfig`）。短名 "App.Method" 会报
+// unknown bound method name——真客户端的所有 Go 调用曾因这个静默失败
+// （join/建房无反应的根因）。
+const WAILS_FQN_PREFIX = "main.App.";
 function callWails(method: string, ...args: any[]) {
-  return wailsCall.ByName("App." + method, ...args);
+  return wailsCall.ByName(WAILS_FQN_PREFIX + method, ...args);
 }
 
 if (wailsEvents && wailsEvents.On) {
@@ -307,10 +312,13 @@ export const WailsBridge = {
   },
 
   // CTOS_UPDATE_DECK：mainList 需包含主卡组+额外（服务端按卡类型自动拆分，
-  // 见 core/duel/deck_manager.go LoadDeck）
+  // 见 core/duel/deck_manager.go LoadDeck）。返回 promise 供调用方 await——
+  // 准备握手必须先 UPDATE_DECK 后 HS_READY（原版 duelclient 同一 TCP 流
+  // 顺序发送），不 await 两次独立 IPC 会乱序，服务端按空卡组拒绝准备。
   updateDeck(mainCards: number[], sideCards: number[]) {
-    if (isWails) callWails("UpdateDeck", mainCards, sideCards);
-    else console.log("[MockBridge] UpdateDeck:", mainCards.length, sideCards.length);
+    if (isWails) return callWails("UpdateDeck", mainCards, sideCards);
+    console.log("[MockBridge] UpdateDeck:", mainCards.length, sideCards.length);
+    return Promise.resolve();
   },
 
   setReady(ready: boolean) {

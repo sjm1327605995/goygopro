@@ -207,6 +207,10 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [messages, setMessages] = useState<string[]>([]);
   const [chat, setChat] = useState('');
+  // 加入流程状态行（诊断联机加入失败）：连接中→已连接→等待服务器确认→已进入/失败
+  const [joinStatus, setJoinStatus] = useState('');
+  const joinAckedRef = useRef(false);   // 收到 stoc:join_game 或 error_msg 即视为服务器已应答
+  const joinTimerRef = useRef<number | null>(null);
 
   const chatBoxRef = useRef<HTMLDivElement | null>(null);
   // Observer（selftype，gframe 语义）：NETPLAYER_TYPE_OBSERVER=7（network.h:256），
@@ -285,6 +289,8 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
       }
       // 加入/版本错误：回到连接界面（原版还重新 enable 房间按钮）
       if (msg === ERRMSG_JOINERROR || msg === ERRMSG_VERERROR) {
+        joinAckedRef.current = true;
+        setJoinStatus('');
         setInRoom(false);
         setIsHost(false);
       }
@@ -293,6 +299,8 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
     // STOC_JOIN_GAME：HostInfo 展示在规则信息面板（duelclient.cpp:453-490）。
     // Go emit 的是 STOCJoinGame 结构体（Go 字段名直传），兼容大小写两种键
     const onJoinGame = (data: any) => {
+      joinAckedRef.current = true; // 服务器已确认进房
+      setJoinStatus('');
       const info = data.Info ?? data.info ?? data;
       setRoomRuleInfo(info && typeof info === 'object' ? info : null);
     };
@@ -389,6 +397,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
   // CTOS_JOIN_GAME）。密码错误等失败由服务端 STOC_ERROR_MSG 弹窗呈现。
   const connectServer = async (): Promise<void> => {
     const addr = `${joinHost.trim() || '127.0.0.1'}:${joinPort.trim() || '7911'}`;
+    setJoinStatus(`正在连接 ${addr} …`);
     const res = await WailsBridge.connectServer(addr, username.trim() || 'Duelist', password.trim());
     if (res.success) {
       setConnected(true);
@@ -401,11 +410,39 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
       settingsStore.set('lasthost', joinHost.trim() || '127.0.0.1');
       settingsStore.set('lastport', joinPort.trim() || '7911');
       settingsStore.set('nickname', username.trim() || 'Duelist');
+      beginJoinWatch();
       const join = await WailsBridge.joinGame(password.trim());
-      if (join.success) setInRoom(true);
+      if (join.success) {
+        setInRoom(true);
+        watchJoinAck();
+      } else {
+        setJoinStatus('');
+        setErrMsg(`加入房间失败：${join.error || '未知错误'}`);
+      }
     } else {
+      setJoinStatus('');
       setErrMsg(`连接失败：${res.error}`);
     }
+  };
+
+  // join 包发出后等服务器 STOC_JOIN_GAME 确认；5 秒无应答给明文提示
+  // （error_msg 到达也会置 joinAcked，见 onErrorMsg）。
+  // 注意时序：joinGame 的 await 尚未返回时服务端确认事件可能已先到
+  // （readLoop 独立 goroutine），所以 acked 复位必须在发包之前做，
+  // 发包后仅在仍未确认时才进入等待提示。
+  const beginJoinWatch = (): void => {
+    joinAckedRef.current = false;
+    setJoinStatus('已连接，正在加入房间…');
+  };
+  const watchJoinAck = (): void => {
+    if (joinAckedRef.current) return; // 确认事件已先到，无需等待提示
+    setJoinStatus('已发送加入请求，等待服务器确认…');
+    if (joinTimerRef.current) window.clearTimeout(joinTimerRef.current);
+    joinTimerRef.current = window.setTimeout(() => {
+      if (!joinAckedRef.current) {
+        setJoinStatus('服务器 5 秒未确认加入：请检查主机地址/端口是否正确、密码是否与房主一致（详见程序目录 debug_net.log）');
+      }
+    }, 5000);
   };
 
   const startLocalServer = async (): Promise<void> => {
@@ -467,9 +504,12 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
 
   // 加入房间：CTOS_JOIN_GAME（gameID 由服务端房间列表决定，本地单房间用 0）
   const joinRoom = async (): Promise<void> => {
+    beginJoinWatch();
     const res = await WailsBridge.joinGame(joinPass.trim());
-    if (res.success) setInRoom(true);
-    else if (res.error) setErrMsg(`加入房间失败：${res.error}`);
+    if (res.success) {
+      setInRoom(true);
+      watchJoinAck();
+    } else if (res.error) setErrMsg(`加入房间失败：${res.error}`);
     // 密码错误等失败时服务端回 STOC_ERROR_MSG（JOINERROR），由 error_msg 弹窗呈现
   };
 
@@ -480,6 +520,8 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
     setIsHost(false);
     setIsReady(false);
     setRoomRuleInfo(null);
+    setJoinStatus('');
+    joinAckedRef.current = true; // 阻止等待中的超时提示
     setSeats([EMPTY_SEAT(), EMPTY_SEAT(), EMPTY_SEAT(), EMPTY_SEAT()]);
     setSeats((prev) => {
       const next = [...prev];
@@ -504,7 +546,8 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
       const deck = await WailsBridge.loadDeck(pickedDeck);
       if (!deck) { setErrMsg('卡组加载失败'); return; }
       setLastSentDeck(deck);
-      WailsBridge.updateDeck([...deck.main, ...deck.extra], deck.side);
+      // await 保证 UPDATE_DECK 先于 HS_READY 到达服务端（乱序会被按空卡组拒绝）
+      await WailsBridge.updateDeck([...deck.main, ...deck.extra], deck.side);
     }
     setIsReady(next);
     WailsBridge.setReady(next);
@@ -956,6 +999,20 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
           <button className="gfw-btn btn" style={{ width: '70px' }} onClick={sendChat}>发送</button>
         </div>
       </div>
+
+      {/* 加入流程状态条（诊断联机加入）：固定在大厅屏幕底部居中 */}
+      {joinStatus && (
+        <div
+          id="lobby-join-status"
+          className="gfw-window"
+          style={{
+            position: 'fixed', left: '50%', bottom: '14px', transform: 'translateX(-50%)',
+            padding: '6px 14px', fontSize: '12px', zIndex: 1500, whiteSpace: 'nowrap',
+          }}
+        >
+          {joinStatus}
+        </div>
+      )}
 
       {/* 错误弹窗（原版 wMessage 消息窗，duelclient.cpp:261-368 的 sysString 文案） */}
       {errMsg && (

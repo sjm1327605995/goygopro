@@ -547,10 +547,10 @@ const lifecycleHandlers: Record<string, EventHandler> = {
   },
 
   'stoc:hand_result': (state, ev) => {
-    // STOC_HAND_RESULT：双方猜拳结果（0=剪刀 1=石头 2=布）
+    // STOC_HAND_RESULT：双方猜拳结果（1=剪刀 2=石头 3=布，gframe btnHand[i]=f{i+1}.jpg）
     const names = ['剪刀', '石头', '布'];
-    const mine = names[ev.res1] ?? String(ev.res1);
-    const theirs = names[ev.res2] ?? String(ev.res2);
+    const mine = names[ev.res1 - 1] ?? String(ev.res1);
+    const theirs = names[ev.res2 - 1] ?? String(ev.res2);
     return withLog(state, `猜拳结果：你出了${mine}，对方出了${theirs}。`);
   },
 
@@ -895,8 +895,8 @@ const logHandlers: Record<string, EventHandler> = {
   'duel:attack': (state, ev) => withLog(state, `宣告攻击！槽位 ${ev.attacker.s} → 槽位 ${ev.target.s}`, 'log-damage'),
 
   'duel:hand_res': (state, ev) => {
-    // 出拳值 1=石头 2=剪刀 3=布（gframe f1/f2/f3 按钮语义）
-    const handName = (v: number) => ['石头', '剪刀', '布'][v - 1] || String(v);
+    // 出拳值 1=剪刀 2=石头 3=布（gframe f1/f2/f3 贴图语义，operations.cpp:6544 判定表）
+    const handName = (v: number) => ['剪刀', '石头', '布'][v - 1] || String(v);
     return withLog(state, `猜拳结果已确定（${handName(ev.res & 3)} vs ${handName((ev.res >> 2) & 3)}）。`);
   },
 

@@ -335,7 +335,14 @@ func playerReady(m duelRoom, dp *DuelPlayer, isReady bool) {
 			if base.DeckError[dp.Type] != 0 {
 				deckError = network.DECKERROR_UNKNOWNCARD<<28 | base.DeckError[dp.Type]
 			} else {
-				deckError = DeckManager.CheckDeck(base.pDeck[dp.Type], base.HostInfo.LFList, int(base.HostInfo.Rule))
+				// HS_READY 可能先于 UPDATE_DECK 到达（IPC 乱序），pDeck 尚未填充。
+				// 原版 pDeck 是值类型、空主卡组走 DECKERROR_MAINCOUNT 拒绝；
+				// 这里 nil 指针必须按空卡组处理，不能直接传给 CheckDeck（nil 解引用 panic）。
+				pdeck := base.pDeck[dp.Type]
+				if pdeck == nil {
+					pdeck = &Deck{}
+				}
+				deckError = DeckManager.CheckDeck(pdeck, base.HostInfo.LFList, int(base.HostInfo.Rule))
 			}
 		}
 		if deckError != 0 {
@@ -363,9 +370,10 @@ func leaveGame(m duelRoom, dp *DuelPlayer) {
 		m.EndDuel()
 		// 先摘除房间再停服务器：StopServer 会阻塞等待 gnet 事件循环退出，
 		// 而 leaveGame 正是在事件循环回调（OnClose/CTOS_LEAVE_GAME）里执行的，
-		// 顺序颠倒会死锁，导致 RemoveRoom 永远执行不到。
+		// 同步调用必然死锁（服务器此后不再处理任何包，其他玩家看到僵尸房间）。
+		// 异步停服：本回调先返回，事件循环随即由 Stop 安全收起。
 		DefaultManager.RemoveRoom(base.RoomID)
-		base.StopServer()
+		go base.StopServer()
 		return
 	}
 	if dp.Type == network.NETPLAYER_TYPE_OBSERVER {
@@ -510,11 +518,14 @@ func checkJoinAllowed(m duelRoom, dp *DuelPlayer, pkt *protocol.CTOSJoinGame, is
 		return true
 	}
 	if dp.Game != nil && dp.Type != 0xff {
+		utils.NetLogf("server", "JOIN_GAME rejected: player=%q already in game (type=%d)", utils.WideString(dp.Name[:]), dp.Type)
 		base.SendPacketDataToPlayer(dp, network.STOC_ERROR_MSG, protocol.STOCErrorMsg{Msg: network.ERRMSG_JOINERROR})
 		_ = base.DisconnectPlayer(dp)
 		return false
 	}
 	if pkt.Version != PRO_VERSION {
+		utils.NetLogf("server", "JOIN_GAME rejected: player=%q version mismatch (got 0x%04x, want 0x%04x)",
+			utils.WideString(dp.Name[:]), pkt.Version, PRO_VERSION)
 		base.SendPacketDataToPlayer(dp, network.STOC_ERROR_MSG, protocol.STOCErrorMsg{Msg: network.ERRMSG_VERERROR, Code: PRO_VERSION})
 		_ = base.DisconnectPlayer(dp)
 		return false
@@ -523,6 +534,8 @@ func checkJoinAllowed(m duelRoom, dp *DuelPlayer, pkt *protocol.CTOSJoinGame, is
 	utils.NullTerminate(pkt.Pass[:], 0)
 	copy(jpass[:], pkt.Pass[:])
 	if utils.Wcscmp(jpass[:], base.Pass[:]) != 0 {
+		utils.NetLogf("server", "JOIN_GAME rejected: player=%q wrong password (got %q, room %q)",
+			utils.WideString(dp.Name[:]), utils.WideString(jpass[:]), utils.WideString(base.Pass[:]))
 		base.SendPacketDataToPlayer(dp, network.STOC_ERROR_MSG, protocol.STOCErrorMsg{Msg: network.ERRMSG_JOINERROR, Code: 1})
 		m.onJoinPassDenied(dp)
 		return false

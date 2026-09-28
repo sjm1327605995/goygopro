@@ -46,8 +46,8 @@ const HINT_CARD = 10;
 // ocgcore CHINT_TURN：MSG_CARD_HINT 的回合数提示（showcard=6 来源）
 const CHINT_TURN = 1;
 
-// 出拳值（gframe f1/f2/f3 按钮语义）：1=石头 2=剪刀 3=布
-const RPS_HANDS: Record<number, string> = { 1: '✊', 2: '✌️', 3: '✋' };
+// 出拳值（gframe f1/f2/f3 贴图语义）：1=剪刀 2=石头 3=布
+const RPS_HANDS: Record<number, string> = { 1: '✌️', 2: '✊', 3: '✋' };
 
 interface RpsShow {
   top: string;

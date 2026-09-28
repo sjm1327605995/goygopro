@@ -558,8 +558,8 @@
 
 .rps-hand-btn:hover { border-color: #ffe66a; box-shadow: 0 0 10px rgba(255, 230, 106, 0.6); }
 
-.rps-hand-rock    { background-image: url('/textures/f1.jpg'); }
-.rps-hand-scissors{ background-image: url('/textures/f2.jpg'); }
+.rps-hand-rock    { background-image: url('/textures/f2.jpg'); }
+.rps-hand-scissors{ background-image: url('/textures/f1.jpg'); }
 .rps-hand-paper   { background-image: url('/textures/f3.jpg'); }
 
 /* ---- 选项列表（wOptions：一页 5 项 + <<< / >>> 翻页） ---- */

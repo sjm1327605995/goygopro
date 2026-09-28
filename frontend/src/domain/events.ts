@@ -152,7 +152,7 @@ export interface DuelRPSEvent {
 
 export interface DuelHandResEvent {
   event: 'duel:hand_res';
-  res: number; // hand0 | (hand1 << 2)，出拳 1=石头 2=剪刀 3=布（gframe f1/f2/f3）
+  res: number; // hand0 | (hand1 << 2)，出拳 1=剪刀 2=石头 3=布（gframe f1/f2/f3 贴图语义）
 }
 
 export interface DuelConfirmDeckTopEvent {

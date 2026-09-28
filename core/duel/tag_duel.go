@@ -122,6 +122,8 @@ func (s *TagDuel) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCreator
 		watchChangePkt.WatchCount = uint16(len(s.Observers))
 		s.SendPacketDataToPlayer(dp, network.STOC_HS_WATCH_CHANGE, watchChangePkt)
 	}
+	utils.NetLogf("server", "JOIN_GAME ok: player=%q seated as type=%d (tag, room=%q)",
+		utils.WideString(dp.Name[:]), dp.Type, utils.WideString(s.Name[:]))
 }
 
 func (s *TagDuel) leaveAsPlayer(dp *DuelPlayer) {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/panjf2000/gnet/v2"
 	"github.com/panjf2000/gnet/v2/pkg/logging"
+	"github.com/sjm1327605995/goygopro/core/utils"
 )
 
 // Server is the gnet event engine for YGOPro duel server.
@@ -24,6 +25,7 @@ type Server struct {
 func (s *Server) OnBoot(eng gnet.Engine) (action gnet.Action) {
 	logging.Infof("running server on %s with multi-core=%t",
 		fmt.Sprintf("%s://%s", s.network, s.addr), s.multicore)
+	utils.NetLogf("server", "listening on %s://%s (multicore=%t)", s.network, s.addr, s.multicore)
 	s.eng = eng
 	NetServerEngine = &eng
 	return
@@ -31,8 +33,10 @@ func (s *Server) OnBoot(eng gnet.Engine) (action gnet.Action) {
 
 func (s *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	if !AcceptingConnections.Load() {
+		utils.NetLogf("server", "reject connection from %s (not accepting)", c.RemoteAddr().String())
 		return nil, gnet.Close
 	}
+	utils.NetLogf("server", "accept connection from %s", c.RemoteAddr().String())
 	atomic.AddInt32(&s.connected, 1)
 	codec := new(SimpleCodec)
 	codec.Player = &DuelPlayer{
@@ -54,6 +58,8 @@ func (s *Server) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 	// TCP 断线（未发送 CTOS_LEAVE_GAME）也要把玩家移出房间，
 	// 否则房间会一直等待一个永远不会再响应的玩家。
 	if codec, ok := c.Context().(*SimpleCodec); ok && codec != nil && codec.Player != nil {
+		utils.NetLogf("server", "connection closed: remote=%s player=%q err=%v",
+			c.RemoteAddr().String(), utils.WideString(codec.Player.Name[:]), err)
 		codec.Player.leaveGameOnce()
 	}
 	// Note: we do NOT shut down the server when all connections close,

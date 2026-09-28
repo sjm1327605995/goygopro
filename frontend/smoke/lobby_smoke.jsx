@@ -215,6 +215,13 @@ try {
   await waitFor(() => joinSends.length === 1);
   record('join-game-sent-empty-pass', joinSends[0] === '');
   record('join-hides-after-success', await tryWaitFor(() => $('lobby-join-btn').offsetParent === null));
+  // 加入状态条：发包后显示等待确认；收到 stoc:join_game 后清除
+  record('join-status-waiting', await tryWaitFor(() => {
+    const el = $('lobby-join-status');
+    return !!el && el.textContent.includes('等待服务器确认');
+  }));
+  eventBus.emit('stoc:join_game', { Info: { LFList: 0, Rule: 0, Mode: 0, DuelRule: 5, StartLp: 8000, StartHand: 5, DrawCount: 1, TimeLimit: 180 } });
+  record('join-status-cleared-on-ack', await tryWaitFor(() => !$('lobby-join-status')));
 
   // 座位事件：对方入场 → 准备 → 离开清座
   eventBus.emit('stoc:player_enter', { pos: 1, name: 'Opponent' });
