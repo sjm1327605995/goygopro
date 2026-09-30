@@ -1,0 +1,92 @@
+/* ==================================================================
+   Mantine 统一主题覆盖层 —— 未分层 CSS，恒胜 @mantine/core/styles.css
+   的 @layer mantine。所有 Mantine 控件与 gframe 窗口同源：
+   深蓝面板 + 钢铁蓝控件 + 青（--primary）/金（--accent-gold）点缀。
+   ================================================================== */
+
+/* Mantine 全局变量对齐本游戏配色（dark scheme） */
+:root {
+  --mantine-color-text: #dbe7ff;
+  --mantine-color-dimmed: #9fb0d8;
+  --mantine-color-body: transparent;
+  --mantine-color-placeholder: #5d6b8c;
+  /* default variant（次级按钮/输入边框等） */
+  --mantine-color-default: #283654;
+  --mantine-color-default-hover: #34446f;
+  --mantine-color-default-border: rgba(126, 156, 222, 0.45);
+  --mantine-color-default-color: #dbe7ff;
+}
+
+/* ---- 按钮（UiButton 注入 .ui-btn） ---- */
+.mantine-Button-root.ui-btn {
+  background: linear-gradient(180deg, #34446f 0%, #283654 50%, #1f2a46 100%);
+  border: 1px solid rgba(126, 156, 222, 0.45);
+  color: #dbe7ff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.mantine-Button-root.ui-btn:hover {
+  background: linear-gradient(180deg, #3d5080 0%, #2f3f63 50%, #253252 100%);
+  border-color: rgba(0, 210, 255, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 8px rgba(0, 210, 255, 0.25);
+}
+.mantine-Button-root.ui-btn:active {
+  background: linear-gradient(180deg, #1b2440 0%, #283654 50%, #34446f 100%);
+}
+.mantine-Button-root.ui-btn:disabled,
+.mantine-Button-root.ui-btn[data-disabled] {
+  background: #232c46;
+  color: #5d6b8c;
+  border-color: rgba(126, 156, 222, 0.2);
+  box-shadow: none;
+}
+/* 主操作（金） */
+.mantine-Button-root.ui-btn--gold {
+  background: linear-gradient(180deg, #8a6a2a 0%, #6d5220 50%, #54401a 100%);
+  border-color: rgba(245, 158, 11, 0.55);
+  color: #ffe8b8;
+}
+.mantine-Button-root.ui-btn--gold:hover {
+  background: linear-gradient(180deg, #a07c32 0%, #7d6026 50%, #60491e 100%);
+  border-color: rgba(245, 158, 11, 0.8);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.35);
+}
+/* 危险（红） */
+.mantine-Button-root.ui-btn--danger {
+  background: linear-gradient(180deg, #7a3535 0%, #5f2828 50%, #481f1f 100%);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #ffd0d0;
+}
+.mantine-Button-root.ui-btn--danger:hover {
+  background: linear-gradient(180deg, #8f4040 0%, #6e2f2f 50%, #542424 100%);
+  border-color: rgba(239, 68, 68, 0.75);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+}
+
+/* ---- 输入框（UiInput 注入 .ui-input 到 input 元素） ---- */
+.ui-input {
+  background: rgba(8, 12, 26, 0.85);
+  border: 1px solid rgba(126, 156, 222, 0.35);
+  color: #e6eeff;
+}
+.ui-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 6px rgba(0, 210, 255, 0.3);
+  outline: none;
+}
+.ui-input::placeholder {
+  color: #5d6b8c;
+}
+
+/* ---- 复选框（UiCheckbox） ---- */
+.mantine-Checkbox-input.ui-check {
+  background: rgba(8, 12, 26, 0.85);
+  border-color: rgba(126, 156, 222, 0.45);
+}
+.mantine-Checkbox-input.ui-check:checked {
+  background: #00a8cc;
+  border-color: #00d2ff;
+}
+.mantine-Checkbox-label {
+  color: #c9d6f2;
+}

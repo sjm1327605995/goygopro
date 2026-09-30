@@ -206,7 +206,7 @@ function SideChip({ code, onSwap, onDragStart }: {
     >
       {pic
         ? <img src={pic} alt={info ? info.name : String(code)} draggable={false}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
         : <div className="side-deck-chip-fallback">{info ? info.name : code}</div>}
     </div>
   );

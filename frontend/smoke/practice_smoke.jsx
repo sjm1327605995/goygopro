@@ -8,6 +8,7 @@
 //
 // P5 path: hand/LP/board live in duelStore (hud.js is gone); the summon is
 // driven through the 2D action popup like a real user would.
+import UiRoot from '../src/ui/UiRoot.tsx';
 import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { DuelField3D } from '../src/duel/field3d.ts';
@@ -31,6 +32,7 @@ soundManager.muted = true;
 // React mounts the interactive widgets (DuelStage would do this).
 const root = createRoot(document.getElementById('root'));
 root.render(
+  <UiRoot>
   <React.Fragment>
     <PromptHost />
     <HintBar />
@@ -38,6 +40,7 @@ root.render(
     <HandDock interactive={true} />
     <ActionPopup />
   </React.Fragment>
+  </UiRoot>
 );
 
 let manager;

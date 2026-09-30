@@ -1,6 +1,7 @@
 // Headless smoke for the P4 wave-6 completion: DrawSpec overlay (flip / zoom /
 // mask reveal / negated + coin/dice ACMessage) and the stTip hover tooltip.
 // All spec cards are mocked to a data URL so no network is involved.
+import UiRoot from '../src/ui/UiRoot.tsx';
 import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { WailsBridge, eventBus } from '../src/wails_bridge.ts';
@@ -16,11 +17,13 @@ WailsBridge.getCard = async (code) => ({ code, name: 'Blue-Eyes White Dragon', t
 
 const root = createRoot(document.getElementById('root'));
 root.render(
+  <UiRoot>
   <div className="duel-stage" style={{ position: 'relative', width: '100vw', height: '100vh' }}>
     <div id="duel-canvas-container"></div>
     <SpecOverlay />
     <CardTooltip />
   </div>
+  </UiRoot>
 );
 
 window.__specSmoke = { checks: {}, ready: false };
@@ -95,10 +98,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     record('card-hint-turn-plays-number', true);
     await waitFor(() => overlay.style.display === 'none', 3000);
 
-    // --- showcard=100：猜拳双拳下落对碰（res = 我 | 对方<<2） ---
-    eventBus.emit('duel:hand_res', { res: 1 | (3 << 2) }); // 我石头 vs 对方布
+    // --- showcard=100：猜拳双拳下落对碰（res = 我 | 对方<<2；1=剪刀 2=石头 3=布） ---
+    eventBus.emit('duel:hand_res', { res: 1 | (3 << 2) }); // 我剪刀 vs 对方布
     await waitFor(() => !!$('#rps-arena'));
-    record('hand-res-plays-rps', $('#rps-arena').textContent.includes('✊')
+    record('hand-res-plays-rps', $('#rps-arena').textContent.includes('✌️')
       && $('#rps-arena').textContent.includes('✋'));
     await waitFor(() => !$('#rps-arena'), 3000);
 

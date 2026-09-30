@@ -1,6 +1,7 @@
 // 波 7 HUD 几何冒烟：整块 DuelStage（3D 场地 + 全部 2D 面板）按原版 gframe
 // 坐标落位（drawing.cpp / game.cpp 的 1024×640 布局，按窗口比例断言）。
 // 断言读 getBoundingClientRect 的几何，不依赖像素截图。
+import UiRoot from '../src/ui/UiRoot.tsx';
 import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { eventBus, WailsBridge } from '../src/wails_bridge.ts';
@@ -24,6 +25,7 @@ WailsBridge.getCard = async (code) => ({
 
 const root = createRoot(document.getElementById('root'));
 root.render(
+  <UiRoot>
   <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
     <DuelStage
       interactive={false}
@@ -31,6 +33,7 @@ root.render(
       onReady={(h) => { window.__stage = h; }}
     />
   </div>
+  </UiRoot>
 );
 
 window.__stageSmoke = { checks: {}, ready: false };

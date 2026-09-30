@@ -1,6 +1,7 @@
 // Headless smoke for the P7 lobby wiring: the rule/mode dropdowns must drive
 // the CreateGame hostInfo request (no more hardcoded duelRule:5), and the
 // ready toggle must run the CTOS_UPDATE_DECK handshake before setReady.
+import UiRoot from '../src/ui/UiRoot.tsx';
 import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { WailsBridge, eventBus } from '../src/wails_bridge.ts';
@@ -9,7 +10,7 @@ import '../css/gframe-window.css';
 import Lobby from '../src/components/Lobby.tsx';
 
 const root = createRoot(document.getElementById('root'));
-root.render(<Lobby onNavigate={() => {}} onDuelStart={() => {}} />);
+root.render(<UiRoot><Lobby onNavigate={() => {}} onDuelStart={() => {}} /></UiRoot>);
 
 window.__lobbySmoke = { checks: {}, ready: false };
 const checks = window.__lobbySmoke.checks;
@@ -282,9 +283,10 @@ try {
   // error_msg 段把 isHost 重置了（JOINERROR 回连接态）：先重建房主身份
   eventBus.emit('stoc:type_change', { type: 0x10, isHost: true, pos: 0 });
   const startBtn = () => [...document.querySelectorAll('#room-lobby-panel .btn')].find((b) => b.textContent === '开始');
-  // 座位行 = 「决斗者」列下 20px 行高的昵称 span（与 netplay_lobby_smoke 同选择器）
+  // 座位行 = 原版 wHostPrepare 昵称框 (40,·)-(240,·+20) 200×20 的 span（准备勾选框
+  // 同为 20px 高，加宽度过滤区分；与 netplay_lobby_smoke 同选择器）
   const seatTexts = () => [...document.querySelectorAll('#room-lobby-panel div div span')]
-    .filter((s) => s.style.height === '20px').map((s) => s.textContent);
+    .filter((s) => s.style.height === '20px' && s.style.width === '200px').map((s) => s.textContent);
   eventBus.emit('stoc:join_game', { Info: { LFList: 0, Rule: 0, Mode: 2, DuelRule: 5, StartLp: 8000, StartHand: 5, DrawCount: 1, TimeLimit: 180 } });
   await waitFor(() => seatTexts().length === 4);
   record('tag-renders-4-seats', true);

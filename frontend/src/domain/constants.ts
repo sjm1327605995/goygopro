@@ -70,6 +70,7 @@ export const TYPE_FLIP = 0x200000;
 export const TYPE_TOON = 0x400000;
 export const TYPE_XYZ = 0x800000;
 export const TYPE_PENDULUM = 0x1000000;
+export const TYPE_SPSUMMON = 0x2000000;
 export const TYPE_LINK = 0x4000000;
 
 // 额外卡组类型合集（DeckBuilder 用于归类 main/extra）
@@ -104,6 +105,13 @@ export function formatRace(mask: number): string {
 export function formatAttribute(mask: number): string {
   return ATTRS.filter(([v]) => mask & (v as number)).map(([, n]) => n).join('/');
 }
+
+// ---- 卡片可用范围（cdb ot 字段位掩码；game.h:896-900）----
+export const AVAIL_OCG = 0x1;
+export const AVAIL_TCG = 0x2;
+export const AVAIL_CUSTOM = 0x4;
+export const AVAIL_SC = 0x8;
+export const AVAIL_OCGTCG = AVAIL_OCG | AVAIL_TCG;
 
 // ---- 连接标记（LINK_MARKER_* 位掩码；ocgcore/common.go 与 cdb def 字段）----
 export const LINK_MARKER_BOTTOM_LEFT = 0x001;

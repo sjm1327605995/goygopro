@@ -3,6 +3,9 @@ import { WailsBridge, eventBus } from '../wails_bridge.ts';
 import { settingsStore } from '../domain/settings.ts';
 import { setLastSentDeck } from '../duel/side_deck_state.ts';
 import GfwSelect from './ui/GfwSelect.tsx';
+import UiButton from '../ui/UiButton.tsx';
+import { UiInput, UiCheckbox } from '../ui/UiInput.tsx';
+import DesignSpace from '../ui/DesignSpace.tsx';
 
 interface LobbyProps {
   onNavigate: (screen: string) => void;
@@ -574,27 +577,33 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
   };
 
   // 座位行（docs 原型 lobby-player-row：X 踢人 18×18 + 昵称输入框 20px + 准备勾选框 14×14）
+  // 座位行（wHostPrepare 原版坐标 game.cpp:308-319）：0/1 号位 y65/90、2/3 号位
+  // y125/150（窗口相对，内容区 = y-24）；踢人钮 (10,·) 20×20、昵称框 (40,·) 200×20、
+  // 准备勾选框 (250,·) 20×20。昵称框保持 height/width 20px/200px 内联样式
+  //（lobby/netplay 冒烟的 seatTexts 选择器契约）。
   const seatRow = (pos: number) => {
     const seat = seats[pos];
     const isSelf = pos === selfType && !isObserver;
     const kickable = isHost && !isObserver && !!seat.name && !isSelf && inRoom;
+    const top = (pos < 2 ? 65 + pos * 25 : 75 + pos * 25) - 24;
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      <div key={pos}>
         {kickable ? (
-          <button
+          <UiButton
             id={`lobby-kick-p${pos + 1}`}
             title="踢出该玩家"
-            className="gfw-btn btn"
-            style={{ width: '18px', height: '18px', padding: 0, fontSize: '10px', flexShrink: 0 }}
+            style={{ position: 'absolute', left: '10px', top: `${top}px`, width: '20px', height: '20px', padding: 0, fontSize: '10px' }}
             onClick={() => kickSeat(pos)}
           >
             X
-          </button>
-        ) : <span style={{ width: '18px', flexShrink: 0 }} />}
+          </UiButton>
+        ) : null}
         <span
           style={{
-            flex: 1, height: '20px', lineHeight: '20px', background: '#fff',
-            border: '1px solid #888', fontSize: '12px', padding: '0 4px',
+            position: 'absolute', left: '40px', top: `${top}px`, width: '200px',
+            height: '20px', lineHeight: '20px', background: 'rgba(8, 12, 26, 0.85)',
+            border: '1px solid rgba(126, 156, 222, 0.35)', borderRadius: '4px',
+            color: '#e6eeff', fontSize: '12px', padding: '0 4px',
             boxSizing: 'border-box', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
           }}
         >
@@ -604,9 +613,10 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
         <span
           title={seat.ready ? '已准备' : '未准备'}
           style={{
-            width: '14px', height: '14px', flexShrink: 0, border: '1px solid #888',
-            background: seat.ready ? '#4a6fa5' : '#fff', color: '#fff',
-            fontSize: '10px', lineHeight: '13px', textAlign: 'center',
+            position: 'absolute', left: '250px', top: `${top}px`, width: '20px', height: '20px',
+            border: '1px solid rgba(126, 156, 222, 0.35)', borderRadius: '3px', boxSizing: 'border-box',
+            background: seat.ready ? 'rgba(0, 150, 220, 0.85)' : 'rgba(8, 12, 26, 0.85)', color: '#fff',
+            fontSize: '10px', lineHeight: '18px', textAlign: 'center',
           }}
         >
           {seat.ready ? '✓' : ''}
@@ -644,10 +654,11 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
     setJoinPort(String(h.port));
   };
 
-  // 建房窗行布局（docs 原型 host-row：label 90px 右对齐 + 控件）
-  const row = (label: string, control: React.ReactNode) => (
-    <div className="flex min-h-[22px] items-center gap-1.5">
-      <span className="gfw-label w-[90px] shrink-0 text-right">{label}</span>
+  // 建房窗行模板（wCreateHost 原版坐标 game.cpp:232-302）：label (20,·) 起宽 120、
+  // 控件 x140 起（body 左 padding 10 + label cell paddingLeft 10 凑出 x20/x140）
+  const row = (label: string, control: React.ReactNode, mt = 5) => (
+    <div style={{ display: 'flex', alignItems: 'center', marginTop: `${mt}px`, height: '25px', flexShrink: 0 }}>
+      <span className="gfw-label" style={{ width: '130px', flexShrink: 0, paddingLeft: '10px', boxSizing: 'border-box' }}>{label}</span>
       {control}
     </div>
   );
@@ -666,38 +677,43 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
 
   return (
     <div id="lobby-screen" className="screen active">
-      {/* ---- wLanWindow 联机模式（580×约380，docs 原型：昵称行+建立主机/列表 220px/
-              刷新主机居中/底部 主机信息+主机密码 左栏 与 加入游戏+取消 右栏 90px）---- */}
+      <DesignSpace>
+      {/* ---- wLanWindow 联机模式（game.cpp:208-227）：窗口 (220,100)-(800,520) 580×420；
+              内部坐标（窗口相对）：昵称行 y25-50（ebNickName 110-450 + btnCreateHost 460-570）、
+              lstHostList (10,60)-(570,320)、btnLanRefresh (240,325)-(340,350)、
+              主机信息行 y355-380（ebJoinHost 110-350 + ebJoinPort 360-420 + btnJoinHost 460-570）、
+              主机密码行 y385-410（ebJoinPass 110-420 + btnJoinCancel 460-570） ---- */}
       <div
         id="server-connect-panel"
         className="gfw-window gfw-lan"
         style={{ display: showLan ? 'block' : 'none' }}
       >
         <div className="gfw-title">联机模式</div>
-        <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {/* 昵称行：昵称 + 输入框 + 建立主机（80px） */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span className="gfw-label" style={{ width: '40px', flexShrink: 0 }}>昵称：</span>
-            <input
+        {/* 内容区 = 420-24 标题 = 396px；行高/间距按上方原版坐标折算 */}
+        <div style={{ height: '396px', padding: '0 10px 10px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+          {/* 昵称行：label(10,30) + ebNickName(110,25)-(450,50) + btnCreateHost(460,25)-(570,50) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1px', height: '25px', flexShrink: 0 }}>
+            <span className="gfw-label" style={{ width: '100px', flexShrink: 0 }}>昵称：</span>
+            <UiInput
               id="lobby-nickname"
-              className="gfw-input form-input"
+             
               type="text"
               style={{ flex: 1 }}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
             />
-            <button
-              className="gfw-btn btn"
-              style={{ width: '80px', flexShrink: 0 }}
+            <UiButton
+             
+              style={{ width: '110px', flexShrink: 0 }}
               onClick={() => setCreateOpen(true)}
             >
               建立主机
-            </button>
+            </UiButton>
           </div>
-          {/* 房间列表（原版 lstHostList 220px；LAN UDP 广播发现，点击行回填主机信息） */}
-          <div id="lobby-host-list" className="gfw-list" style={{ height: '220px', overflowY: 'auto' }}>
+          {/* lstHostList (10,60)-(570,320) = 560×260（LAN UDP 广播发现，点击行回填主机信息） */}
+          <div id="lobby-host-list" className="gfw-list" style={{ marginTop: '10px', height: '260px', flexShrink: 0, overflowY: 'auto' }}>
             {hosts.length === 0 ? (
-              <div className="gfw-list-item" style={{ color: '#888' }}>
+              <div className="gfw-list-item" style={{ color: '#7b89ab' }}>
                 {refreshingHosts ? '正在搜索局域网主机……' : '未发现主机——可「建立主机」本机开服，或输入主机信息加入游戏'}
               </div>
             ) : hosts.map((h, i) => (
@@ -713,44 +729,60 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <button
+          {/* btnLanRefresh (240,325)-(340,350) 居中；右侧空区放本地服务器扩展行
+              （原版无此控件：本地无发现协议，保留功能入口） */}
+          <div style={{ marginTop: '5px', height: '25px', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+            <div style={{ flex: 1 }} />
+            <UiButton
               id="lobby-refresh-hosts"
-              className="gfw-btn btn"
+             
               style={{ width: '100px' }}
               disabled={refreshingHosts}
               onClick={refreshHostList}
             >
               {refreshingHosts ? '刷新中…' : '刷新主机'}
-            </button>
+            </UiButton>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+              <span className="gfw-label">本地端口：</span>
+              <UiInput
+                id="lobby-local-port"
+               
+                type="number"
+                style={{ width: '50px', flexShrink: 0 }}
+                value={localPort}
+                onChange={(e) => setLocalPort(e.target.value)}
+              />
+              <UiButton style={{ width: '90px', flexShrink: 0 }} onClick={startLocalServer}>启动服务器</UiButton>
+            </div>
           </div>
-          {/* 底部：左 主机信息(IP+端口 60px)/主机密码，右 90px 加入游戏/取消 */}
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span className="gfw-label" style={{ width: '60px', flexShrink: 0 }}>主机信息：</span>
-                <input
+          {/* 底部：左列 x10-420（主机信息行 y355-380 / 主机密码行 y385-410），
+              右列 btnJoinHost (460,355)-(570,380) / btnJoinCancel (460,385)-(570,410) 110×25 */}
+          <div style={{ marginTop: '5px', flexShrink: 0, display: 'flex' }}>
+            <div style={{ width: '410px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', height: '25px' }}>
+                <span className="gfw-label" style={{ width: '100px', flexShrink: 0 }}>主机信息：</span>
+                <UiInput
                   id="lobby-join-host"
-                  className="gfw-input form-input"
+                 
                   type="text"
                   style={{ flex: 1 }}
                   value={joinHost}
                   onChange={(e) => setJoinHost(e.target.value)}
                 />
-                <input
+                <UiInput
                   id="lobby-join-port"
-                  className="gfw-input form-input"
+                 
                   type="text"
                   style={{ width: '60px', flexShrink: 0 }}
                   value={joinPort}
                   onChange={(e) => setJoinPort(e.target.value)}
                 />
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span className="gfw-label" style={{ width: '60px', flexShrink: 0 }}>主机密码：</span>
-                <input
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', height: '25px' }}>
+                <span className="gfw-label" style={{ width: '100px', flexShrink: 0 }}>主机密码：</span>
+                <UiInput
                   id="lobby-host-pass"
-                  className="gfw-input form-input"
+                 
                   type="text"
                   style={{ flex: 1 }}
                   value={password}
@@ -758,40 +790,30 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
                 />
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '90px', flexShrink: 0 }}>
-              <button className="gfw-btn btn" onClick={connectServer}>加入游戏</button>
-              <button className="gfw-btn btn" onClick={() => onNavigate('menu')}>取消</button>
+            <div style={{ flex: 1 }} />
+            <div style={{ width: '110px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <UiButton onClick={connectServer}>加入游戏</UiButton>
+              <UiButton onClick={() => onNavigate('menu')}>取消</UiButton>
             </div>
-          </div>
-          {/* 本地服务器（docs 原型无此项；本地无发现协议，保留功能入口） */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderTop: '1px solid #aaa', paddingTop: '6px' }}>
-            <span className="gfw-label" style={{ width: '60px', flexShrink: 0 }}>本地端口：</span>
-            <input
-              id="lobby-local-port"
-              className="gfw-input form-input"
-              type="number"
-              style={{ width: '60px', flexShrink: 0 }}
-              value={localPort}
-              onChange={(e) => setLocalPort(e.target.value)}
-            />
-            <button className="gfw-btn btn" onClick={startLocalServer}>启动服务器</button>
           </div>
         </div>
       </div>
 
-      {/* ---- wCreateHost 建立主机（400×约400，docs 原型：label 90px 右对齐；基础选项 →
-              额外选项提示 → 规则/复选框/初始三项 → 底部 border-top 分隔：左 主机名称/
-              主机密码，右 80px 列 确定/取消）---- */}
+      {/* ---- wCreateHost 建立主机（game.cpp:229-302）：窗口 (320,100)-(700,520) 380×420 ---- */}
       <div
         className="gfw-window gfw-create room-create-panel"
         style={{ display: showCreate ? 'flex' : 'none', flexDirection: 'column' }}
       >
         <div className="gfw-title">建立主机</div>
-        <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '5px', flex: 1, boxSizing: 'border-box' }}>
+        {/* 内容区 396px（420-24 标题），行坐标对齐原版（窗口相对 y-24）：
+            禁限卡表 y25 / 卡片允许 y55 / 决斗模式 y85 / 每回合时间 y115（输入框 140-220）/
+            提示行 y150-170 / 规则 y175 / 复选框 y210-230 / 初始三项 y235/265/295 /
+            底部 主机名称 y355 + 主机密码 y385（输入框 110-250），确定/取消 (260,355/385) 110×25 */}
+        <div style={{ height: '396px', padding: '0 10px 10px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
           {row('禁限卡表：', (
             <GfwSelect
               id="lobby-lflist-select"
-              flex={1}
+              width={160}
               // Radix 受控值必须落在 options 内：空表时给 'N/A' 占位项
               //（对应原生下拉的 lfLists[0]?.hash ?? 0 语义）
               value={String(lfLists.some((l) => l.hash === lflist) ? lflist : (lfLists[0]?.hash ?? 0))}
@@ -800,11 +822,11 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
                 ? lfLists.map((l) => ({ value: String(l.hash), label: l.name }))
                 : [{ value: '0', label: 'N/A' }]}
             />
-          ))}
+          ), 1)}
           {row('卡片允许：', (
             <GfwSelect
               id="lobby-rule-select"
-              flex={1}
+              width={160}
               value={String(cardRule)}
               onValueChange={(v) => setCardRule(parseInt(v, 10))}
               options={CARD_RULES.map((r) => ({ value: String(r.value), label: r.label }))}
@@ -813,190 +835,202 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
           {row('决斗模式：', (
             <GfwSelect
               id="lobby-duel-mode-select"
-              flex={1}
+              width={160}
               value={String(duelMode)}
               onValueChange={(v) => setDuelMode(parseInt(v, 10))}
               options={DUEL_MODES.map((m) => ({ value: String(m.value), label: m.label }))}
             />
           ))}
           {row('每回合时间：', (
-            <input
+            <UiInput
               id="lobby-timelimit"
-              className="gfw-input form-input"
+             
               type="number"
-              style={{ width: '60px', flexShrink: 0, textAlign: 'center' }}
+              style={{ width: '80px', flexShrink: 0, textAlign: 'center' }}
               value={timeLimit}
               onChange={(e) => setTimeLimit(e.target.value)}
             />
           ))}
-          {/* 额外选项提示（docs 原型：灰色小字） */}
-          <div style={{ fontSize: '11px', color: '#666', padding: '2px 0 2px 96px' }}>↓额外选项（无特殊要求请勿修改）</div>
+          {/* 原版 y150-170 的静态文本位（SysString 1228）：额外选项提示 */}
+          <div style={{ marginTop: '10px', height: '20px', flexShrink: 0, fontSize: '11px', color: '#7b89ab', paddingLeft: '10px', lineHeight: '20px' }}>↓额外选项（无特殊要求请勿修改）</div>
           {row('规则：', (
             <GfwSelect
               id="lobby-duel-rule-select"
-              flex={1}
+              width={160}
               value={String(duelRule)}
               onValueChange={(v) => setDuelRule(parseInt(v, 10))}
               options={DUEL_RULES.map((r) => ({ value: String(r.value), label: r.label }))}
             />
           ))}
-          <div style={{ display: 'flex', gap: '20px', paddingLeft: '96px', minHeight: '20px', alignItems: 'center' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px' }}>
-              <input id="lobby-nocheck" type="checkbox" className="gfw-check" checked={noCheckDeck} onChange={(e) => setNoCheckDeck(e.target.checked)} />
+          {/* chkNoCheckDeck (20,210)-(170,230) / chkNoShuffleDeck (180,210)-(360,230) */}
+          <div style={{ marginTop: '10px', height: '20px', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px', marginLeft: '10px', width: '150px' }}>
+              <UiCheckbox id="lobby-nocheck" checked={noCheckDeck} onChange={(e) => setNoCheckDeck(e.target.checked)} />
               不检查卡组
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px' }}>
-              <input id="lobby-noshuffle" type="checkbox" className="gfw-check" checked={noShuffleDeck} onChange={(e) => setNoShuffleDeck(e.target.checked)} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px', marginLeft: '10px' }}>
+              <UiCheckbox id="lobby-noshuffle" checked={noShuffleDeck} onChange={(e) => setNoShuffleDeck(e.target.checked)} />
               不洗切卡组
             </label>
           </div>
           {row('初始基本分：', (
-            <input id="lobby-startlp" className="gfw-input form-input" type="number" style={{ width: '60px', flexShrink: 0, textAlign: 'center' }} value={startLp} onChange={(e) => setStartLp(e.target.value)} />
+            <UiInput id="lobby-startlp" type="number" style={{ width: '80px', flexShrink: 0, textAlign: 'center' }} value={startLp} onChange={(e) => setStartLp(e.target.value)} />
           ))}
           {row('初始手卡数：', (
-            <input id="lobby-starthand" className="gfw-input form-input" type="number" style={{ width: '60px', flexShrink: 0, textAlign: 'center' }} value={startHand} onChange={(e) => setStartHand(e.target.value)} />
+            <UiInput id="lobby-starthand" type="number" style={{ width: '80px', flexShrink: 0, textAlign: 'center' }} value={startHand} onChange={(e) => setStartHand(e.target.value)} />
           ))}
           {row('每回合抽卡：', (
-            <input id="lobby-drawcount" className="gfw-input form-input" type="number" style={{ width: '60px', flexShrink: 0, textAlign: 'center' }} value={drawCount} onChange={(e) => setDrawCount(e.target.value)} />
+            <UiInput id="lobby-drawcount" type="number" style={{ width: '80px', flexShrink: 0, textAlign: 'center' }} value={drawCount} onChange={(e) => setDrawCount(e.target.value)} />
           ))}
-          {/* 底部贴底（docs 原型 flex:1 占位 spacer）：左 主机名称/主机密码，右 80px 列 确定/取消（border-top 分隔） */}
+          {/* 底部（spacer 顶到 y355）：左 主机名称/主机密码（label x10 宽100 + 输入框 110-250），
+              右 btnHostConfirm/btnHostCancel (260,355/385)-(370,380/410) 110×25 */}
           <div style={{ flex: 1 }} />
-          <div style={{ display: 'flex', gap: '8px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #aaa' }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {row('主机名称：', (
-                <input id="lobby-room-name" className="gfw-input form-input" type="text" style={{ flex: 1 }} value={roomName} onChange={(e) => setRoomName(e.target.value)} />
-              ))}
-              {row('主机密码：', (
-                <input id="lobby-room-pass" className="gfw-input form-input" type="text" style={{ flex: 1 }} value={roomPass} onChange={(e) => setRoomPass(e.target.value)} />
-              ))}
+          <div style={{ display: 'flex', flexShrink: 0 }}>
+            <div style={{ width: '240px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', height: '25px' }}>
+                <span className="gfw-label" style={{ width: '100px', flexShrink: 0 }}>主机名称：</span>
+                <UiInput id="lobby-room-name" type="text" style={{ width: '140px', flexShrink: 0 }} value={roomName} onChange={(e) => setRoomName(e.target.value)} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', height: '25px' }}>
+                <span className="gfw-label" style={{ width: '100px', flexShrink: 0 }}>主机密码：</span>
+                <UiInput id="lobby-room-pass" type="text" style={{ width: '140px', flexShrink: 0 }} value={roomPass} onChange={(e) => setRoomPass(e.target.value)} />
+              </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '80px', flexShrink: 0 }}>
-              <button className="gfw-btn btn" onClick={createRoom}>确定</button>
-              <button className="gfw-btn btn" onClick={() => setCreateOpen(false)}>取消</button>
+            <div style={{ flex: 1 }} />
+            <div style={{ width: '110px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <UiButton onClick={createRoom}>确定</UiButton>
+              <UiButton onClick={() => setCreateOpen(false)}>取消</UiButton>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ---- wHostPrepare 决斗准备（480×约320，docs 原型：左列 180px 决斗者列表/→观战，
-              右列 房间信息（stHostPrepRule）+ 准备 居中 100px；底部 卡组选择 60px+两下拉、
-              开始/退出 居中 100px gap12 border-top）---- */}
+      {/* ---- wHostPrepare 决斗准备（game.cpp:304-333）：窗口 (270,120)-(750,440) 480×320 ---- */}
       <div
         id="room-lobby-panel"
         className="gfw-window gfw-prepare"
         style={{ display: showPrepare ? 'block' : 'none' }}
       >
         <div className="gfw-title">决斗准备</div>
-        <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            {/* 左列：决斗者（X 踢人 + 昵称 + 准备勾选框；观战者身份换 转为决斗者）。
-                原版 wHostPrepare 恒建 4 座（game.cpp:308-317），TAG 模式全渲染 */}
-            <div style={{ width: '180px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#222', padding: '2px 0' }}>决斗者</div>
-              {Array.from({ length: seatCount }, (_, i) => seatRow(i))}
-              {isObserver ? (
-                <button id="lobby-to-duelist" className="gfw-btn btn" style={{ marginTop: '4px' }} onClick={backToDuelist}>→决斗者</button>
-              ) : (!isHost && inRoom) ? (
-                <button id="lobby-watch-btn" className="gfw-btn btn" style={{ marginTop: '4px' }} onClick={watchAsObserver}>→观战</button>
-              ) : null}
-            </div>
-            {/* 右列：房间信息（stHostPrepRule，duelclient.cpp:453-490）+ 准备。
-                加入行常驻挂载、display 切换（离开/加入不卸载输入框）；
-                规则面板仅在拿到 HostInfo 后渲染（信息未到不显示占位）。 */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '12px', color: '#222', paddingTop: '20px' }}>
-              <div style={{ display: inRoom ? 'none' : 'flex', gap: '6px', alignItems: 'center' }}>
-                <input
-                  id="lobby-join-pass"
-                  className="gfw-input form-input"
-                  type="text"
-                  style={{ flex: 1 }}
-                  placeholder="房间密码（可选）"
-                  value={joinPass}
-                  onChange={(e) => setJoinPass(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') joinRoom(); }}
-                />
-                <button id="lobby-join-btn" className="gfw-btn btn" onClick={joinRoom}>加入房间</button>
-                {/* 已连接但不在房间时的建房入口（联机模式窗在 connected 后隐藏，
-                    没有它房主连上服务器后反而无法建房） */}
-                <button id="lobby-create-btn" className="gfw-btn btn" onClick={() => setCreateOpen(true)}>建立主机</button>
-              </div>
-              {inRoom && roomRuleInfo ? (
-                <div id="lobby-room-rule" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
-                  {roomRuleLines(roomRuleInfo, lfLists).join('\n')}
-                </div>
-              ) : null}
-              <div style={{ borderTop: '1px solid #888', margin: '4px 0' }} />
-              <div>当前观战人数：<span id="lobby-watch-count">{watchCount}</span></div>
-              {inRoom && !isObserver ? (
-                <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'center' }}>
-                  <button className="gfw-btn btn" style={{ width: '100px' }} onClick={toggleReady}>
-                    {isReady ? '取消准备' : '准备'}
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-          {/* 卡组选择：分类 + 具体卡组 两下拉（观战者无卡组操作） */}
-          {!isObserver ? (
-            <div className="mt-1 flex items-center gap-1.5">
-              <span className="gfw-label w-[60px] shrink-0">卡组选择：</span>
-              <GfwSelect
-                id="lobby-deck-category"
-                // Radix Item 不允许空串 value：根分类 '' 用哨兵 '__root__' 表示
-                value={deckCategory || '__root__'}
-                onValueChange={(v) => onCategoryChange(v === '__root__' ? '' : v)}
-                options={deckCategories.map((c) => ({ value: c || '__root__', label: c || '未分类卡组' }))}
-              />
-              <GfwSelect
-                id="lobby-deck-select"
-                flex={1}
-                value={pickedDeck}
-                onValueChange={(v) => {
-                  setPickedDeck(v);
-                  settingsStore.set('lastdeck', v);
-                }}
-                options={decksInCategory.map((d) => ({
-                  value: d,
-                  label: deckCategory && d.startsWith(deckCategory + '/') ? d.slice(deckCategory.length + 1) : d,
-                }))}
-              />
-            </div>
+        {/* 内容区 296px（320-24 标题），全绝对定位对齐原版（窗口相对 y-24，game.cpp:307-333）：
+            btnHostPrepDuelist (10,30) 100×25 / 座位行 y65/90/125/150 / btnHostPrepOB (10,180) /
+            btnHostPrepReady (170,180) 100×25 / 卡组选择 label(10,210) + 两下拉 (10,230) 128、(142,230) 198 /
+            stHostPrepRule (280,30) 180×200 / stHostPrepOB (10,285) / 开始 (230,280) 110、退出 (350,280) 110 */}
+        <div style={{ position: 'relative', height: '296px' }}>
+          {/* 转为决斗者（btnHostPrepDuelist，观战身份时出现） */}
+          {isObserver ? (
+            <UiButton id="lobby-to-duelist" style={{ position: 'absolute', left: '10px', top: '6px', width: '100px' }} onClick={backToDuelist}>转为决斗者</UiButton>
           ) : null}
-          {/* 底部按钮：开始 + 退出 居中（border-top 分隔） */}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #aaa' }}>
-            {isHost && !isObserver && (
-              <button
-                className="gfw-btn btn"
-                style={{ width: '100px' }}
-                disabled={!canStart}
-                title={canStart ? '' : '所有决斗者都准备后才能开始'}
-                onClick={() => WailsBridge.startDuel()}
-              >
-                开始
-              </button>
-            )}
-            <button className="gfw-btn btn" style={{ width: '100px' }} onClick={leaveRoom}>退出</button>
+          {/* 座位行：原版恒建 4 座，TAG 模式全渲染 */}
+          {Array.from({ length: seatCount }, (_, i) => seatRow(i))}
+          {/* 转为观战（btnHostPrepOB (10,180)-(110,205)；宿主/观战者不显示） */}
+          {!isObserver && !isHost && inRoom ? (
+            <UiButton id="lobby-watch-btn" style={{ position: 'absolute', left: '10px', top: '156px', width: '100px' }} onClick={watchAsObserver}>转为观战</UiButton>
+          ) : null}
+          {/* 准备（btnHostPrepReady/btnHostPrepNotReady (170,180)-(270,205) 100×25） */}
+          {inRoom && !isObserver ? (
+            <UiButton style={{ position: 'absolute', left: '170px', top: '156px', width: '100px' }} onClick={toggleReady}>
+              {isReady ? '取消准备' : '准备'}
+            </UiButton>
+          ) : null}
+          {/* 卡组选择：label (10,210)-(110,230) + cbCategorySelect (10,230)-(138,255) + cbDeckSelect (142,230)-(340,255)（观战者无卡组操作） */}
+          {!isObserver ? (
+            <>
+              <span className="gfw-label" style={{ position: 'absolute', left: '10px', top: '186px' }}>卡组选择：</span>
+              <div style={{ position: 'absolute', left: '10px', top: '206px' }}>
+                <GfwSelect
+                  id="lobby-deck-category"
+                  width={128}
+                  // Radix Item 不允许空串 value：根分类 '' 用哨兵 '__root__' 表示
+                  value={deckCategory || '__root__'}
+                  onValueChange={(v) => onCategoryChange(v === '__root__' ? '' : v)}
+                  options={deckCategories.map((c) => ({ value: c || '__root__', label: c || '未分类卡组' }))}
+                />
+              </div>
+              <div style={{ position: 'absolute', left: '142px', top: '206px' }}>
+                <GfwSelect
+                  id="lobby-deck-select"
+                  width={198}
+                  value={pickedDeck}
+                  onValueChange={(v) => {
+                    setPickedDeck(v);
+                    settingsStore.set('lastdeck', v);
+                  }}
+                  options={decksInCategory.map((d) => ({
+                    value: d,
+                    label: deckCategory && d.startsWith(deckCategory + '/') ? d.slice(deckCategory.length + 1) : d,
+                  }))}
+                />
+              </div>
+            </>
+          ) : null}
+          {/* stHostPrepRule (280,30)-(460,230) 180×200 带边框；未进房时同区域放加入行扩展件
+             （原版无加入行：连接后由 LAN 窗直接 JOIN_GAME；本地单房间流程需要入口） */}
+          <div style={{
+            position: 'absolute', left: '280px', top: '6px', width: '180px', height: '200px',
+            border: '1px solid rgba(126, 156, 222, 0.35)', borderRadius: '4px', boxSizing: 'border-box',
+            background: 'rgba(8, 12, 26, 0.6)', padding: '4px 6px', overflow: 'hidden',
+            fontSize: '12px', color: '#c9d6f2',
+          }}>
+            <div style={{ display: inRoom ? 'none' : 'flex', flexDirection: 'column', gap: '4px' }}>
+              <UiInput
+                id="lobby-join-pass"
+               
+                type="text"
+                placeholder="房间密码（可选）"
+                value={joinPass}
+                onChange={(e) => setJoinPass(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') joinRoom(); }}
+              />
+              <UiButton id="lobby-join-btn" onClick={joinRoom}>加入房间</UiButton>
+              {/* 已连接但不在房间时的建房入口（联机模式窗在 connected 后隐藏，
+                  没有它房主连上服务器后反而无法建房） */}
+              <UiButton id="lobby-create-btn" onClick={() => setCreateOpen(true)}>建立主机</UiButton>
+            </div>
+            {inRoom && roomRuleInfo ? (
+              <div id="lobby-room-rule" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>
+                {roomRuleLines(roomRuleInfo, lfLists).join('\n')}
+              </div>
+            ) : null}
           </div>
+          {/* stHostPrepOB 观战人数 (10,285)-(270,305) */}
+          <div style={{ position: 'absolute', left: '10px', top: '261px', fontSize: '12px', color: '#c9d6f2' }}>
+            当前观战人数：<span id="lobby-watch-count">{watchCount}</span>
+          </div>
+          {/* btnHostPrepStart (230,280)-(340,305) / btnHostPrepCancel (350,280)-(460,305) 110×25 */}
+          {isHost && !isObserver && (
+            <UiButton
+             
+              style={{ position: 'absolute', left: '230px', top: '256px', width: '110px' }}
+              disabled={!canStart}
+              title={canStart ? '' : '所有决斗者都准备后才能开始'}
+              onClick={() => WailsBridge.startDuel()}
+            >
+              开始
+            </UiButton>
+          )}
+          <UiButton style={{ position: 'absolute', left: '350px', top: '256px', width: '110px' }} onClick={leaveRoom}>退出</UiButton>
         </div>
       </div>
 
-      {/* ---- 聊天（原版 wChat 底部条；贴在决斗准备窗下方，随等候区窗显隐）---- */}
+      {/* ---- 聊天（扩展件：原版等候区无聊天窗；贴在决斗准备窗 (270,120)+320 下方，随等候区窗显隐）---- */}
       <div
         id="lobby-chat-panel"
         style={{
           display: showPrepare ? 'flex' : 'none',
-          position: 'absolute', left: '50%', transform: 'translateX(-50%)',
-          top: 'calc(28% + 345px)', width: '480px', height: '110px',
-          flexDirection: 'column', background: 'linear-gradient(180deg, #d0d0d0 0%, #c0c0c0 100%)', border: '2px solid #808080',
+          position: 'absolute', left: '270px', top: '450px', transform: 'none',
+          width: '480px', height: '110px',
+          flexDirection: 'column', background: 'linear-gradient(180deg, rgba(30, 39, 68, 0.97) 0%, rgba(17, 23, 44, 0.97) 100%)',
+          border: '1px solid rgba(98, 132, 202, 0.45)', borderRadius: '10px',
           padding: '6px', boxSizing: 'border-box', zIndex: 20,
         }}
       >
-        <div ref={chatBoxRef} style={{ flex: 1, overflowY: 'auto', fontSize: '12px', color: '#16161e', marginBottom: '6px', background: '#fff', border: '1px solid #8a8a8a', padding: '4px' }}>
+        <div ref={chatBoxRef} style={{ flex: 1, overflowY: 'auto', fontSize: '12px', color: '#c9d6f2', marginBottom: '6px', background: 'rgba(8, 12, 26, 0.85)', border: '1px solid rgba(126, 156, 222, 0.35)', borderRadius: '4px', padding: '4px' }}>
           {messages.map((m, i) => <div key={i}>{m}</div>)}
         </div>
         <div style={{ display: 'flex', gap: '6px' }}>
-          <input className="gfw-input form-input" type="text" style={{ flex: 1 }} placeholder="输入消息..." value={chat} onChange={(e) => setChat(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendChat(); }} />
-          <button className="gfw-btn btn" style={{ width: '70px' }} onClick={sendChat}>发送</button>
+          <UiInput type="text" style={{ flex: 1 }} placeholder="输入消息..." value={chat} onChange={(e) => setChat(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendChat(); }} />
+          <UiButton style={{ width: '70px' }} onClick={sendChat}>发送</UiButton>
         </div>
       </div>
 
@@ -1032,12 +1066,13 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
             <div className="gfw-body" style={{ padding: '16px' }}>
               <div style={{ fontSize: '13px', lineHeight: 1.6, marginBottom: '14px' }}>{errMsg}</div>
               <div style={{ textAlign: 'center' }}>
-                <button id="lobby-errmsg-ok" className="gfw-btn btn" style={{ width: '80px' }} onClick={() => setErrMsg(null)}>确定</button>
+                <UiButton id="lobby-errmsg-ok" style={{ width: '80px' }} onClick={() => setErrMsg(null)}>确定</UiButton>
               </div>
             </div>
           </div>
         </div>
       )}
+      </DesignSpace>
     </div>
   );
 }

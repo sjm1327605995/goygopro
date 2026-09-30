@@ -4,6 +4,7 @@
 // 数据侧：直接在 eventBus 上重放谜题事件（start/reload_field/ai_name/
 // update_data 含空槽标记与本方手牌整表），断言 reducer/manager 的行为 ——
 // 真实引擎那条线由 Go 侧 TestStartSingleDrivesPuzzleToWin 覆盖。
+import UiRoot from '../src/ui/UiRoot.tsx';
 import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { WailsBridge, eventBus } from '../src/wails_bridge.ts';
@@ -40,7 +41,7 @@ screen = (
     onStart={() => starts.push(1)}
   />
 );
-root.render(screen);
+root.render(<UiRoot>{screen}</UiRoot>);
 
 const $ = (id) => document.getElementById(id);
 const waitFor = (predicate, timeoutMs = 5000) => new Promise((resolve, reject) => {

@@ -1,5 +1,6 @@
 import React from 'react';
 import * as Select from '@radix-ui/react-select';
+import { cn } from '../../lib/utils.ts';
 
 /**
  * GfwSelect —— 对 @radix-ui/react-select 的 gfw 复古皮肤薄封装。
@@ -10,8 +11,8 @@ import * as Select from '@radix-ui/react-select';
  * - 受控值不在 options 内时，原生 select 静默回退、Radix 会渲染异常，
  *   封装层统一做了「value 必须落在 options 内」的兜底。
  *
- * 外观规格与 gfw 原生下拉（.gfw-select，见 css/gframe-window.css）完全一致：
- * 白底、1px #888 边框、12px 字号、22px 高（与原 <select> 同高）、圆角 0。
+ * 外观与 gfw 原生下拉（.gfw-select，见 css/gframe-window.css）一致：
+ * 暗底、22px 高（与原 <select> 同高）、12px 字号；弹出层同主题。
  *
  * 注意：Radix 的 Select.Item 不允许空字符串 value（空值用于清空选中显示
  * placeholder），所以调用处传 '' 一类的选项时必须用哨兵值（如 '__root__'）
@@ -68,19 +69,19 @@ export default function GfwSelect({
         id={id}
         aria-label={ariaLabel}
         // .gfw-select/.form-select 提供 gfw 原生下拉的边框/底色/22px 高/字号
-        className={`gfw-select form-select inline-flex cursor-pointer items-center justify-between gap-1 overflow-hidden ${className}`}
+        className={cn('gfw-select form-select inline-flex cursor-pointer items-center justify-between gap-1 overflow-hidden', className)}
         style={{ width, flex }}
       >
         <Select.Value className="truncate" placeholder={placeholder} />
-        <Select.Icon className="shrink-0 text-[9px] leading-none text-[#666]">▼</Select.Icon>
+        <Select.Icon className="shrink-0 text-[9px] leading-none text-[#9fb0d8]">▼</Select.Icon>
       </Select.Trigger>
       <Select.Portal>
-        {/* 弹出层样式对齐 gfw-list 列表项（gframe-window.css）：白底、#888 边框、
-            12px 字、20px 行高、高亮 #b8c4dc、选中 #4a6fa5 反白 */}
+        {/* 弹出层皮肤在 gframe-window.css（.gfw-select-content/.gfw-select-item），
+            与 .gfw-list 列表项同主题 */}
         <Select.Content
           position="popper"
           sideOffset={2}
-          className="z-[100] min-w-[var(--radix-select-trigger-width)] border border-[#888] bg-white shadow-[0_4px_12px_rgba(0,0,0,0.4)]"
+          className="gfw-select-content"
         >
           <Select.Viewport>
             {options.map((o) => (
@@ -89,7 +90,7 @@ export default function GfwSelect({
                 value={o.value}
                 // data-value 供冒烟测试按值精确定位（Radix 默认不输出 value 到 DOM）
                 data-value={o.value}
-                className="flex h-[20px] cursor-default items-center px-[6px] text-[12px] leading-[20px] text-[#222] outline-none data-[highlighted]:bg-[#b8c4dc] data-[selected]:bg-[#4a6fa5] data-[selected]:text-white"
+                className="gfw-select-item"
               >
                 <Select.ItemText>{o.label}</Select.ItemText>
               </Select.Item>

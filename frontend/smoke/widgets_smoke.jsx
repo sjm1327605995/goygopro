@@ -3,6 +3,7 @@
 // this is the "new path" the store-based UI consumes. The store itself is
 // wired to the real event bus via duel/store.js, so dispatching through
 // eventBus exercises the exact production wiring.
+import UiRoot from '../src/ui/UiRoot.tsx';
 import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { eventBus, WailsBridge } from '../src/wails_bridge.ts';
@@ -26,6 +27,7 @@ soundManager.muted = true; // VictoryOverlay plays sounds on duel:win
 
 const root = createRoot(document.getElementById('root'));
 root.render(
+  <UiRoot>
   <React.Fragment>
     <CardPreviewPanel />
     <PlayerPanel side="opponent" />
@@ -40,6 +42,7 @@ root.render(
     {/* 波 F: F1-F8 卡片列表浮窗（A/S/D 热键全局监听在下方 installHotkeys） */}
     <CardListOverlay />
   </React.Fragment>
+  </UiRoot>
 );
 
 // 波 F：全局快捷键（决斗屏挂载；冒烟里手动装/卸）

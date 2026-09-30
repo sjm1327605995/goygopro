@@ -4,6 +4,9 @@ import type { StageHandle } from './DuelStage.tsx';
 import { WailsBridge, eventBus } from '../wails_bridge.ts';
 import { duelStore } from '../duel/store.ts';
 import GfwSelect from './ui/GfwSelect.tsx';
+import UiButton from '../ui/UiButton.tsx';
+import { UiInput } from '../ui/UiInput.tsx';
+import DesignSpace from '../ui/DesignSpace.tsx';
 
 /**
  * Replay Theater: lists recorded .yrp duels, asks the Go backend to replay one
@@ -298,8 +301,9 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
   };
 
   return (
-    // 波 H/I：原版 wReplay 形态——bg_menu 背景上叠 580×420 窗口（game.cpp:831），
-    // 左录像列表 + 右信息面板/起始回合（game.cpp:834-845），DuelStage 作背景层。
+    // 原版 wReplay（game.cpp:831-845）：窗口 (220,100)-(800,520) 580×420，内部全绝对
+    // 定位（内容区 = 窗口相对 y-24 标题栏）；DuelStage 作背景层（不进 DesignSpace），
+    // 播放控制扩展件放在窗下方面板。
     <div
       id="replay-screen"
       className="screen active"
@@ -307,69 +311,74 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
     >
       <DuelStage onExit={onNavigate} showSurrender={false} interactive={false} compact onReady={handleStageReady} />
 
+      <DesignSpace>
       <div className="gfw-window gfw-replay">
         <div className="gfw-title">观看录像</div>
-        <div className="gfw-body" style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px', height: '392px', boxSizing: 'border-box' }}>
-          {/* 上半：左列表 + 右信息（lstReplayList + stReplayInfo/ebRepStartTurn） */}
-          <div style={{ flex: 1, display: 'flex', gap: '10px', minHeight: 0 }}>
-            <div id="replay-list" className="gfw-list" style={{ width: '340px', flexShrink: 0 }}>
-              {replays.length === 0 && (
-                <div className="gfw-list-item" style={{ color: '#8a8a8a' }}>（没有录像文件）</div>
-              )}
-              {replays.map((n) => (
-                <div
-                  key={n}
-                  className={`gfw-list-item${n === selected ? ' gfw-selected' : ''}`}
-                  onClick={() => selectReplay(n)}
-                >{n}</div>
-              ))}
-            </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
-              <div className="gfw-label" style={{ fontWeight: 'bold' }}>录像信息：</div>
-              <div
-                id="replay-info"
-                style={{ flex: 1, overflow: 'auto', whiteSpace: 'pre-wrap', fontSize: '12px', lineHeight: 1.5, background: '#ffffff', border: '1px solid #8a8a8a', borderLeftColor: '#3c3c44', borderTopColor: '#3c3c44', padding: '4px 6px', minHeight: 0, boxSizing: 'border-box' }}
-              >{selected && info ? infoText(info) : '（未选择录像）'}</div>
-              <div className="gfw-label">播放起始于回合：</div>
-              <input
-                id="replay-start-turn"
-                className="gfw-input"
-                type="number"
-                min={1}
-                style={{ width: '100px' }}
-                value={startTurn}
-                onChange={(e) => setStartTurn(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* 按钮行（原版右下：提取卡组 1369 / 载入录像 1348 / 删除 1361 / 重命名 1362 / 退出 1347） */}
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', position: 'relative', alignItems: 'center' }}>
-            {toast && (
-              <span
-                id="replay-toast"
-                style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', background: '#e2f0d9', border: '1px solid #4c7a3f', color: '#1e4620', fontSize: '12px', padding: '2px 10px' }}
-              >{toast}</span>
+        {/* 内容区 396px（420-24）：
+            lstReplayList (10,30)-(350,400) 340×370 / 录像信息 label (360,30) +
+            stReplayInfo (360,60)-(570,320) 210×260 / 播放起始 label (360,275) +
+            ebRepStartTurn (360,300) 100×20 / 提取卡组 (470,325) / 删除 (360,355) /
+            载入 (470,355) / 重命名 (360,385) / 退出 (470,385)，按钮均 100×25 */}
+        <div style={{ position: 'relative', height: '396px' }}>
+          <div id="replay-list" className="gfw-list" style={{ position: 'absolute', left: '10px', top: '6px', width: '340px', height: '370px' }}>
+            {replays.length === 0 && (
+              <div className="gfw-list-item" style={{ color: '#7b89ab' }}>（没有录像文件）</div>
             )}
-            <button id="replay-export-btn" className="gfw-btn btn" style={{ width: '100px' }} onClick={exportDeck} disabled={!selected}>提取卡组</button>
-            <button id="replay-load-btn" className="gfw-btn btn" style={{ width: '100px' }} onClick={loadReplay} disabled={!selected}>载入录像</button>
-            <button id="replay-delete-btn" className="gfw-btn btn" style={{ width: '100px' }} onClick={deleteReplay} disabled={!selected}>删除录像</button>
-            <button id="replay-rename-btn" className="gfw-btn btn" style={{ width: '100px' }} onClick={renameReplay} disabled={!selected}>重命名</button>
-            <button className="gfw-btn btn" style={{ width: '100px' }} onClick={() => { pause(); onNavigate('menu'); }}>退出</button>
+            {replays.map((n) => (
+              <div
+                key={n}
+                className={`gfw-list-item${n === selected ? ' gfw-selected' : ''}`}
+                onClick={() => selectReplay(n)}
+              >{n}</div>
+            ))}
           </div>
-
-          {truncated && (
-            <div style={{ fontSize: '11px', color: '#b35c00' }}>回放已截断：缺少卡牌脚本。</div>
+          <div className="gfw-label" style={{ position: 'absolute', left: '360px', top: '6px', fontWeight: 'bold' }}>录像信息：</div>
+          <div
+            id="replay-info"
+            style={{ position: 'absolute', left: '360px', top: '36px', width: '210px', height: '260px', overflow: 'auto', whiteSpace: 'pre-wrap', fontSize: '12px', lineHeight: 1.5, background: 'rgba(8, 12, 26, 0.85)', color: '#c9d6f2', border: '1px solid rgba(126, 156, 222, 0.35)', borderRadius: '4px', padding: '4px 6px', boxSizing: 'border-box' }}
+          >{selected && info ? infoText(info) : '（未选择录像）'}</div>
+          <div className="gfw-label" style={{ position: 'absolute', left: '360px', top: '251px' }}>播放起始于回合：</div>
+          <UiInput
+            id="replay-start-turn"
+            type="number"
+            min={1}
+            style={{ position: 'absolute', left: '360px', top: '276px', width: '100px', textAlign: 'center' }}
+            value={startTurn}
+            onChange={(e) => setStartTurn(e.target.value)}
+          />
+          {toast && (
+            <span
+              id="replay-toast"
+              style={{ position: 'absolute', left: '360px', top: '303px', background: '#e2f0d9', border: '1px solid #4c7a3f', color: '#1e4620', fontSize: '12px', padding: '2px 10px' }}
+            >{toast}</span>
           )}
+          {/* 原版右下按钮组：提取卡组 1369 / 删除 1361 / 载入 1348 / 重命名 1362 / 退出 1347 */}
+          <UiButton id="replay-export-btn" style={{ position: 'absolute', left: '470px', top: '301px', width: '100px' }} onClick={exportDeck} disabled={!selected}>提取卡组</UiButton>
+          <UiButton id="replay-delete-btn" style={{ position: 'absolute', left: '360px', top: '331px', width: '100px' }} onClick={deleteReplay} disabled={!selected}>删除录像</UiButton>
+          <UiButton id="replay-load-btn" style={{ position: 'absolute', left: '470px', top: '331px', width: '100px' }} onClick={loadReplay} disabled={!selected}>载入录像</UiButton>
+          <UiButton id="replay-rename-btn" style={{ position: 'absolute', left: '360px', top: '361px', width: '100px' }} onClick={renameReplay} disabled={!selected}>重命名</UiButton>
+          <UiButton style={{ position: 'absolute', left: '470px', top: '361px', width: '100px' }} onClick={() => { pause(); onNavigate('menu'); }}>退出</UiButton>
+          {truncated && (
+            <div style={{ position: 'absolute', left: '10px', top: '378px', fontSize: '11px', color: '#b35c00' }}>回放已截断：缺少卡牌脚本。</div>
+          )}
+        </div>
+      </div>
 
-          <div style={{ marginTop: 'auto' }}>
+      {/* 播放控制（扩展件；原版对应决斗中的 wReplayControl 浮窗 game.cpp:897-904。
+          进度条/倍速无原版对应物，集中放在录像窗正下方 (220,530)） */}
+      <div
+        id="replay-playback-panel"
+        className="gfw-window"
+        style={{ left: '220px', top: '530px', width: '580px', transform: 'none', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '6px', boxSizing: 'border-box' }}
+      >
+          <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px' }}>
               <span>进度</span>
               <span>{currentStep} / {events.length} 步</span>
             </div>
             <div
               id="replay-progress-track"
-              style={{ width: '100%', height: '8px', background: '#b8b5ae', border: '1px solid #8a8a8a', overflow: 'hidden', marginBottom: '12px', cursor: stageReady ? 'pointer' : 'default', boxSizing: 'border-box' }}
+              style={{ width: '100%', height: '8px', background: 'rgba(8, 12, 26, 0.85)', border: '1px solid rgba(126, 156, 222, 0.35)', borderRadius: '4px', overflow: 'hidden', cursor: stageReady ? 'pointer' : 'default', boxSizing: 'border-box' }}
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 seekToRatio((e.clientX - rect.left) / rect.width);
@@ -377,41 +386,41 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
             >
               <div style={{ width: `${progressPct}%`, height: '100%', background: '#4c5a74' }}></div>
             </div>
-
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <button className="gfw-btn btn" style={{ width: '48px' }} onClick={stepBack} disabled={!stageReady || currentStep === 0}>⏮</button>
-              <button
-                className="gfw-btn btn"
-                style={{ width: '96px' }}
-                onClick={togglePlay}
-                disabled={!stageReady || !events.length}
-              >
-                {isPlaying ? '⏸ 暂停' : '▶ 播放'}
-              </button>
-              <button className="gfw-btn btn" style={{ width: '48px' }} onClick={stepForward} disabled={!stageReady || currentStep >= events.length}>⏭</button>
-              {/* btnReplaySwap（game.cpp:901 → ReplayMode::SwapField）：交换双方视角 */}
-              <button
-                id="replay-swap-btn"
-                className="gfw-btn btn"
-                style={{ width: '96px' }}
-                title="交换双方视角（场地旋转 180°）"
-                onClick={() => duelStore.toggleViewSwap()}
-                disabled={!stageReady || !events.length}
-              >切换视角</button>
-              <GfwSelect
-                aria-label="回放速度"
-                width={90}
-                value={String(speed)}
-                onValueChange={(v) => changeSpeed(parseFloat(v))}
-                options={[
-                  { value: '0.5', label: '0.5x' }, { value: '1', label: '1.0x' },
-                  { value: '2', label: '2.0x' }, { value: '4', label: '4.0x' },
-                ]}
-              />
-            </div>
           </div>
-        </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <UiButton style={{ width: '48px' }} onClick={stepBack} disabled={!stageReady || currentStep === 0}>⏮</UiButton>
+            <UiButton
+             
+              style={{ width: '96px' }}
+              onClick={togglePlay}
+              disabled={!stageReady || !events.length}
+            >
+              {isPlaying ? '⏸ 暂停' : '▶ 播放'}
+            </UiButton>
+            <UiButton style={{ width: '48px' }} onClick={stepForward} disabled={!stageReady || currentStep >= events.length}>⏭</UiButton>
+            {/* btnReplaySwap（game.cpp:901 → ReplayMode::SwapField）：交换双方视角 */}
+            <UiButton
+              id="replay-swap-btn"
+             
+              style={{ width: '96px' }}
+              title="交换双方视角（场地旋转 180°）"
+              onClick={() => duelStore.toggleViewSwap()}
+              disabled={!stageReady || !events.length}
+            >切换视角</UiButton>
+            <GfwSelect
+              aria-label="回放速度"
+              width={90}
+              value={String(speed)}
+              onValueChange={(v) => changeSpeed(parseFloat(v))}
+              options={[
+                { value: '0.5', label: '0.5x' }, { value: '1', label: '1.0x' },
+                { value: '2', label: '2.0x' }, { value: '4', label: '4.0x' },
+              ]}
+            />
+          </div>
       </div>
+      </DesignSpace>
     </div>
   );
 }

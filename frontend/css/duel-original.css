@@ -45,7 +45,7 @@
 .preview-image {
   width: 177px;
   height: 254px;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .preview-image-empty {
