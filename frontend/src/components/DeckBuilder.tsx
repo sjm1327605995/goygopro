@@ -2,13 +2,17 @@ import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { WailsBridge } from '../wails_bridge.ts';
 import { settingsStore } from '../domain/settings.ts';
 import GfwSelect from './ui/GfwSelect.tsx';
+import UiButton from '../ui/UiButton.tsx';
+import { UiInput, UiCheckbox } from '../ui/UiInput.tsx';
+import DesignSpace from '../ui/DesignSpace.tsx';
 import DeckManageModal from './DeckManageModal.tsx';
 import {
   EXTRA_TYPES, TYPE_MONSTER, TYPE_SPELL, TYPE_TRAP,
   TYPE_NORMAL, TYPE_EFFECT, TYPE_FUSION, TYPE_RITUAL, TYPE_SYNCHRO, TYPE_XYZ,
-  TYPE_PENDULUM, TYPE_LINK, TYPE_QUICKPLAY, TYPE_CONTINUOUS, TYPE_EQUIP,
+  TYPE_PENDULUM, TYPE_LINK, TYPE_SPSUMMON, TYPE_QUICKPLAY, TYPE_CONTINUOUS, TYPE_EQUIP,
   TYPE_FIELD, TYPE_COUNTER, TYPE_TUNER, TYPE_FLIP, TYPE_SPIRIT, TYPE_UNION,
   TYPE_DUAL, TYPE_TOON,
+  AVAIL_OCG, AVAIL_TCG, AVAIL_SC, AVAIL_CUSTOM, AVAIL_OCGTCG,
   RACES, ATTRS,
 } from '../domain/constants.ts';
 
@@ -46,13 +50,47 @@ const LINK_MARKS: [number, string][] = [
   [0x1, '↙'], [0x2, '↓'], [0x4, '↘'],
 ];
 
+// 副种类（cbCardType2）选项表，按种类（cbCardType）联动，值 = 精确 type 掩码
+// （deck_con.cpp:913-970 COMBOBOX_MAINTYPE 的填表逻辑）。
+// 怪兽是子集语义 (type & mask) == mask；魔陷是精确相等 type == mask。
+const TYPE2_OPTIONS: Record<string, [number, string][]> = {
+  '1': [
+    [TYPE_MONSTER | TYPE_NORMAL, '通常'], [TYPE_MONSTER | TYPE_EFFECT, '效果'],
+    [TYPE_MONSTER | TYPE_FUSION, '融合'], [TYPE_MONSTER | TYPE_RITUAL, '仪式'],
+    [TYPE_MONSTER | TYPE_SYNCHRO, '同调'], [TYPE_MONSTER | TYPE_XYZ, '超量'],
+    [TYPE_MONSTER | TYPE_PENDULUM, '灵摆'], [TYPE_MONSTER | TYPE_LINK, '连接'],
+    [TYPE_MONSTER | TYPE_SPSUMMON, '特殊召唤'],
+    [TYPE_MONSTER | TYPE_NORMAL | TYPE_TUNER, '通常|调整'],
+    [TYPE_MONSTER | TYPE_NORMAL | TYPE_PENDULUM, '通常|灵摆'],
+    [TYPE_MONSTER | TYPE_SYNCHRO | TYPE_TUNER, '同调|调整'],
+    [TYPE_MONSTER | TYPE_TUNER, '调整'], [TYPE_MONSTER | TYPE_DUAL, '二重'],
+    [TYPE_MONSTER | TYPE_UNION, '同盟'], [TYPE_MONSTER | TYPE_SPIRIT, '灵魂'],
+    [TYPE_MONSTER | TYPE_FLIP, '反转'], [TYPE_MONSTER | TYPE_TOON, '卡通'],
+  ],
+  '2': [
+    [TYPE_SPELL, '通常'], [TYPE_SPELL | TYPE_QUICKPLAY, '速攻'],
+    [TYPE_SPELL | TYPE_CONTINUOUS, '永续'], [TYPE_SPELL | TYPE_RITUAL, '仪式'],
+    [TYPE_SPELL | TYPE_EQUIP, '装备'], [TYPE_SPELL | TYPE_FIELD, '场地'],
+  ],
+  '3': [
+    [TYPE_TRAP, '通常'], [TYPE_TRAP | TYPE_CONTINUOUS, '永续'],
+    [TYPE_TRAP | TYPE_COUNTER, '反击'],
+  ],
+};
+
+// 禁限下拉（cbLimit，deck_con.cpp:1391/1542-1553）：索引即 filter_lm
+const LIMIT_OPTIONS: string[] = [
+  '（无）', '禁止', '限制', '准限制', 'OCG', 'TCG', 'SC', '自定义', 'OCG&TCG',
+];
+
 // 卡图缩略格子（原版 deck editor 是纯图片网格）。拉一次卡图与卡名缓存。
 // lfLimit：禁限卡表档位（0 禁/1 限/2 准限，undefined = 无限制），画左上角
 // 角标（原版 DrawThumb 在缩略图左上叠 lim 贴图，drawing.cpp:1176-1198）。
-function CardChip({ code, count, lfLimit, onInspect, onRemove, onZoom, onContextMenu, onDragStart, onDrop }: {
+function CardChip({ code, count, lfLimit, style, onInspect, onRemove, onZoom, onContextMenu, onDragStart, onDrop }: {
   code: number;
   count?: number;
   lfLimit?: number;
+  style?: React.CSSProperties;
   onInspect?: (info: any) => void;
   onRemove?: () => void;
   onZoom?: (code: number) => void;
@@ -72,7 +110,7 @@ function CardChip({ code, count, lfLimit, onInspect, onRemove, onZoom, onContext
   return (
     <div
       className="select-card-item deck-card-chip"
-      style={{ cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
+      style={{ cursor: 'pointer', position: 'relative', overflow: 'hidden', ...style }}
       draggable={!!onDragStart}
       onDragStart={onDragStart}
       onDragOver={onDrop ? (e) => e.preventDefault() : undefined}
@@ -83,11 +121,12 @@ function CardChip({ code, count, lfLimit, onInspect, onRemove, onZoom, onContext
       onDoubleClick={() => onZoom && onZoom(code)}
       title={info ? info.name : String(code)}
     >
+      {/* 卡图只等比缩放（contain），不裁剪不拉升 */}
       {pic
         ? <img src={pic} alt={info ? info.name : String(code)} draggable={false}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
         : <img src="textures/unknown.jpg" alt={info ? info.name : String(code)} draggable={false}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />}
       {count && count > 1
         ? <span className="deck-count-badge">{`×${count}`}</span>
         : null}
@@ -177,7 +216,7 @@ function SearchResultChip({ card, lfLimit, onInspect, onAdd, onAddSide, onZoom }
     >
       <div className="deck-result-thumb">
         <img src={pic || 'textures/unknown.jpg'} alt={card.name} draggable={false}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
       </div>
       <div className="deck-result-text">
         <div className="deck-result-name">{card.name}</div>
@@ -220,7 +259,7 @@ function ZoomOverlay({ code, onClose }: { code: number; onClose: () => void }) {
     >
       {pic
         ? <img src={pic} alt={String(code)} draggable={false}
-            style={{ width: 370, height: 540, objectFit: 'cover', borderRadius: 8, border: '2px solid var(--primary)' }} />
+            style={{ width: 370, height: 540, objectFit: 'contain', borderRadius: 8, border: '2px solid var(--primary)' }} />
         : <div style={{ color: '#38bdf8', fontSize: 14 }}>加载卡图……</div>}
     </div>
   );
@@ -247,7 +286,13 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   const [lfContent, setLfContent] = useState<Record<number, number>>({});
   const [lfName, setLfName] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
+  // 种类（cbCardType，deck_con.cpp:893）：0=（无） 1=怪兽 2=魔法 3=陷阱；
+  // 副种类（cbCardType2）选项按种类联动、值是精确 type 掩码
   const [typeFilter, setTypeFilter] = useState('0');
+  const [type2Filter, setType2Filter] = useState('0');
+  // 禁限（cbLimit，deck_con.cpp:1391）：0=（无） 1=禁止 2=限制 3=准限制
+  // 4=OCG 5=TCG 6=SC 7=自定义 8=OCG&TCG
+  const [limitFilter, setLimitFilter] = useState('0');
   const [raceFilter, setRaceFilter] = useState('0');
   const [attrFilter, setAttrFilter] = useState('0');
   // gframe 风格运算符输入（parse_filter）：`=3000`/裸数字=相等、`>=`/`>`/`<=`/`<`、
@@ -256,10 +301,30 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   const [atkFilter, setAtkFilter] = useState('');
   const [defFilter, setDefFilter] = useState('');
   const [scaleFilter, setScaleFilter] = useState('');
-  // 效果类型过滤（wCategories 32 复选框）与链接箭头过滤（wLinkMarks）
+  // 效果类型过滤（wCategories 32 复选框）与连接标记过滤（wLinkMarks 弹窗：
+  // 箭头先改挂起态，确定键提交——原版 BUTTON_MARKERS_OK 语义）。
+  // 挂起态同时放 ref：合成事件连续点击时 React 批处理会让「确定」闭包
+  // 读到旧 state，原版读的是按钮实时按下态，ref 才是等效实现
   const [effectBits, setEffectBits] = useState<Set<number>>(new Set());
   const [showEffectPanel, setShowEffectPanel] = useState(false);
   const [linkMarks, setLinkMarks] = useState(0);
+  const [showLinkMarks, setShowLinkMarks] = useState(false);
+  const [linkMarksPending, setLinkMarksPending] = useState(0);
+  const linkMarksPendingRef = useRef(0);
+  const togglePendingMark = (bit: number): void => {
+    linkMarksPendingRef.current ^= bit;
+    setLinkMarksPending(linkMarksPendingRef.current);
+  };
+  const toggleLinkMarksPopup = (): void => {
+    if (showLinkMarks) { setShowLinkMarks(false); return; }
+    linkMarksPendingRef.current = linkMarks;
+    setLinkMarksPending(linkMarks);
+    setShowLinkMarks(true);
+  };
+  const commitLinkMarks = (): void => {
+    setLinkMarks(linkMarksPendingRef.current);
+    setShowLinkMarks(false);
+  };
   const [addTarget, setAddTarget] = useState<'main' | 'side'>('main');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [inspected, setInspected] = useState<any>(null);
@@ -431,14 +496,58 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
     }
   };
 
+  // btnClearFilter（deck_con.cpp ClearSearch：种类/副种类/禁限/种族/属性/
+  // 运算符输入/效果/箭头全部复位，弹窗一并收起）
   const clearFilters = (): void => {
     setSearchKeyword('');
     setTypeFilter('0');
+    setType2Filter('0');
+    setLimitFilter('0');
     setRaceFilter('0');
     setAttrFilter('0');
     setStarFilter(''); setAtkFilter(''); setDefFilter(''); setScaleFilter('');
     setEffectBits(new Set());
+    setShowEffectPanel(false);
     setLinkMarks(0);
+    setLinkMarksPending(0);
+    linkMarksPendingRef.current = 0;
+    setShowLinkMarks(false);
+  };
+
+  // 种类切换（COMBOBOX_MAINTYPE deck_con.cpp:893-984）：副种类归零，
+  // 种族/属性/攻守/星级/刻度一并清空；种类=（无）时这些控件禁用
+  const onType1Change = (v: string): void => {
+    setTypeFilter(v);
+    setType2Filter('0');
+    setRaceFilter('0');
+    setAttrFilter('0');
+    setStarFilter(''); setAtkFilter(''); setDefFilter(''); setScaleFilter('');
+  };
+
+  // 副种类切换（COMBOBOX_SECONDTYPE deck_con.cpp:994-1003）：
+  // 怪兽选「连接」时守备输入禁用并清空（连接怪兽没有守备力）
+  const onType2Change = (v: string): void => {
+    setType2Filter(v);
+    if (parseInt(v, 10) === (TYPE_MONSTER | TYPE_LINK)) setDefFilter('');
+  };
+
+  const isMonsterKind = typeFilter === '1';
+  const isLinkType2 = isMonsterKind && parseInt(type2Filter, 10) === (TYPE_MONSTER | TYPE_LINK);
+  // 种类=（无）时副种类/种族/属性/数值输入全部禁用；魔陷时仅副种类可用
+  const statsDisabled = typeFilter !== '1';
+  const type2Disabled = typeFilter === '0';
+
+  // 禁限搜索过滤（deck_con.cpp:1542-1553 filter_lm）：1-3 查当前禁限卡表
+  // （键 = cdb 行卡码，与原版 content.count(code) 一致），4-8 查 ot 可用范围
+  const applyLimitFilter = (list: any[]): any[] => {
+    const lm = parseInt(limitFilter, 10);
+    if (!lm) return list;
+    if (lm <= 3) return list.filter((c) => lfContent[c.code] === lm - 1);
+    if (lm === 4) return list.filter((c) => (c.ot & AVAIL_OCG) !== 0);
+    if (lm === 5) return list.filter((c) => (c.ot & AVAIL_TCG) !== 0);
+    if (lm === 6) return list.filter((c) => (c.ot & AVAIL_SC) !== 0);
+    if (lm === 7) return list.filter((c) => (c.ot & AVAIL_CUSTOM) !== 0);
+    return list.filter((c) => (c.ot & AVAIL_OCGTCG) === AVAIL_OCGTCG);
   };
 
   // 多关键词分隔符来自设置 search_multiple_keywords（0=整串 / 1=空格 / 2=加号，
@@ -446,21 +555,36 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   // 位是互不重叠的 2 的幂，用加法合并避免 1<<31 的 int32 溢出
   const effectMask = [...effectBits].reduce((acc, b) => acc + b, 0);
   const performSearch = async (): Promise<void> => {
-    const results = await WailsBridge.searchCards({
+    // 种类/副种类 → type 参数（deck_con.cpp:1486-1530 的语义）：
+    // 怪兽 = 子集掩码（(type & mask) == mask，Go 侧现有语义）；
+    // 魔陷选了副种类 = 精确相等（type == mask，前端后置过滤）。
+    const t1 = parseInt(typeFilter, 10);
+    const t2 = parseInt(type2Filter, 10);
+    let type = 0;
+    let typeExact = 0;
+    if (t1 === 1) type = t2 || TYPE_MONSTER;
+    else if (t1 === 2) { if (t2) typeExact = t2; else type = TYPE_SPELL; }
+    else if (t1 === 3) { if (t2) typeExact = t2; else type = TYPE_TRAP; }
+    // 禁限过滤在前端后置（lfContent 已同步到本机），此时放宽服务端
+    // 条数上限，避免先截断后过滤导致漏卡
+    const lmActive = limitFilter !== '0';
+    let results = await WailsBridge.searchCards({
       keyword: searchKeyword.trim(),
       multiKeywords: Number(settingsStore.get('search_multiple_keywords')) || 0,
-      type: parseInt(typeFilter, 10) || 0,
-      race: parseInt(raceFilter, 10) || 0,
-      attribute: parseInt(attrFilter, 10) || 0,
-      levelFilter: starFilter.trim(),
-      atkFilter: atkFilter.trim(),
-      defFilter: defFilter.trim(),
-      scaleFilter: scaleFilter.trim(),
+      type,
+      race: isMonsterKind ? parseInt(raceFilter, 10) || 0 : 0,
+      attribute: isMonsterKind ? parseInt(attrFilter, 10) || 0 : 0,
+      levelFilter: isMonsterKind ? starFilter.trim() : '',
+      atkFilter: isMonsterKind ? atkFilter.trim() : '',
+      defFilter: isMonsterKind && !isLinkType2 ? defFilter.trim() : '',
+      scaleFilter: isMonsterKind ? scaleFilter.trim() : '',
       effect: effectMask,
       linkMarks,
-      limit: 60,
+      limit: lmActive || typeExact ? 500 : 60,
     });
-    setSearchResults(results || []);
+    results = results || [];
+    if (typeExact) results = results.filter((c: any) => c.type === typeExact);
+    setSearchResults(applyLimitFilter(results));
   };
 
   // auto_search_limit >= 0：输入满 N 字自动搜索（deck_con.cpp InstantSearch，
@@ -665,75 +789,102 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
     setEffectBits(next);
   };
 
-  // 箭头按钮切换（wLinkMarks → BUTTON_MARKERS_OK 汇位掩码）
-  const toggleLinkMark = (bit: number): void => {
-    setLinkMarks((m) => m ^ bit);
+  // 卡组网格几何 = 原版 DrawDeckBd（drawing.cpp:1228-1295）设计像素：
+  // 缩略格 44×64（CARD_THUMB game.h:26-27），行距 dy=68，列距 dx=436/9（≤40 张
+  // 主卡组 10 列）；主卡组 >40 张后每多 4 张多 1 列（lx=(n-41)/4+11）、
+  // dx=436/(lx-1) 压缩层叠；额外/副单行，>10 张时 dx=436/(n-1) 同法压缩。
+  const DECK_DX_SPAN = 436;
+  const mainCols = (n: number): number => (n <= 40 ? 10 : Math.floor((n - 41) / 4) + 11);
+
+  const renderSection = (codes: number[], section: DeckSection) => {
+    // 每行内：首张无偏移，后续每张 marginLeft = dx - 44（负数即层叠在左卡之上）。
+    // idx = 全局索引（增删/拖拽用），col = 行内索引（层叠偏移用）
+    const chipAt = (code: number, idx: number, col: number, step: number) => (
+      <CardChip
+        key={`${code}-${idx}`}
+        code={code}
+        count={counts[section][(WailsBridge._cardCache.get(code)?.alias) || code]}
+        lfLimit={limitOf(groupOf(code))}
+        style={{ marginLeft: col > 0 ? step - 44 : 0 }}
+        onInspect={setInspected}
+        onRemove={() => removeCardFromDeck(section, idx)}
+        onZoom={setZoomCode}
+        onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, section, index: idx }); }}
+        onDragStart={(e) => {
+          draggedRef.current = { section, index: idx };
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', String(code));
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          const d = draggedRef.current;
+          if (d) moveCard(d.section, d.index, section, idx);
+        }}
+      />
+    );
+
+    // 主卡组按 lx 列折行；额外/副卡组单行
+    const lx = section === 'main' ? mainCols(codes.length) : Math.max(codes.length, 1);
+    const step = section === 'main'
+      ? (codes.length <= 40 ? DECK_DX_SPAN / 9 : DECK_DX_SPAN / (lx - 1))
+      : (codes.length <= 10 ? DECK_DX_SPAN / 9 : DECK_DX_SPAN / (codes.length - 1));
+    const rows: number[][] = [];
+    for (let i = 0; i < codes.length; i += lx) rows.push(codes.slice(i, i + lx));
+
+    return (
+      <div
+        className={`deck-grid ds-grid-${section}`}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          const d = draggedRef.current;
+          if (d) moveCard(d.section, d.index, section, codes.length);
+        }}
+      >
+        {rows.map((row, r) => (
+          <div className="deck-grid-row" key={r}>
+            {row.map((code, i) => chipAt(code, r * lx + i, i, step))}
+          </div>
+        ))}
+      </div>
+    );
   };
 
-  const renderSection = (codes: number[], section: DeckSection) => (
-    <div
-      className="deck-grid"
-      style={{ minHeight: section === 'main' ? '220px' : '80px' }}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
-        e.preventDefault();
-        const d = draggedRef.current;
-        if (d) moveCard(d.section, d.index, section, codes.length);
-      }}
-    >
-      {codes.map((code, i) => (
-        <CardChip
-          key={`${code}-${i}`}
-          code={code}
-          count={counts[section][(WailsBridge._cardCache.get(code)?.alias) || code]}
-          lfLimit={limitOf(groupOf(code))}
-          onInspect={setInspected}
-          onRemove={() => removeCardFromDeck(section, i)}
-          onZoom={setZoomCode}
-          onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, section, index: i }); }}
-          onDragStart={(e) => {
-            draggedRef.current = { section, index: i };
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', String(code));
-          }}
-          onDrop={(e) => {
-            e.preventDefault();
-            const d = draggedRef.current;
-            if (d) moveCard(d.section, d.index, section, i);
-          }}
-        />
-      ))}
-    </div>
-  );
-
   // gframe 数值过滤是单输入框 + 运算符前缀（ebAttack/ebDefense/ebStar/ebScale）
-  const statInput = (id: string, placeholder: string, value: string, setter: (v: string) => void) => (
-    <input
+  const statInput = (id: string, placeholder: string, value: string, setter: (v: string) => void, disabled = false) => (
+    <UiInput
       id={id}
-      className="form-input deck-filter-num"
+      className="deck-filter-num"
       type="text"
       placeholder={placeholder}
       title="支持运算符：3000 / =3000 / >=2500 / <1500 / ?（占位卡）"
       value={value}
+      disabled={disabled}
       onChange={(e) => setter(e.target.value)}
     />
   );
 
   return (
     <div id="deck-screen" className="screen active">
-      {/* 左侧固定卡图预览区（原版 wCardImg + wInfos，game.cpp:335/356：
-          卡图 + Card info/Log 页签 + 白底信息文本） */}
+      {/* 原版 1024×640 设计坐标系（game.cpp Resize 非均匀拉伸语义）：
+          控件按 game.cpp / drawing.cpp 的设计像素坐标绝对落位 */}
+      <DesignSpace>
+      {/* 左列：wCardImg 框 (1,1)-(198,273)（game.cpp:335），卡图在内 (10,9)-(187,263)；
+          wInfos 页签信息 (1,275)-(301,639)（game.cpp:356） */}
       <div className="card-inspector">
+        <div className="inspector-pic-frame">
         <div className="inspector-pic-box">
           {inspectedPic
             ? <img id="deck-inspector-pic" src={inspectedPic} alt={inspected.name} draggable={false}
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
             : <div style={{
                 width: '100%', height: '100%', background: '#0f172a',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: '11px', color: '#38bdf8',
               }}>{inspected ? '卡图加载中……' : '卡牌详情'}</div>}
         </div>
+        </div>
+        <div className="inspector-infos">
         <div className="inspector-tabs" role="tablist">
           <button
             role="tab"
@@ -785,27 +936,33 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
           )}
         </div>
         )}
+        </div>
       </div>
 
-      {/* 右侧工作区 = 顶部横条（wDeckEdit 管理 + wFilter 过滤）+ 主体（左卡组/右结果） */}
-      <div className="deck-workspace">
-        <div className="deck-toolbar">
-          {/* wDeckEdit（game.cpp:656-718）：分类/卡组下拉 + 保存/另存为/删除 + 打乱/排序/清空 */}
-          <div className="deck-header">
-            <h2>卡组构筑{isModified ? ' *' : ''}</h2>
-            <span id="deck-lflist-name" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-              禁限卡表：{lfName || 'N/A'}
-            </span>
+      {/* btnLeaveGame（game.cpp:949）：(205,5)-(295,80) 竖长退出按钮 */}
+      <UiButton className="ds-leave-edit"
+        onClick={() => { if (!discardGuard()) onNavigate('menu'); }}>退出编辑</UiButton>
+      {/* 起手测试（扩展功能）：置 btnLeaveGame 下方空区 */}
+      <UiButton variant="gold" className="ds-test-hand" onClick={simulateSampleHand}>测试起手 5 张</UiButton>
+
+      {/* wDeckEdit (309,5)-(605,130)（game.cpp:656-718）。内部按原版排布：
+          左列 label(70) + 下拉/输入(140)，右列竖排按钮(65)：管理/保存/另存为/删除；
+          底行 打乱/排序/清空 50 宽三连。标题行仅作冒烟契约（h2 带 * = 未保存），
+          视觉隐藏——原版 wDeckEdit 无标题栏 */}
+      <div className="deck-header">
+            <div className="deck-header-title">
+              <h2>卡组构筑{isModified ? ' *' : ''}</h2>
+              <span id="deck-lflist-name">
+                禁限卡表：{lfName || 'N/A'}
+              </span>
+            </div>
             <div className="deck-header-row">
-              <label className="gfw-label">卡组分类</label>
-              {/* 分类下拉（gframe cbDBCategory：未分类卡组 + ./deck/ 子目录）
-                  与当前分类下的卡组下拉；名字含 '/' 时只显示最后一段 */}
-              {/* 分类下拉（gframe cbDBCategory：未分类卡组 + ./deck/ 子目录）
-                  与当前分类下的卡组下拉；名字含 '/' 时只显示最后一段。
+              <label className="gfw-label dh-label">卡组分类</label>
+              {/* 分类下拉（gframe cbDBCategory：未分类卡组 + ./deck/ 子目录）。
                   Radix Item 不允许空串 value：未分类 '' 用哨兵 '__root__' 表示 */}
               <GfwSelect
                 id="deck-category-select"
-                width={130}
+                width={140}
                 value={category || '__root__'}
                 onValueChange={(v) => {
                   const cat = v === '__root__' ? '' : v;
@@ -816,199 +973,244 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
                   ...categories.map((c) => ({ value: c, label: c })),
                 ]}
               />
-              <label className="gfw-label">卡组</label>
+              {/* btnManageDeck (225,5)-(290,30) */}
+              <UiButton id="deck-manage-btn" className="dh-right" onClick={() => setShowManage(true)}>卡组管理</UiButton>
+            </div>
+            <div className="deck-header-row">
+              <label className="gfw-label dh-label">卡组</label>
               <GfwSelect
                 id="deck-select"
-                width={180}
+                width={140}
                 value={decksInCategory.includes(loadedDeck) ? loadedDeck : ''}
                 onValueChange={(v) => { if (v && !discardGuard()) loadDeck(v); }}
                 options={decksInCategory.map((n) => ({ value: n, label: n.split('/').pop() || n }))}
               />
+              {/* btnSaveDeck (225,35)-(290,60) */}
+              <UiButton className="dh-right" onClick={saveDeckOverwrite}>保存</UiButton>
             </div>
             <div className="deck-header-row">
-              <label className="gfw-label">卡组名</label>
-              <input className="form-input" style={{ width: '180px' }} value={deckName} onChange={(e) => setDeckName(e.target.value)} />
-              <button className="btn btn-primary" onClick={saveDeckOverwrite}>保存</button>
-              <button className="btn btn-secondary" onClick={saveDeck}>另存为</button>
-              <button className="btn btn-secondary" onClick={() => { if (!discardGuard()) newDeck(); }}>新建卡组</button>
-              <button className="btn btn-danger" onClick={deleteDeck}>删除</button>
+              {/* ebDeckname (80,65)-(220,90)：原版无 label，缩进对齐下拉列 */}
+              <span className="dh-spacer" />
+              <UiInput style={{ width: '140px' }} placeholder="卡组名" title="卡组名"
+                value={deckName} onChange={(e) => setDeckName(e.target.value)} />
+              {/* btnSaveDeckAs (225,65)-(290,90) */}
+              <UiButton className="dh-right" onClick={saveDeck}>另存为</UiButton>
             </div>
             <div className="deck-header-row">
-              {/* 编辑器三键（deck_con.cpp:172-191 BUTTON_CLEAR/SORT/SHUFFLE_DECK） */}
-              <button id="deck-shuffle-btn" className="btn btn-secondary" onClick={shuffleDeck}>打乱</button>
-              <button id="deck-sort-btn" className="btn btn-secondary" onClick={sortDeck}>排序</button>
-              <button id="deck-clear-btn" className="btn btn-secondary" onClick={clearDeck}>清空</button>
-              <button className="btn btn-gold" onClick={simulateSampleHand}>测试起手 5 张</button>
-              {/* 卡组码导入导出 + wDeckManage 管理窗口入口 */}
-              <button id="deck-export-code-btn" className="btn btn-secondary" onClick={exportDeckCode}>导出卡组码</button>
-              <button id="deck-import-code-btn" className="btn btn-secondary" onClick={() => { setImportText(''); setShowImport(true); }}>导入卡组码</button>
-              <button id="deck-manage-btn" className="btn btn-secondary" onClick={() => setShowManage(true)}>卡组管理</button>
-              <button className="btn btn-secondary" onClick={() => { if (!discardGuard()) onNavigate('menu'); }}>退出编辑</button>
+              {/* 编辑器三键 (5/60/115,99)×50（deck_con.cpp:172-191） */}
+              <UiButton id="deck-shuffle-btn" className="dh-trio" onClick={shuffleDeck}>打乱</UiButton>
+              <UiButton id="deck-sort-btn" className="dh-trio" onClick={sortDeck}>排序</UiButton>
+              <UiButton id="deck-clear-btn" className="dh-trio" onClick={clearDeck}>清空</UiButton>
+              {/* btnDeleteDeck (225,95)-(290,120) */}
+              <UiButton variant="danger" className="dh-right" onClick={deleteDeck}>删除</UiButton>
+            </div>
+            <div className="deck-header-row">
+              {/* 扩展件（原版在 wDeckManage 内：btnNewDeck/btnExport/btnImport） */}
+              <UiButton onClick={() => { if (!discardGuard()) newDeck(); }}>新建卡组</UiButton>
+              <UiButton id="deck-export-code-btn" onClick={exportDeckCode}>导出卡组码</UiButton>
+              <UiButton id="deck-import-code-btn" onClick={() => { setImportText(''); setShowImport(true); }}>导入卡组码</UiButton>
             </div>
           </div>
 
-          {/* wFilter（game.cpp:740-795）：全部过滤控件 + 开始搜索/清空 */}
+          {/* wFilter（game.cpp:740-813）内部 5 行网格：
+              R1 种类/副种类/禁限，R2 属性/攻击，R3 种族/守备，R4 星数/刻度/卡名，
+              R5 连接标记/清空/开始搜索；效果过滤按钮跨 R2-R3 右列 */}
           <div className="deck-search-panel">
-            <div className="deck-filter-row">
-              <input
+            <span className="gfw-label fw-l-type">种类</span>
+            <div className="fw-type1">
+              <GfwSelect
+                id="deck-filter-type1"
+                aria-label="卡片种类过滤"
+                value={typeFilter}
+                onValueChange={onType1Change}
+                options={[
+                  { value: '0', label: '（无）' }, { value: '1', label: '怪兽' },
+                  { value: '2', label: '魔法' }, { value: '3', label: '陷阱' },
+                ]}
+              />
+            </div>
+            <div className="fw-type2">
+              <GfwSelect
+                id="deck-filter-type2"
+                aria-label="副种类过滤"
+                disabled={type2Disabled}
+                value={type2Filter}
+                onValueChange={onType2Change}
+                options={[
+                  { value: '0', label: '（无）' },
+                  ...(TYPE2_OPTIONS[typeFilter] || []).map(([mask, label]) => ({ value: String(mask), label })),
+                ]}
+              />
+            </div>
+            <span className="gfw-label fw-l-limit">禁限</span>
+            <div className="fw-limit">
+              <GfwSelect
+                id="deck-filter-limit"
+                aria-label="禁限过滤"
+                value={limitFilter}
+                onValueChange={setLimitFilter}
+                options={LIMIT_OPTIONS.map((label, i) => ({ value: String(i), label }))}
+              />
+            </div>
+            <span className="gfw-label fw-l-attr">属性</span>
+            <div className="fw-attr">
+              <GfwSelect
+                id="deck-filter-attr"
+                aria-label="属性过滤"
+                disabled={statsDisabled}
+                value={attrFilter}
+                onValueChange={setAttrFilter}
+                options={[{ value: '0', label: '（无）' }, ...ATTRS.map(([v, name]) => ({ value: String(v), label: String(name) }))]}
+              />
+            </div>
+            <span className="gfw-label fw-l-atk">攻击</span>
+            <div className="fw-atk">{statInput('deck-filter-atk', '', atkFilter, setAtkFilter, statsDisabled)}</div>
+            {/* 效果类型过滤（wCategories 32 复选框浮窗，game.cpp:796 (600,55)-(1000,300)） */}
+            <UiButton
+              id="deck-filter-effect-btn"
+              className="fw-effect"
+              onClick={() => setShowEffectPanel((v) => !v)}
+            >
+              效果{effectBits.size > 0 ? `（${effectBits.size}）` : ''}
+            </UiButton>
+            <span className="gfw-label fw-l-race">种族</span>
+            <div className="fw-race">
+              <GfwSelect
+                id="deck-filter-race"
+                aria-label="种族过滤"
+                disabled={statsDisabled}
+                value={raceFilter}
+                onValueChange={setRaceFilter}
+                options={[{ value: '0', label: '（无）' }, ...RACES.map(([v, name]) => ({ value: String(v), label: String(name) }))]}
+              />
+            </div>
+            <span className="gfw-label fw-l-def">守备</span>
+            <div className="fw-def">{statInput('deck-filter-def', '', defFilter, setDefFilter, statsDisabled || isLinkType2)}</div>
+            <span className="gfw-label fw-l-star">星数</span>
+            <div className="fw-starscale">
+              {statInput('deck-filter-star', '', starFilter, setStarFilter, statsDisabled)}
+              <span className="gfw-label">刻度</span>
+              {statInput('deck-filter-scale', '', scaleFilter, setScaleFilter, statsDisabled)}
+            </div>
+            <span className="gfw-label fw-l-keyword">卡名</span>
+            <div className="fw-keyword">
+              <UiInput
                 id="deck-search-input"
-                className="form-input"
                 type="text"
                 placeholder="名称/效果/编号；$卡名 @系列名"
                 value={searchKeyword}
                 onChange={(e) => setSearchKeyword(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') performSearch(); }}
               />
-              <GfwSelect
-                aria-label="卡片种类过滤"
-                value={typeFilter}
-                onValueChange={setTypeFilter}
-                options={[
-                  { value: '0', label: '（无）' }, { value: '1', label: '怪兽' },
-                  { value: '2', label: '魔法' }, { value: '4', label: '陷阱' },
-                  { value: '32', label: '效果怪兽' }, { value: '64', label: '融合' },
-                  { value: '128', label: '仪式' }, { value: '8192', label: '同调' },
-                  { value: '8388608', label: '超量' }, { value: '16777216', label: '灵摆' },
-                  { value: '4194304', label: '连接' },
-                ]}
-              />
-              <GfwSelect
-                id="deck-filter-race"
-                aria-label="种族过滤"
-                value={raceFilter}
-                onValueChange={setRaceFilter}
-                options={[{ value: '0', label: '（无）' }, ...RACES.map(([v, name]) => ({ value: String(v), label: String(name) }))]}
-              />
-              <GfwSelect
-                id="deck-filter-attr"
-                aria-label="属性过滤"
-                value={attrFilter}
-                onValueChange={setAttrFilter}
-                options={[{ value: '0', label: '（无）' }, ...ATTRS.map(([v, name]) => ({ value: String(v), label: String(name) }))]}
-              />
             </div>
-            <div className="deck-filter-row">
-              {statInput('deck-filter-star', '等级', starFilter, setStarFilter)}
-              {statInput('deck-filter-scale', '刻度', scaleFilter, setScaleFilter)}
-              {statInput('deck-filter-atk', '攻', atkFilter, setAtkFilter)}
-              {statInput('deck-filter-def', '守', defFilter, setDefFilter)}
-              {/* 效果类型过滤（wCategories 32 复选框） */}
-              <button
-                id="deck-filter-effect-btn"
-                className="btn btn-secondary"
-                onClick={() => setShowEffectPanel((v) => !v)}
+            {/* btnMarksFilter（game.cpp:813）：弹 wLinkMarks；有掩码时呈按下态 */}
+            <UiButton
+              id="deck-marks-filter-btn"
+              className="fw-marks"
+              variant={linkMarks > 0 ? 'gold' : 'default'}
+              onClick={toggleLinkMarksPopup}
+            >
+              连接标记{linkMarks > 0 ? `（${linkMarks}）` : ''}
+            </UiButton>
+            {/* separate_clear_button（game.cpp:792-794）：关闭时开始搜索占满整行 */}
+            {!!settingsSnap.separate_clear_button && (
+              <UiButton id="deck-filter-clear" className="fw-clear" onClick={clearFilters}>清空</UiButton>
+            )}
+            <UiButton
+              className={settingsSnap.separate_clear_button ? 'fw-search' : 'fw-search-wide'}
+              onClick={performSearch}
+            >搜索</UiButton>
+          </div>
+
+          {/* wCategories 效果复选浮窗（(600,55)-(1000,300)，32 复选框） */}
+          {showEffectPanel ? (
+            <div id="deck-effect-panel" className="ds-effect-popup">
+              {EFFECT_CATEGORIES.map(([bit, label]) => (
+                <label key={bit} style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
+                  <UiCheckbox checked={effectBits.has(bit)} onChange={() => toggleEffectBit(bit)} />
+                  {label}
+                </label>
+              ))}
+              <UiButton
+                style={{ gridColumn: '1 / -1', marginTop: '4px' }}
+                onClick={() => setShowEffectPanel(false)}
               >
-                效果过滤{effectBits.size > 0 ? `（${effectBits.size}）` : ''}
-              </button>
-              <button className="btn btn-primary" onClick={performSearch}>搜索</button>
-              {/* separate_clear_button（game.cpp:792-794）：关闭时不显示独立的
-                  清空按钮（btnClearFilter），过滤条件仍需逐项手改 */}
-              {!!settingsSnap.separate_clear_button && (
-                <button id="deck-filter-clear" className="btn btn-secondary" onClick={clearFilters}>清空</button>
-              )}
+                确定
+              </UiButton>
             </div>
-            {showEffectPanel ? (
-              <div id="deck-effect-panel" style={{
-                border: '1px solid var(--primary)', borderRadius: 6, padding: '6px',
-                marginTop: '4px', maxHeight: '180px', overflowY: 'auto',
-                display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '2px', fontSize: '11px',
-              }}>
-                {EFFECT_CATEGORIES.map(([bit, label]) => (
-                  <label key={bit} style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={effectBits.has(bit)} onChange={() => toggleEffectBit(bit)} />
-                    {label}
-                  </label>
-                ))}
-                <button
-                  className="btn btn-primary"
-                  style={{ gridColumn: '1 / -1', marginTop: '4px' }}
-                  onClick={() => setShowEffectPanel(false)}
-                >
-                  确定
-                </button>
-              </div>
-            ) : null}
-            {/* 链接箭头（wLinkMarks） */}
-            <div id="deck-linkmarks-panel" className="deck-linkmarks">
-              <div className="deck-linkmarks-label">
-                连接标记{linkMarks > 0 ? `（掩码 ${linkMarks}）` : ''}
-              </div>
-              <div className="deck-linkmarks-grid">
-                {LINK_MARKS.map(([bit, arrow], i) => (
-                  <React.Fragment key={bit}>
-                    {/* 3x3 网格中央留空（原版中心是确定按钮，我们即时生效无需它） */}
-                    {i === 4 ? <span /> : null}
-                    <button
-                      className={`btn ${((linkMarks & bit) !== 0) ? 'btn-gold' : 'btn-secondary'}`}
-                      style={{ width: 30, height: 24, padding: 0, fontSize: 12 }}
-                      title="按住的箭头方向都要命中（子集语义）"
-                      onClick={() => toggleLinkMark(bit)}
-                    >
-                      {arrow}
-                    </button>
-                  </React.Fragment>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+          ) : null}
 
-        <div className="deck-workspace-body">
-          {/* 主体·左：主/额外/副 三个卡组区（DrawDeckBd drawing.cpp:1228-1295） */}
-          <div className="deck-zones-container">
-            <div>
-              <div className="deck-section-title">
-                <span>主卡组：</span>
-                <span className="badge badge-attr">{currentDeck.main.length} / 60</span>
-              </div>
-              {renderSection(currentDeck.main, 'main')}
-            </div>
-            <div>
-              <div className="deck-section-title">
-                <span>额外卡组：</span>
-                <span className="badge badge-type">{currentDeck.extra.length} / 15</span>
-              </div>
-              {renderSection(currentDeck.extra, 'extra')}
-            </div>
-            <div>
-              <div className="deck-section-title">
-                <span>副卡组：</span>
-                <span className="badge badge-attr">{currentDeck.side.length} / 15</span>
-              </div>
-              {renderSection(currentDeck.side, 'side')}
-            </div>
-          </div>
-
-          {/* 主体·右：搜索结果纵向列表（DrawDeckBd drawing.cpp:1296-1360） */}
-          <div className="deck-results">
-            <div id="deck-result-count" style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
-              搜索结果（{sortedResults.length} 张，点击添加，右键加副卡组，双击看大图）：
-            </div>
-            <div className="mb-1.5 flex items-center gap-2">
-              <label className="text-[12px] text-[var(--text-muted)]">点击加入：</label>
-              <GfwSelect
-                id="deck-add-target"
-                value={addTarget}
-                onValueChange={(v) => setAddTarget(v as 'main' | 'side')}
-                options={[{ value: 'main', label: '主卡组' }, { value: 'side', label: '副卡组' }]}
-              />
-            </div>
-            <div className="search-results-grid">
-              {sortedResults.map((card, i) => (
-                <SearchResultChip
-                  key={`${card.code}-${i}`}
-                  card={card}
-                  lfLimit={limitOf(card.alias || groupOf(card.code))}
-                  onInspect={setInspected}
-                  onAdd={() => addCardToDeck(card)}
-                  onAddSide={() => addCardToDeck(card, 'side')}
-                  onZoom={setZoomCode}
-                />
+          {/* wLinkMarks 连接标记浮窗（game.cpp:814-828：(700,30)-(820,150)，
+              8 箭头 30×30 按 35 间距排布，中央 btnMarksOK 确定提交） */}
+          {showLinkMarks ? (
+            <div id="deck-linkmarks-panel" className="ds-linkmarks-popup">
+              {LINK_MARKS.slice(0, 3).map(([bit, arrow]) => (
+                <UiButton key={bit} variant={(linkMarksPending & bit) !== 0 ? 'gold' : 'default'}
+                  className="ds-lm-btn" title="按住的箭头方向都要命中（子集语义）"
+                  onClick={() => togglePendingMark(bit)}>{arrow}</UiButton>
+              ))}
+              <UiButton variant={(linkMarksPending & LINK_MARKS[3][0]) !== 0 ? 'gold' : 'default'}
+                className="ds-lm-btn" title="按住的箭头方向都要命中（子集语义）"
+                onClick={() => togglePendingMark(LINK_MARKS[3][0])}>{LINK_MARKS[3][1]}</UiButton>
+              <UiButton className="ds-lm-btn ds-lm-ok" onClick={commitLinkMarks}>确定</UiButton>
+              <UiButton variant={(linkMarksPending & LINK_MARKS[4][0]) !== 0 ? 'gold' : 'default'}
+                className="ds-lm-btn" title="按住的箭头方向都要命中（子集语义）"
+                onClick={() => togglePendingMark(LINK_MARKS[4][0])}>{LINK_MARKS[4][1]}</UiButton>
+              {LINK_MARKS.slice(5).map(([bit, arrow]) => (
+                <UiButton key={bit} variant={(linkMarksPending & bit) !== 0 ? 'gold' : 'default'}
+                  className="ds-lm-btn" title="按住的箭头方向都要命中（子集语义）"
+                  onClick={() => togglePendingMark(bit)}>{arrow}</UiButton>
               ))}
             </div>
+          ) : null}
+
+        {/* 主/额外/副卡组区（DrawDeckBd drawing.cpp:1228-1295 设计坐标）：
+            标题短条 (309,136/439/536 起 102×22) + 网格区直接铺在背景上 */}
+        <div className="deck-section-title ds-title-main">
+          <span>主卡组：</span>
+          <span className="badge badge-attr">{currentDeck.main.length} / 60</span>
+        </div>
+        {renderSection(currentDeck.main, 'main')}
+        <div className="deck-section-title ds-title-extra">
+          <span>额外卡组：</span>
+          <span className="badge badge-type">{currentDeck.extra.length} / 15</span>
+        </div>
+        {renderSection(currentDeck.extra, 'extra')}
+        <div className="deck-section-title ds-title-side">
+          <span>副卡组：</span>
+          <span className="badge badge-attr">{currentDeck.side.length} / 15</span>
+        </div>
+        {renderSection(currentDeck.side, 'side')}
+
+        {/* 搜索结果区（DrawDeckBd drawing.cpp:1296-1360）：标题条 + 纵向列表 */}
+        <div className="deck-results">
+          <div id="deck-result-count" title="点击添加，右键加副卡组，双击看大图">
+            搜索结果（{sortedResults.length} 张）
+          </div>
+          <div className="deck-add-target-row">
+            <label>点击加入：</label>
+            <GfwSelect
+              id="deck-add-target"
+              value={addTarget}
+              onValueChange={(v) => setAddTarget(v as 'main' | 'side')}
+              options={[{ value: 'main', label: '主卡组' }, { value: 'side', label: '副卡组' }]}
+            />
+          </div>
+          <div className="search-results-grid">
+            {sortedResults.map((card, i) => (
+              <SearchResultChip
+                key={`${card.code}-${i}`}
+                card={card}
+                lfLimit={limitOf(card.alias || groupOf(card.code))}
+                onInspect={setInspected}
+                onAdd={() => addCardToDeck(card)}
+                onAddSide={() => addCardToDeck(card, 'side')}
+                onZoom={setZoomCode}
+              />
+            ))}
           </div>
         </div>
-      </div>
+      </DesignSpace>
 
       {zoomCode ? <ZoomOverlay code={zoomCode} onClose={() => setZoomCode(0)} /> : null}
 
@@ -1029,14 +1231,14 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
             </div>
             <textarea
               id="deck-export-text"
-              className="form-input"
+             className="form-input"
               readOnly
               style={{ width: '100%', height: 200, fontFamily: 'monospace', fontSize: 12 }}
               value={exportText}
               onFocus={(e) => e.target.select()}
             />
             <div style={{ textAlign: 'right', marginTop: 6 }}>
-              <button id="deck-export-close" className="btn btn-primary" onClick={() => setExportText(null)}>关闭</button>
+              <UiButton id="deck-export-close" onClick={() => setExportText(null)}>关闭</UiButton>
             </div>
           </div>
         </div>
@@ -1066,8 +1268,8 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
               onChange={(e) => setImportText(e.target.value)}
             />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 6 }}>
-              <button id="deck-import-cancel" className="btn btn-secondary" onClick={() => setShowImport(false)}>取消</button>
-              <button id="deck-import-confirm" className="btn btn-gold" onClick={importDeckCode}>导入</button>
+              <UiButton id="deck-import-cancel" onClick={() => setShowImport(false)}>取消</UiButton>
+              <UiButton id="deck-import-confirm" variant="gold" onClick={importDeckCode}>导入</UiButton>
             </div>
           </div>
         </div>
@@ -1097,27 +1299,27 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
             display: 'flex', flexDirection: 'column', gap: '3px',
           }}>
             {ctxMenu.section !== 'main' && (
-              <button className="btn btn-secondary" style={{ textAlign: 'left' }}
+              <UiButton style={{ textAlign: 'left' }}
                 onClick={() => { moveCard(ctxMenu.section, ctxMenu.index, 'main', currentDeck.main.length); setCtxMenu(null); }}>
                 移到主卡组
-              </button>
+              </UiButton>
             )}
             {ctxMenu.section !== 'extra' && (
-              <button className="btn btn-secondary" style={{ textAlign: 'left' }}
+              <UiButton style={{ textAlign: 'left' }}
                 onClick={() => { moveCard(ctxMenu.section, ctxMenu.index, 'extra', currentDeck.extra.length); setCtxMenu(null); }}>
                 移到额外卡组
-              </button>
+              </UiButton>
             )}
             {ctxMenu.section !== 'side' && (
-              <button className="btn btn-secondary" style={{ textAlign: 'left' }}
+              <UiButton style={{ textAlign: 'left' }}
                 onClick={() => { moveCard(ctxMenu.section, ctxMenu.index, 'side', currentDeck.side.length); setCtxMenu(null); }}>
                 移到副卡组
-              </button>
+              </UiButton>
             )}
-            <button className="btn btn-danger" style={{ textAlign: 'left' }}
+            <UiButton variant="danger" style={{ textAlign: 'left' }}
               onClick={() => { removeCardFromDeck(ctxMenu.section, ctxMenu.index); setCtxMenu(null); }}>
               移出卡组
-            </button>
+            </UiButton>
           </div>
         </>
       ) : null}

@@ -243,7 +243,7 @@ export default function SpecOverlay() {
         {spec && (
           <div key={spec.key} className={`spec-card spec-${spec.kind}`}>
             {artUrl
-              ? <img src={artUrl} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              ? <img src={artUrl} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
               : <div style={{ width: '100%', height: '100%', background: '#0f172a', border: '1px solid #94a3b8' }} />}
             {spec.kind === 'reveal' && <div className="spec-mask" style={{ backgroundImage: "url('textures/mask.png')" }} />}
             {spec.kind === 'negated' && <div className="spec-negated" style={{ backgroundImage: "url('textures/negated.png')" }} />}

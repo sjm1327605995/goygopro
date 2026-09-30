@@ -10,9 +10,11 @@
 //   5. volumes reach soundManager (sound_volume 80 → sfxVolume 0.8)
 //   6. autochain=1 seeds the chain-pref mode ('always')
 //   7. Lobby prefill reads nickname/lasthost+lastport/gamename/serverport
+import UiRoot from '../src/ui/UiRoot.tsx';
 import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { eventBus, WailsBridge } from '../src/wails_bridge.ts';
+import '../css/gframe-window.css';
 import '../css/duel-original.css';
 import App from '../src/App.tsx';
 import Lobby from '../src/components/Lobby.tsx';
@@ -73,6 +75,7 @@ const root = createRoot(document.getElementById('root'));
 // App 提供 ⚙ 按钮 + 音量/连锁键接线 + SettingsPanel；Lobby 并排挂载验证预填；
 // ChatOverlay 单独挂载（正式树里它在 DuelStage 内部）
 root.render(
+  <UiRoot>
   <React.Fragment>
     <App />
     <ChatOverlay />
@@ -80,6 +83,7 @@ root.render(
       <Lobby onNavigate={() => {}} />
     </div>
   </React.Fragment>,
+  </UiRoot>
 );
 
 (async () => {

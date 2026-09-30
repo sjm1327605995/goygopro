@@ -1,13 +1,12 @@
 /* ==================================================================
-   gframe 窗口皮肤 — 按 docs/layout_prototype.html 原型规格实现
-   （.yg-* 规格；主菜单同此文件第 1 节 wMainMenu，不再另用
-   docs/main_menu_layout.html 的旧规格）：
-   - 窗口体：银灰渐变 #d0d0d0→#c0c0c0、2px solid #808080、
-     阴影 0 4px 12px rgba(0,0,0,0.4)
-   - 标题栏：24px 高、深蓝渐变 #4a6fa5→#2a4a7a、白字 12px 左对齐
-   - 按钮：26px 高三段金属渐变 #e8e8e8→#c8c8c8(50%)→#b0b0b0、
-     border #888、radius 2px、inset 高光 + 外阴影
-   - 输入：22px 高、border #888、白底、padding 0 4px、font 12
+   gframe 窗口皮肤 — 统一暗色主题（design tokens 与 style.css :root
+   的 --primary/--accent-gold/--bg-card 同源；主菜单/联机大厅/建房/
+   决斗准备/录像/单人/设置 全部窗口共用本文件）。
+
+   几何规格保留 docs/layout_prototype.html 原型（改动只换肤不动布局）：
+   - 标题栏：24px 高、白字 12px 左对齐
+   - 按钮：26px 高（主菜单 30px）
+   - 输入：22px 高、12px 字
    - 窗口定位：水平居中 + 顶部留白（mainmenu 20% / lan 25% /
      create 22% / prepare 28%）
    ================================================================== */
@@ -17,97 +16,72 @@
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  background: linear-gradient(180deg, #d0d0d0 0%, #c0c0c0 100%);
-  border: 2px solid #808080;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  color: #222;
+  background: linear-gradient(180deg, rgba(30, 39, 68, 0.97) 0%, rgba(17, 23, 44, 0.97) 100%);
+  border: 1px solid rgba(98, 132, 202, 0.45);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: #dbe7ff;
   font-size: 13px;
   z-index: 20;
+  overflow: hidden;
 }
 
 .gfw-title {
   height: 24px;
-  background: linear-gradient(180deg, #4a6fa5 0%, #2a4a7a 100%);
+  background: linear-gradient(90deg, rgba(30, 76, 138, 0.85) 0%, rgba(22, 44, 88, 0.85) 100%);
   color: #fff;
   font-size: 12px;
   display: flex;
   align-items: center;
   padding-left: 8px;
-  border-bottom: 1px solid #1a3a6a;
+  border-bottom: 1px solid rgba(0, 210, 255, 0.25);
   user-select: none;
   white-space: nowrap;
   overflow: hidden;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
 .gfw-body {
   padding: 8px;
   position: relative;
 }
-
-/* ---- 控件 ---- */
-.gfw-btn {
-  height: 26px;
-  background: linear-gradient(180deg, #e8e8e8 0%, #c8c8c8 50%, #b0b0b0 100%);
-  border: 1px solid #888;
-  border-radius: 2px;
-  color: #222;
-  font-size: 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0 8px;
-  white-space: nowrap;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 1px 2px rgba(0, 0, 0, 0.15);
-}
-.gfw-btn:hover {
-  background: linear-gradient(180deg, #f0f0f0 0%, #d8d8d8 50%, #c0c0c0 100%);
-}
-.gfw-btn:active {
-  background: linear-gradient(180deg, #b0b0b0 0%, #c8c8c8 50%, #e0e0e0 100%);
-}
-.gfw-btn:disabled {
-  color: #999;
-  cursor: default;
-  opacity: 0.7;
+/* wMainMenu 按钮区：标题栏 24 + 6 = 原版按钮起点 y30；两侧 10px 留边 */
+.gfw-mainmenu .gfw-body {
+  padding: 6px 10px 0;
 }
 
-.gfw-input,
+/* ---- 控件 ----
+   按钮/输入框/复选框已全部迁移到 Mantine（src/ui/UiButton/UiInput，
+   皮肤在 css/ui-kit.css）；这里只保留 GfwSelect 触发器仍在用的
+   .gfw-select 与标签/列表皮肤。 */
 .gfw-select {
   height: 22px;
-  border: 1px solid #888;
-  background: #fff;
+  border: 1px solid rgba(126, 156, 222, 0.35);
+  background: rgba(8, 12, 26, 0.85);
   padding: 0 4px;
   font-size: 12px;
-  color: #222;
+  color: #e6eeff;
   box-sizing: border-box;
-  border-radius: 0;
+  border-radius: 4px;
 }
-.gfw-input:focus,
 .gfw-select:focus {
   outline: none;
-  border-color: #4a6fa5;
-}
-
-.gfw-check {
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  cursor: pointer;
-  accent-color: #2a4a7a;
+  border-color: var(--primary);
+  box-shadow: 0 0 6px rgba(0, 210, 255, 0.3);
 }
 
 .gfw-label {
   font-size: 12px;
-  color: #222;
+  color: #9fb0d8;
   white-space: nowrap;
   line-height: 22px;
 }
 
 /* listbox（房间列表/卡组列表等） */
 .gfw-list {
-  background: #f5f5f5;
-  border: 1px solid #aaa;
+  background: rgba(8, 12, 26, 0.85);
+  border: 1px solid rgba(126, 156, 222, 0.35);
+  border-radius: 4px;
   overflow-y: auto;
 }
 .gfw-list-item {
@@ -115,35 +89,69 @@
   height: 20px;
   line-height: 20px;
   font-size: 12px;
-  color: #222;
+  color: #c9d6f2;
   cursor: default;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .gfw-list-item:hover {
-  background: #b8c4dc;
+  background: rgba(0, 210, 255, 0.12);
 }
 .gfw-list-item.gfw-selected {
-  background: #4a6fa5;
+  background: rgba(0, 132, 200, 0.55);
+  color: #fff;
+}
+
+/* wLanWindow lstHostList 原版行高 18（game.cpp:215 setItemHeight(18)） */
+#lobby-host-list .gfw-list-item {
+  height: 18px;
+  line-height: 18px;
+  padding: 0 6px;
+}
+
+/* Radix Select 弹出层（GfwSelect.tsx），与 .gfw-list 同肤 */
+.gfw-select-content {
+  z-index: 100;
+  min-width: var(--radix-select-trigger-width);
+  background: rgba(14, 20, 38, 0.98);
+  border: 1px solid rgba(126, 156, 222, 0.45);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.gfw-select-item {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 22px;
+  color: #c9d6f2;
+  cursor: default;
+  outline: none;
+}
+.gfw-select-item[data-highlighted] {
+  background: rgba(0, 210, 255, 0.15);
+}
+.gfw-select-item[data-selected] {
+  background: rgba(0, 132, 200, 0.55);
   color: #fff;
 }
 
 /* ---- 各窗口的固定宽度与顶部留白（docs 原型规格表） ---- */
-.gfw-mainmenu { width: 320px; height: 210px; top: 20%; }    /* 320 × 210（标题栏24+内容区186），20% 顶部留白 */
-.gfw-lan      { width: 580px; top: 25%; }                /* 580 × 约380，25% 顶部留白 */
-.gfw-create   { width: 400px; height: 400px; top: 22%; }    /* 400 × 400（底部主机名称/密码+确定/取消 贴底），22% 顶部留白 */
-.gfw-prepare  { width: 480px; top: 28%; }                /* 480 × 约320，28% 顶部留白 */
-.gfw-replay   { width: 580px; height: 420px; top: 20%; } /* wReplay 内部为绝对定位，需固定高 */
-.gfw-single   { width: 580px; height: 420px; top: 20%; } /* wSinglePlay 同上 */
+/* wMainMenu 原版坐标 (370,200)-(650,415) = 280×215（game.cpp:199），
+   DesignSpace 内绝对定位（覆盖 .gfw-window 的 50%/translateX 居中） */
+.gfw-mainmenu { width: 280px; height: 215px; top: 200px; left: 370px; transform: none; }
+/* wLanWindow 原版矩形 (220,100)-(800,520)（game.cpp:208） */
+.gfw-lan      { left: 220px; top: 100px; width: 580px; height: 420px; transform: none; }
+.gfw-create   { left: 320px; top: 100px; width: 380px; height: 420px; transform: none; } /* wCreateHost (320,100)-(700,520)，game.cpp:229 */
+.gfw-prepare  { left: 270px; top: 120px; width: 480px; height: 320px; transform: none; } /* wHostPrepare (270,120)-(750,440)，game.cpp:304 */
+.gfw-replay   { left: 220px; top: 100px; width: 580px; height: 420px; transform: none; } /* wReplay (220,100)-(800,520)，game.cpp:831 */
+.gfw-single   { left: 220px; top: 100px; width: 580px; height: 420px; transform: none; } /* wSinglePlay 同矩形，game.cpp:847 */
 
-/* ---- 主菜单专用（docs/layout_prototype.html 第 1 节 wMainMenu）：按钮 296×30 ----
-        标题栏用基础样式（24px 左对齐），不再覆写 */
-.gfw-mainmenu .gfw-btn {
-  height: 30px;
-  font-size: 13px;
-  width: 100%; /* 内容区 padding 12px → 296px 宽 */
-}
+/* ---- 主菜单几何：窗口 320×210（gfw-mainmenu）；按钮 30px 高由
+        UiButton size="compact-md" + fullWidth 承担，不再走类皮肤 ---- */
 
 /* 窗口内按钮纵排（主菜单 5 键：间距 5px） */
 .gfw-col {
@@ -157,10 +165,10 @@
 .gfw-window .form-input,
 .gfw-window .form-select {
   height: 22px;
-  background: #fff;
-  border: 1px solid #888;
-  border-radius: 0;
-  color: #222;
+  background: rgba(8, 12, 26, 0.85);
+  border: 1px solid rgba(126, 156, 222, 0.35);
+  border-radius: 4px;
+  color: #e6eeff;
   padding: 0 4px;
   font-size: 12px;
   font-weight: normal;
@@ -169,18 +177,21 @@
 }
 .gfw-window .form-input:focus,
 .gfw-window .form-select:focus {
-  border-color: #4a6fa5;
-  box-shadow: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 6px rgba(0, 210, 255, 0.3);
 }
-.gfw-window .btn {
+.gfw-window .form-input::placeholder {
+  color: #5d6b8c;
+}
+.gfw-window .btn:not(.ui-btn) {
   height: 26px;
-  border-radius: 2px;
+  border-radius: 6px;
   padding: 0 8px;
   letter-spacing: normal;
   font-weight: normal;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 1px 2px rgba(0, 0, 0, 0.15);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 1px 3px rgba(0, 0, 0, 0.4);
 }
-.gfw-mainmenu .btn {
+.gfw-mainmenu .btn:not(.ui-btn) {
   height: 30px;
   font-size: 13px;
 }

@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { WailsBridge } from '../wails_bridge.ts';
 import GfwSelect from './ui/GfwSelect.tsx';
+import UiButton from '../ui/UiButton.tsx';
+import { UiInput } from '../ui/UiInput.tsx';
 
 // 卡组/分类管理窗口（原版 wDeckManage，game.cpp:660-683 + deck_con.cpp:423-676）。
 // 左分类列表 / 右该分类下的卡组列表；分类：新建/重命名/删除；卡组：新建/
@@ -145,9 +147,9 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
               ))}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
-              <button id="dm-new-category" className="btn btn-secondary" disabled={busy} onClick={newCategory}>新建分类</button>
-              <button id="dm-rename-category" className="btn btn-secondary" disabled={busy || !selCategory} onClick={renameCategory}>重命名分类</button>
-              <button id="dm-delete-category" className="btn btn-danger" disabled={busy || !selCategory} onClick={deleteCategory}>删除分类</button>
+              <UiButton id="dm-new-category" disabled={busy} onClick={newCategory}>新建分类</UiButton>
+              <UiButton id="dm-rename-category" disabled={busy || !selCategory} onClick={renameCategory}>重命名分类</UiButton>
+              <UiButton id="dm-delete-category" variant="danger" disabled={busy || !selCategory} onClick={deleteCategory}>删除分类</UiButton>
             </div>
           </div>
           {/* 右：卡组列表（原版 lstDecks） */}
@@ -174,9 +176,9 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
               ))}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-              <button id="dm-new-deck" className="btn btn-secondary" disabled={busy} onClick={newDeck}>新建卡组</button>
-              <button id="dm-rename-deck" className="btn btn-secondary" disabled={busy || !selDeck} onClick={renameDeck}>重命名</button>
-              <button id="dm-delete-deck" className="btn btn-danger" disabled={busy || !selDeck} onClick={deleteDeck}>删除</button>
+              <UiButton id="dm-new-deck" disabled={busy} onClick={newDeck}>新建卡组</UiButton>
+              <UiButton id="dm-rename-deck" disabled={busy || !selDeck} onClick={renameDeck}>重命名</UiButton>
+              <UiButton id="dm-delete-deck" variant="danger" disabled={busy || !selDeck} onClick={deleteDeck}>删除</UiButton>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
               {/* 目标分类（原版 cbDMCategory；__root__ 哨兵 = 未分类） */}
@@ -190,17 +192,16 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
                   ...categories.map((c) => ({ value: c, label: c })),
                 ]}
               />
-              <button id="dm-copy-deck" className="btn btn-secondary" disabled={busy || !selDeck} onClick={copyDeck}>复制到分类</button>
-              <button id="dm-move-deck" className="btn btn-secondary" disabled={busy || !selDeck} onClick={moveDeck}>移动到分类</button>
+              <UiButton id="dm-copy-deck" disabled={busy || !selDeck} onClick={copyDeck}>复制到分类</UiButton>
+              <UiButton id="dm-move-deck" disabled={busy || !selDeck} onClick={moveDeck}>移动到分类</UiButton>
             </div>
           </div>
         </div>
         {/* 名称输入（原版 wDMQuery 的 ebDMName）：新建/重命名共用 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
           <label className="gfw-label">名称</label>
-          <input
+          <UiInput
             id="dm-name-input"
-            className="form-input"
             style={{ flex: 1 }}
             placeholder="新建/重命名用的名称"
             value={nameInput}
@@ -208,7 +209,7 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
           />
         </div>
         <div style={{ textAlign: 'right' }}>
-          <button id="dm-close" className="btn btn-primary" onClick={onClose}>关闭</button>
+          <UiButton id="dm-close" variant="gold" onClick={onClose}>关闭</UiButton>
         </div>
       </div>
     </div>

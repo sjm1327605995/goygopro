@@ -9,20 +9,21 @@ import React, { useState } from 'react';
 import { useSyncExternalStore } from 'react';
 import { settingsStore } from '../domain/settings.ts';
 import GameDialog from './GameDialog.tsx';
+import UiButton from '../ui/UiButton.tsx';
+import { UiCheckbox } from '../ui/UiInput.tsx';
 
 function CheckRow({ k, label, hint }: { k: string; label: string; hint?: string }) {
   const s = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
   const checked = !!s[k];
   return (
-    <label className="settings-row" title={hint || ''}>
-      <input
-        type="checkbox"
-        data-setting={k}
-        checked={checked}
-        onChange={(e) => settingsStore.set(k, e.target.checked ? 1 : 0)}
-      />
-      <span className="settings-row-label">{label}</span>
-    </label>
+    <UiCheckbox
+      classNames={{ root: 'settings-row', label: 'settings-row-label' }}
+      title={hint || ''}
+      data-setting={k}
+      checked={checked}
+      onChange={(e) => settingsStore.set(k, e.target.checked ? 1 : 0)}
+      label={label}
+    />
   );
 }
 
@@ -92,7 +93,7 @@ export default function SettingsPanel({ open, onClose }: { open: boolean; onClos
             </div>
           )}
           <div className="settings-footer">
-            <button id="settings-close" className="gfw-btn btn" onClick={onClose}>关闭</button>
+            <UiButton id="settings-close" onClick={onClose}>关闭</UiButton>
           </div>
         </div>
       ) : null}

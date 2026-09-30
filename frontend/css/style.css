@@ -117,7 +117,8 @@ body, html {
   box-shadow: 0 0 10px var(--primary-glow);
 }
 
-.btn {
+/* 决斗场景覆盖层的按钮皮肤（Mantine 迁移的菜单控件带 .ui-btn，豁免） */
+.btn:not(.ui-btn) {
   padding: 10px 20px;
   border-radius: 6px;
   border: none;
@@ -200,7 +201,7 @@ body, html {
   justify-content: space-between;
 }
 
-/* Card Inspector (Left Panel) — 波 N：原版 wCardImg + wInfos 银灰卡片预览框 */
+/* Card Inspector (Left Panel) — 统一暗色主题（与 gfw-window 同源） */
 .card-inspector {
   pointer-events: auto;
   position: absolute;
@@ -208,29 +209,29 @@ body, html {
   left: 16px;
   width: 276px;
   bottom: 16px;
-  background: linear-gradient(180deg, #d0d0d0 0%, #c0c0c0 100%);
-  border: 2px solid #808080;
-  border-radius: 0;
+  background: linear-gradient(180deg, rgba(30, 39, 68, 0.97) 0%, rgba(17, 23, 44, 0.97) 100%);
+  border: 1px solid rgba(98, 132, 202, 0.45);
+  border-radius: 10px;
   backdrop-filter: none;
   display: flex;
   flex-direction: column;
   padding: 10px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   z-index: 10;
   overflow: hidden;
-  color: #222;
+  color: #dbe7ff;
 }
 
 .inspector-pic-box {
   width: 100%;
   height: 240px;
-  border-radius: 0;
+  border-radius: 6px;
   overflow: hidden;
-  background: #000;
+  background: #05070f;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #888;
+  border: 1px solid rgba(126, 156, 222, 0.35);
   margin-bottom: 10px;
   position: relative;
 }
@@ -253,21 +254,21 @@ body, html {
 .inspector-name {
   font-size: 14px;
   font-weight: 700;
-  color: #1a1a1a;
-  /* 原版 stName (10,10,287,32)：白底、居中、带边框 */
+  color: #fff;
   text-align: center;
-  background: #ffffff;
-  border: 1px solid #808080;
+  background: rgba(8, 12, 26, 0.85);
+  border: 1px solid rgba(126, 156, 222, 0.35);
+  border-radius: 4px;
   padding: 4px 6px;
 }
 
-/* 原版 stInfo：蓝色 [类型] 种族/属性 行 */
+/* 类型行：[怪兽/效果] 种族/属性 */
 .inspector-type-line {
-  color: #0000c0;
+  color: #7fd4ff;
   font-weight: 600;
 }
 
-/* Card info / Log 页签（原版 wInfos 的 TabCtrl） */
+/* Card info / Log 页签（原版 wInfos 的 TabCtrl，暗色化） */
 .inspector-tabs {
   display: flex;
   gap: 2px;
@@ -278,38 +279,38 @@ body, html {
   flex: 1;
   padding: 3px 0;
   font-size: 12px;
-  background: linear-gradient(180deg, #e8e8e8 0%, #c8c8c8 100%);
-  border: 1px solid #808080;
-  border-radius: 2px 2px 0 0;
-  color: #333;
+  background: linear-gradient(180deg, #283654 0%, #1f2a46 100%);
+  border: 1px solid rgba(126, 156, 222, 0.35);
+  border-radius: 6px 6px 0 0;
+  color: #9fb0d8;
   cursor: pointer;
 }
 
 .inspector-tab.active {
-  background: #ffffff;
-  border-bottom-color: #ffffff;
-  color: #000;
+  background: rgba(30, 39, 68, 0.97);
+  border-bottom-color: transparent;
+  color: #fff;
   font-weight: 700;
 }
 
 .inspector-log {
-  background: #ffffff;
-  border: 1px solid #808080;
+  background: rgba(8, 12, 26, 0.85);
+  border: 1px solid rgba(126, 156, 222, 0.35);
+  border-radius: 4px;
   padding: 6px;
 }
 
 .inspector-log-line {
   font-size: 12px;
   line-height: 1.6;
-  color: #222;
-  border-bottom: 1px dotted #ccc;
+  color: #c9d6f2;
+  border-bottom: 1px dotted rgba(255, 255, 255, 0.15);
 }
 
-/* 卡详情元信息（id deck-inspector-type/stats/setnames）在银灰面板上要深色 */
 .inspector-meta {
   font-size: 12px;
   line-height: 1.5;
-  color: #222;
+  color: #c3cfe8;
 }
 
 .inspector-badges {
@@ -345,7 +346,7 @@ body, html {
 .inspector-desc {
   font-size: 12px;
   line-height: 1.5;
-  color: #333;
+  color: #b8c6e4;
   user-select: text;
   white-space: pre-wrap;
 }
@@ -526,7 +527,7 @@ body, html {
 .hand-card-img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 /* 零码手牌（观战/回放里服务端抹零的卡）：渲染为卡背，不显示「卡牌 #0」 */
@@ -673,183 +674,425 @@ body, html {
    DECK BUILDER SCREEN
    ------------------------------------------------------------------ */
 #deck-screen {
-  background: radial-gradient(circle at center, rgba(14, 28, 54, 0.95) 0%, rgba(5, 10, 20, 0.98) 100%),
+  /* 原版卡组编辑器能看清背景图：遮罩只做轻微压暗，不要糊死 */
+  background: linear-gradient(180deg, rgba(8, 14, 34, 0.45) 0%, rgba(4, 8, 20, 0.62) 100%),
               url('../textures/bg_deck.jpg') center/cover no-repeat;
   flex-direction: column;
-  padding: 20px 40px;
+  padding: 0;
 }
 
-/* 顶部/右侧工作区（波 N：wDeckEdit + wFilter 横条 + 主体左卡组/右结果） */
-.deck-workspace {
+/* ---- 1024×640 设计坐标系（DesignSpace）：子元素设计像素绝对定位，
+   画布按窗口非均匀拉伸（原版 game.cpp Resize 语义） ---- */
+.design-space-viewport {
   position: absolute;
-  left: 306px;
-  right: 16px;
-  top: 16px;
-  bottom: 16px;
+  inset: 0;
+  overflow: hidden;
+  /* .design-space 的 transform 会建叠层上下文，把内部窗口的 z-index 关在里面；
+     录像屏等场景有 DesignSpace 之外的兄弟层（DuelStage 画布），
+     视口本身要抬到窗口层级（与 .gfw-window 的 z-20 一致） */
+  z-index: 20;
+}
+.design-space {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1024px;
+  height: 640px;
+  transform-origin: 0 0;
+}
+.design-space > * {
+  position: absolute;
+}
+
+/* 左列壳：透明容器，内部 wCardImg / wInfos 各自绝对落位 */
+#deck-screen .card-inspector {
+  left: 0;
+  top: 0;
+  width: 302px;
+  height: 640px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0;
+  overflow: visible;
+  backdrop-filter: none;
+}
+/* wCardImg (1,1)-(198,273)：卡图外框 */
+#deck-screen .inspector-pic-frame {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 197px;
+  height: 272px;
+  background: linear-gradient(180deg, rgba(30, 39, 68, 0.97) 0%, rgba(17, 23, 44, 0.97) 100%);
+  border: 1px solid rgba(98, 132, 202, 0.45);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+/* imgCard (10,9)-(187,263)：177×254 卡图位 */
+#deck-screen .inspector-pic-box {
+  position: absolute;
+  left: 10px;
+  top: 9px;
+  width: 177px;
+  height: 254px;
+  margin-bottom: 0;
+}
+/* wInfos (1,275)-(301,639)：页签 + 信息文本 */
+#deck-screen .inspector-infos {
+  position: absolute;
+  left: 1px;
+  top: 275px;
+  width: 300px;
+  height: 364px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  background: linear-gradient(180deg, rgba(30, 39, 68, 0.97) 0%, rgba(17, 23, 44, 0.97) 100%);
+  border: 1px solid rgba(98, 132, 202, 0.45);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  padding: 2px;
+  overflow: hidden;
+}
+#deck-screen .inspector-tabs {
+  margin: 0 0 2px;
+  flex: 0 0 auto;
+}
+/* tabInfo 内部（game.cpp:361-370）：名称栏 (10,10)-(287,32) 居中带框；
+   类型行 stInfo (15,37) 原版纯蓝（255,0,0,255），暗色主题提亮为亮蓝；
+   攻守行 stDataInfo (15,60)；系列行 stSetName (15,83)；
+   描述 stText (15,106)-(287,324) + scrCardText——只有描述滚动，其余行固定 */
+#deck-screen .inspector-details {
+  gap: 1px;
+  padding: 2px 8px;
+  overflow: hidden;
+}
+#deck-screen .inspector-name {
+  flex: 0 0 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  padding: 0 6px;
+}
+#deck-screen .inspector-meta {
+  flex: 0 0 auto;
+  min-height: 21px;
+  font-size: 11px;
+}
+#deck-screen .inspector-type-line {
+  color: #6d9bff;
+}
+#deck-screen .inspector-desc {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  font-size: 11px;
+  line-height: 1.5;
+}
+#deck-screen .inspector-log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
-.deck-toolbar {
-  display: flex;
-  gap: 12px;
+/* btnLeaveGame (205,5)-(295,80) 竖长退出按钮 + 起手测试（扩展） */
+#deck-screen .ds-leave-edit {
+  left: 205px;
+  top: 5px;
+  width: 90px;
+  height: 75px;
 }
+#deck-screen .ds-test-hand {
+  left: 205px;
+  top: 85px;
+  width: 90px;
+  height: 45px;
+}
+
+/* wDeckEdit (309,5)-(605,130) / wFilter (610,5)-(1020,130)（game.cpp:656/740） */
 .deck-header,
 .deck-search-panel {
-  background: linear-gradient(180deg, #d8d8d8 0%, #c4c4c4 100%);
-  border: 2px solid #808080;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  padding: 8px 10px;
-  border-radius: 0;
-  color: #222;
+  background: linear-gradient(180deg, rgba(30, 39, 68, 0.97) 0%, rgba(17, 23, 44, 0.97) 100%);
+  border: 1px solid rgba(98, 132, 202, 0.45);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: #dbe7ff;
+  overflow: hidden;
 }
 .deck-header {
-  flex: 0 0 320px;
+  left: 309px;
+  top: 5px;
+  width: 296px;
+  height: 125px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
 }
-.deck-header h2 {
-  font-size: 14px;
-  color: #1a3a6a;
-  margin-bottom: 2px;
+/* 标题行仅作冒烟契约（h2 带 * = 未保存）：原版 wDeckEdit 无标题栏，视觉隐藏 */
+.deck-header-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .deck-header-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 5px;
+  flex-wrap: nowrap;
 }
+/* 原版内部列：label 70 / 下拉·输入 140 / 右侧竖排按钮 65 / 底行三连 50 */
+#deck-screen .deck-header .dh-label {
+  flex: 0 0 65px;
+}
+#deck-screen .deck-header .dh-spacer {
+  flex: 0 0 65px;
+}
+#deck-screen .deck-header .dh-right {
+  margin-left: auto;
+  flex: 0 0 65px;
+  width: 65px;
+}
+#deck-screen .deck-header .dh-trio {
+  flex: 0 0 50px;
+  width: 50px;
+}
+/* wFilter (610,5)-(1020,130)：内部 5 行网格（game.cpp:740-813 控件坐标
+   网格化：标签列 40 / 下拉列 62+68 / 中标签列 44 / 输入列 78 / 右列 44） */
 .deck-search-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  left: 610px;
+  top: 5px;
+  width: 410px;
+  height: 125px;
+  display: grid;
+  grid-template-columns: 40px 62px 68px 44px 78px 44px;
+  grid-template-rows: repeat(5, 20px);
+  gap: 4px 3px;
+  align-items: center;
 }
-.deck-filter-row {
+#deck-screen .deck-search-panel > * {
+  min-width: 0;
+}
+#deck-screen .deck-search-panel .form-select,
+#deck-screen .deck-search-panel .form-input {
+  width: 100%;
+}
+#deck-screen .deck-search-panel .deck-filter-num {
+  width: 100%;
+}
+/* 行 1：种类 | 副种类 | 禁限（宽） */
+#deck-screen .deck-search-panel .fw-type1 { grid-column: 2; grid-row: 1; }
+#deck-screen .deck-search-panel .fw-type2 { grid-column: 3; grid-row: 1; }
+#deck-screen .deck-search-panel .fw-limit { grid-column: 5 / 7; grid-row: 1; }
+/* 行 2-3：属性/种族（跨 2 列） | 攻击/守备 | 效果按钮（跨 2 行，原版 45×40） */
+#deck-screen .deck-search-panel .fw-attr { grid-column: 2 / 4; grid-row: 2; }
+#deck-screen .deck-search-panel .fw-race { grid-column: 2 / 4; grid-row: 3; }
+#deck-screen .deck-search-panel .fw-atk { grid-column: 5; grid-row: 2; }
+#deck-screen .deck-search-panel .fw-def { grid-column: 5; grid-row: 3; }
+#deck-screen .deck-search-panel .fw-effect {
+  grid-column: 6; grid-row: 2 / 4;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 2px;
+}
+/* 行 4：星数+刻度 | 卡名关键词 */
+#deck-screen .deck-search-panel .fw-starscale {
+  grid-column: 2 / 4; grid-row: 4;
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 3px;
+}
+/* 星数/刻度输入框在窄格内定宽，避免 flex 挤压 placeholder */
+#deck-screen .deck-search-panel .fw-starscale .deck-filter-num {
+  flex: 0 0 40px;
+  width: 40px;
+}
+#deck-screen .deck-search-panel .fw-keyword { grid-column: 5 / 7; grid-row: 4; }
+/* 行 5：连接标记 | 清空 | 开始搜索（separate_clear 关时搜索占满） */
+#deck-screen .deck-search-panel .fw-marks { grid-column: 2 / 4; grid-row: 5; }
+#deck-screen .deck-search-panel .fw-clear { grid-column: 4; grid-row: 5; }
+#deck-screen .deck-search-panel .fw-search { grid-column: 5 / 7; grid-row: 5; }
+#deck-screen .deck-search-panel .fw-search-wide { grid-column: 4 / 7; grid-row: 5; }
+/* 标签列（原版 stCategory/stAttribute/stRace/stStar/stLimit/... 静态文本） */
+#deck-screen .deck-search-panel .fw-l-type { grid-column: 1; grid-row: 1; }
+#deck-screen .deck-search-panel .fw-l-attr { grid-column: 1; grid-row: 2; }
+#deck-screen .deck-search-panel .fw-l-race { grid-column: 1; grid-row: 3; }
+#deck-screen .deck-search-panel .fw-l-star { grid-column: 1; grid-row: 4; }
+#deck-screen .deck-search-panel .fw-l-limit { grid-column: 4; grid-row: 1; }
+#deck-screen .deck-search-panel .fw-l-atk { grid-column: 4; grid-row: 2; }
+#deck-screen .deck-search-panel .fw-l-def { grid-column: 4; grid-row: 3; }
+#deck-screen .deck-search-panel .fw-l-keyword { grid-column: 4; grid-row: 4; }
+/* 禁用态（种类=（无）/魔陷时数值控件不可用，原版 setEnabled(false)） */
+#deck-screen .deck-search-panel .form-select[data-disabled],
+#deck-screen .deck-search-panel .form-input:disabled {
+  opacity: 0.45;
 }
 
-/* 顶部横条内的银灰控件（覆盖全局 .btn/.form-input/.form-select 霓虹） */
-#deck-screen .btn {
-  height: 26px;
-  padding: 0 8px;
-  border-radius: 2px;
-  border: 1px solid #888;
-  color: #222;
-  font-size: 12px;
-  font-weight: normal;
-  letter-spacing: normal;
-  background: linear-gradient(180deg, #e8e8e8 0%, #c8c8c8 50%, #b0b0b0 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 1px 2px rgba(0, 0, 0, 0.15);
-  transform: none;
-  text-shadow: none;
-  text-transform: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/* wCategories 效果复选浮窗（game.cpp:796：(600,55)-(1000,300)） */
+.ds-effect-popup {
+  left: 600px;
+  top: 55px;
+  width: 400px;
+  height: 245px;
+  background: linear-gradient(180deg, rgba(30, 39, 68, 0.98) 0%, rgba(17, 23, 44, 0.98) 100%);
+  border: 1px solid rgba(98, 132, 202, 0.55);
+  border-radius: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+  font-size: 11px;
+  color: #dbe7ff;
+  overflow-y: auto;
+  z-index: 50;
 }
-#deck-screen .btn:hover {
-  background: linear-gradient(180deg, #f0f0f0 0%, #d8d8d8 50%, #c0c0c0 100%);
-  transform: none;
+/* wLinkMarks 连接标记浮窗（game.cpp:814-828：(700,30)-(820,150)，
+   箭头 30×30 按 35 间距，中央确定键提交） */
+.ds-linkmarks-popup {
+  left: 700px;
+  top: 30px;
+  width: 120px;
+  height: 120px;
+  background: linear-gradient(180deg, rgba(30, 39, 68, 0.98) 0%, rgba(17, 23, 44, 0.98) 100%);
+  border: 1px solid rgba(98, 132, 202, 0.55);
+  border-radius: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65);
+  display: grid;
+  grid-template-columns: repeat(3, 30px);
+  grid-template-rows: repeat(3, 30px);
+  gap: 5px;
+  padding: 10px;
+  z-index: 50;
 }
-#deck-screen .btn:active {
-  background: linear-gradient(180deg, #b0b0b0 0%, #c8c8c8 50%, #e0e0e0 100%);
+#deck-screen .ds-linkmarks-popup .btn {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  font-size: 13px;
+  border-radius: 3px;
 }
-#deck-screen .btn-gold {
-  background: linear-gradient(180deg, #e6d4a0 0%, #d4bc80 50%, #b89e60 100%);
-  color: #5a4a20;
+#deck-screen .ds-linkmarks-popup .ds-lm-ok {
+  font-size: 11px;
 }
-#deck-screen .btn-danger {
-  background: linear-gradient(180deg, #e8b0a8 0%, #d89088 50%, #c07870 100%);
-  color: #4a1a1a;
-}
+
+/* 顶部横条按钮已全部迁移到 Mantine（UiButton，皮肤在 ui-kit.css）。
+   这里只保留下拉（GfwSelect 触发器的 .form-select）与导入/导出
+   textarea（.form-input）的局部皮肤。控件高度对齐原版 20~25px。 */
 #deck-screen .form-input,
 #deck-screen .form-select {
-  height: 22px;
-  background: #fff;
-  border: 1px solid #888;
-  border-radius: 0;
-  color: #222;
+  height: 20px;
+  background: rgba(8, 12, 26, 0.85);
+  border: 1px solid rgba(126, 156, 222, 0.35);
+  border-radius: 4px;
+  color: #e6eeff;
   padding: 0 4px;
-  font-size: 12px;
+  font-size: 11px;
   width: auto;
   box-shadow: none;
+}
+#deck-screen .deck-header .btn,
+#deck-screen .deck-search-panel .btn {
+  height: 20px;
+  min-height: 20px;
+  padding: 0 5px;
+  font-size: 11px;
+  border-radius: 3px;
 }
 #deck-screen .form-input:focus,
 #deck-screen .form-select:focus {
-  border-color: #4a6fa5;
-  box-shadow: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 6px rgba(0, 210, 255, 0.3);
+}
+#deck-screen .form-input::placeholder {
+  color: #5d6b8c;
 }
 #deck-screen .gfw-label {
-  font-size: 12px;
-  color: #222;
+  font-size: 11px;
+  color: #9fb0d8;
   white-space: nowrap;
-  line-height: 22px;
+  line-height: 20px;
 }
 
-/* 主体：左卡组区（半透明蓝 0x400000ff）+ 右结果列表 */
-.deck-workspace-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  gap: 12px;
-}
-.deck-zones-container {
-  flex: 1;
-  min-width: 0;
-  background: rgba(40, 60, 160, 0.28);
-  border: 2px solid #808080;
-  border-radius: 0;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-}
-/* 纵向 flex 容器溢出时子项默认收缩——卡组网格/标题被压扁而不是触发滚动 */
-.deck-zones-container > * {
-  flex-shrink: 0;
-}
+/* 主/额外/副卡组区（DrawDeckBd drawing.cpp:1228-1295 设计坐标）：
+   区标题 = 原版 "Deck: 60" 深藏青短横条 (309,136/439/536 起 100×20 + 1px 描边)；
+   网格区 = 原版半透明蓝黑渐变底 + 细描边，卡牌直接铺在上面。 */
 .deck-section-title {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 700;
-  color: #ffd966;
+  color: #fff;
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  width: 102px;
+  height: 22px;
+  background: linear-gradient(180deg, rgba(0, 0, 255, 0.25) 0%, rgba(0, 0, 0, 0.25) 100%),
+              rgba(8, 12, 52, 0.78);
+  border: 1px solid rgba(180, 200, 255, 0.4);
+  padding: 1px 6px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
-.deck-grid {
-  display: grid;
-  /* 原版 DrawDeckBd 逻辑分辨率 1024x640、44px 缩略图 10 列/行
-     （drawing.cpp:1258-1263），窗口拉伸时随之放大。我们是固定 px 布局，
-     直接按拉伸后的观感取 52px + 3px 间隙，卡牌「挨着」堆叠成一副。 */
-  grid-template-columns: repeat(auto-fill, 52px);
-  gap: 3px;
-  min-height: 90px;
-  background: rgba(0, 0, 20, 0.35);
-  padding: 6px;
+.ds-title-main { left: 309px; top: 136px; }
+.ds-title-extra { left: 309px; top: 439px; }
+.ds-title-side { left: 309px; top: 536px; }
+/* 横条内的计数不要霓虹药丸，白字即可 */
+.deck-section-title .badge {
+  background: transparent;
+  border: none;
   border-radius: 0;
-  align-content: start;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffd966;
+  text-transform: none;
 }
-/* 卡组区的缩略格把 .select-card-item 的固定 90x130 让位给网格，
-   按 grid 单元自适应，aspect-ratio 59/86 保持卡面比例 */
+/* 卡组网格 = 原版 DrawDeckBd 的层叠布局：非 CSS grid，逐行 flex +
+   负 marginLeft 层叠；列距由 DeckBuilder 按卡数计算。
+   网格区坐标：主 (309,159)-(797,436)、额外 (309,462)-(797,533)、
+   副 (309,559)-(797,630)；拇指格起点内缩 (314,164/466/564)。 */
+.deck-grid {
+  display: block;
+  left: 309px;
+  width: 489px;
+  padding: 4px 0 0 5px;
+  background: linear-gradient(180deg, rgba(0, 0, 255, 0.25) 0%, rgba(0, 0, 0, 0.25) 100%);
+  border: 1px solid rgba(180, 200, 255, 0.4);
+  border-radius: 0;
+}
+.ds-grid-main { top: 159px; height: 278px; }
+.ds-grid-extra { top: 462px; height: 72px; }
+.ds-grid-side { top: 559px; height: 72px; }
+.deck-grid-row {
+  display: flex;
+  align-items: flex-start;
+  height: 64px;
+  margin-bottom: 4px;
+}
+.deck-grid-row:last-child {
+  margin-bottom: 0;
+}
+/* 层叠行内禁止收缩（flex 默认会压缩溢出子项）；
+   拇指格 = 原版 CARD_THUMB 44×64（game.h:26-27） */
 .deck-grid .select-card-item {
-  width: auto;
-  height: auto;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 64px;
   border-radius: 2px;
 }
 
-/* 卡图缩略格子（deck-grid 内）：52x76，卡面比例 59/86（原版 CARD_THUMB
-   game.h:26-27 的 44x64 在窗口拉伸后的等效观感） */
+/* 卡图缩略格子（deck-grid 内）：44×64 原版 CARD_THUMB 设计像素 */
 .deck-card-chip {
-  aspect-ratio: 52 / 76;
-  width: 52px;
+  aspect-ratio: 44 / 64;
+  width: 44px;
   border-radius: 2px;
-  border: 1px solid #555;
+  border: 1px solid rgba(0, 0, 0, 0.65);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
   padding: 0;
 }
 .deck-card-chip:hover {
@@ -892,38 +1135,65 @@ body, html {
 
 /* 攻守/等级区间小输入框 */
 .deck-filter-num {
-  padding: 0 4px;
-  font-size: 12px;
-  width: 56px;
+  padding: 0 3px;
+  font-size: 11px;
+  width: 36px;
 }
 
-/* 链接箭头（wLinkMarks）：内联 3x3 簇 */
-.deck-linkmarks { margin-top: 2px; }
-.deck-linkmarks-label { font-size: 11px; color: #444; margin-bottom: 2px; }
-.deck-linkmarks-grid { display: grid; grid-template-columns: repeat(3, 30px); gap: 2px; justify-items: center; }
+/* 链接箭头（wLinkMarks）：浮窗样式见 .ds-linkmarks-popup */
 
-/* 搜索结果纵向列表（DrawDeckBd drawing.cpp:1296-1360）：listbox 风格 */
+/* 搜索结果纵向列表（DrawDeckBd drawing.cpp:1296-1360）：
+   标题条 (804,136) 高 21；列表区 (804,159)-(1020,630) 216×471，
+   行距 66px（44×64 拇指 + 2px 间隙），原版 7 行可见 */
 .deck-results {
-  flex: 0 0 280px;
-  min-width: 0;
-  background: rgba(40, 60, 160, 0.28);
-  border: 2px solid #808080;
+  left: 804px;
+  top: 136px;
+  width: 216px;
+  height: 494px;
+  background: transparent;
+  border: none;
   border-radius: 0;
-  padding: 10px;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
+}
+/* 结果区标题条（原版 "Results: N" 短条，这里加宽到整列容纳扩展下拉） */
+.deck-results #deck-result-count {
+  color: #fff !important;
+  background: linear-gradient(180deg, rgba(0, 0, 255, 0.25) 0%, rgba(0, 0, 0, 0.25) 100%),
+              rgba(8, 12, 52, 0.78);
+  border: 1px solid rgba(180, 200, 255, 0.4);
+  height: 21px;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+/* 「点击加入」下拉是扩展件（原版点击=主卡组、右键=副卡组），细条弱化 */
+.deck-add-target-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+}
+.deck-results label {
+  color: #dbe4ff !important;
+  font-size: 11px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 .search-results-grid {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 0;
   overflow-y: auto;
-  background: #f5f5f5;
-  border: 1px solid #aaa;
-  padding: 4px;
+  background: linear-gradient(180deg, rgba(0, 0, 255, 0.25) 0%, rgba(0, 0, 0, 0.25) 100%);
+  border: 1px solid rgba(180, 200, 255, 0.4);
+  padding: 3px;
 }
 /* 结果行：横向「缩略图 + 文本」，覆盖 .deck-card-chip 的 59/86 比例。
    注意必须同时覆盖 width——.deck-card-chip 的 width:44px 会把整行压成
@@ -933,26 +1203,29 @@ body, html {
   /* 父容器是纵向 flex，必须禁止收缩：否则结果多时整列被压缩贴合容器
      高度（每行只剩 ~10px、文字挤碎），而不是溢出滚动。 */
   flex: 0 0 auto;
+  /* 原版结果行距 66px（drawing.cpp:165+i*66），拇指 44×64 居中 */
+  height: 66px;
   aspect-ratio: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px;
-  background: #fff;
-  border: 1px solid #ccc;
+  gap: 6px;
+  padding: 1px 4px;
+  background: rgba(16, 24, 64, 0.55);
+  border: 1px solid rgba(120, 140, 220, 0.25);
   border-radius: 2px;
   cursor: pointer;
 }
 .search-results-grid .deck-card-chip:hover {
-  background: #b8c4dc;
-  border-color: #88a0c8;
+  background: rgba(52, 72, 160, 0.75);
+  border-color: rgba(160, 180, 255, 0.7);
   box-shadow: none;
 }
 .deck-result-thumb {
   flex: 0 0 44px;
   height: 64px;
   background: #000;
-  border: 1px solid #888;
+  border: 1px solid rgba(0, 0, 0, 0.7);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
   overflow: hidden;
   border-radius: 2px;
 }
@@ -980,21 +1253,22 @@ body, html {
 .deck-result-name {
   font-size: 13px;
   font-weight: 700;
-  color: #222;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .deck-result-sub {
   font-size: 11px;
-  color: #555;
+  color: #c8d4f0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .deck-result-stats {
   font-size: 11px;
-  color: #333;
+  color: #e8c86a;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1083,7 +1357,7 @@ body, html {
 .card-display-pic {
   width: 44px;
   height: 64px;
-  object-fit: cover;
+  object-fit: contain;
   border-radius: 4px;
   flex: none;
   background: #0a0f1e;

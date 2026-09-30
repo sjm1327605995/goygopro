@@ -3,6 +3,7 @@
 // result sorting + count, ×N same-name badge, side-deck 15 cap, dblclick zoom
 // overlay, unsaved-changes guard. getCardImage is mocked with a data URL so the
 // <img> branch is exercised without network access.
+import UiRoot from '../src/ui/UiRoot.tsx';
 import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { WailsBridge } from '../src/wails_bridge.ts';
@@ -11,7 +12,7 @@ import '../css/style.css';
 import DeckBuilder from '../src/components/DeckBuilder.tsx';
 
 const root = createRoot(document.getElementById('root'));
-root.render(<DeckBuilder onNavigate={() => {}} />);
+root.render(<UiRoot><DeckBuilder onNavigate={() => {}} /></UiRoot>);
 
 window.__deckSmoke = { checks: {}, ready: false };
 const checks = window.__deckSmoke.checks;
@@ -132,24 +133,28 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     await waitFor(() => !!document.getElementById('deck-screen'));
     await waitFor(() => document.querySelectorAll('.deck-grid .deck-card-chip').length > 0);
 
-    // 卡图格子：每个 chip 渲染 <img>（mock 卡图），比例锁定 52x76
-    //（原版 CARD_THUMB 44x64 在窗口拉伸后的等效观感，见 style.css .deck-card-chip）。
+    // 卡图格子：每个 chip 渲染 <img>（mock 卡图），比例锁定 44x64
+    //（原版 CARD_THUMB_WIDTH/HEIGHT，game.h:26-27，见 style.css .deck-card-chip）。
     const chips = [...document.querySelectorAll('.deck-grid .deck-card-chip')];
     record('chips-rendered', chips.length === 5); // 3 main + 1 extra + 1 side
     // 卡图为异步 promise；缺图兜底是 unknown.jpg（img 一开始就存在），所以要
     // 等到 src 真正换成 mock 卡图 FAKE_PIC 才算加载完成。
     await waitFor(() => chips.every((c) => c.querySelector('img') && c.querySelector('img').src === FAKE_PIC));
     record('chips-show-card-images', chips.every((c) => c.querySelector('img') && c.querySelector('img').src === FAKE_PIC));
-    record('chip-aspect-ratio', /52\s*\/\s*76/.test(getComputedStyle(chips[0]).aspectRatio || ''));
+    record('chip-aspect-ratio', /44\s*\/\s*64/.test(getComputedStyle(chips[0]).aspectRatio || ''));
 
-    // 过滤控件齐备：种族/属性下拉由 constants.ts RACES/ATTRS 驱动
+    // 过滤控件齐备：种族/属性下拉由 constants.ts RACES/ATTRS 驱动；
+    // 种类=怪兽 才解锁（原版 COMBOBOX_MAINTYPE 的 setEnabled 联动）
     const raceSel = document.getElementById('deck-filter-race');
     const attrSel = document.getElementById('deck-filter-attr');
     record('filter-controls-exist', !!raceSel && !!attrSel);
+    record('race-disabled-until-monster', raceSel.closest('.form-select').hasAttribute('data-disabled')
+      || raceSel.hasAttribute('data-disabled') || raceSel.disabled === true);
+    await selectOption('deck-filter-type1', '1'); // 种类=怪兽
     record('race-options-populated', (await optionCount('deck-filter-race')) > 20);
     record('attr-options-populated', (await optionCount('deck-filter-attr')) >= 7);
 
-    // 搜索 → 过滤字段透传（race 走到 CardFilter）
+    // 搜索 → 过滤字段透传（race 走到 CardFilter；种类=怪兽 → type=TYPE_MONSTER 子集掩码）
     setInputValue(document.getElementById('deck-search-input'), 'dragon');
     await selectOption('deck-filter-race', '512'); // 0x200 龙
     const searchBtn = [...document.querySelectorAll('.deck-search-panel .btn')].find((b) => b.textContent.includes('搜索'));
@@ -158,7 +163,7 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     record('filter-passthrough', searchFilters.length > 0
       && searchFilters[0].keyword === 'dragon'
       && searchFilters[0].race === 512
-      && searchFilters[0].type === 0
+      && searchFilters[0].type === 1
       && searchFilters[0].multiKeywords === 1);
 
     // 排序 + 计数：怪兽按攻↓ 在前（89631139 第一个），结果数显示在标题行
@@ -331,7 +336,10 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     const findSearchBtn = () => [...document.querySelectorAll('.deck-search-panel .btn')]
       .find((b) => b.textContent.includes('搜索'));
 
-    // 运算符字符串输入（gframe parse_filter 语法）透传给 CardFilter
+    // 运算符字符串输入（gframe parse_filter 语法）透传给 CardFilter。
+    // 前面 clearFilters 已把种类归（无）→ 数值输入禁用，先切回怪兽
+    //（原版语义：攻守/星级过滤仅对怪兽生效，deck_con.cpp:1392-1399）
+    await selectOption('deck-filter-type1', '1');
     setInputValue(document.getElementById('deck-filter-atk'), '>=2500');
     setInputValue(document.getElementById('deck-filter-star'), '8');
     findSearchBtn().click();
@@ -356,21 +364,31 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     await waitFor(() => !document.getElementById('deck-effect-panel'));
     record('effect-panel-ok-closes', true);
 
-    // 链接箭头面板：↖(0x40) + ↓(0x2) 汇成 0x42
+    // 链接箭头弹窗（btnMarksFilter → wLinkMarks）：↖(0x40) + ↓(0x2) 汇成 0x42，
+    // 中央「确定」提交（原版 BUTTON_MARKERS_OK）后搜索
+    document.getElementById('deck-marks-filter-btn').click();
+    await waitFor(() => !!document.getElementById('deck-linkmarks-panel'), 2000, 'linkmarks popup open');
     const arrows = [...document.getElementById('deck-linkmarks-panel').querySelectorAll('button')];
     arrows[0].click();
     arrows.find((b) => b.textContent === '↓').click();
-    await new Promise((r) => setTimeout(r, 50));
+    arrows.find((b) => b.textContent === '确定').click();
+    await waitFor(() => !document.getElementById('deck-linkmarks-panel'), 2000, 'linkmarks popup closed');
     findSearchBtn().click();
     await waitFor(() => searchFilters.length >= 4);
     record('linkmarks-passthrough', lastFilter().linkMarks === 0x42, String(lastFilter().linkMarks));
 
-    // 清空条件同时重置运算符/效果/箭头
+    // 清空条件同时重置运算符/效果/箭头（重开弹窗验证箭头已复位为非选中态）
     // 注：上面把 separate_clear_button 切 0→1 会让按钮卸载重挂，早前捕获的
     // clearBtn 已是脱 DOM 的旧节点，这里必须重新查找而非复用（否则 click 空转）。
     document.getElementById('deck-filter-clear').click();
     await waitFor(() => document.getElementById('deck-filter-atk').value === '');
-    record('clear-resets-new-filters', arrows.every((b) => !b.className.includes('btn-gold')));
+    document.getElementById('deck-marks-filter-btn').click();
+    await waitFor(() => !!document.getElementById('deck-linkmarks-panel'), 2000, 'linkmarks reopen');
+    const arrows2 = [...document.getElementById('deck-linkmarks-panel').querySelectorAll('button')];
+    record('clear-resets-new-filters', arrows2.every((b) => !b.className.includes('ui-btn--gold')));
+    // 不提交直接关弹窗（保持已清空状态），继续后续用例
+    document.getElementById('deck-marks-filter-btn').click();
+    await waitFor(() => !document.getElementById('deck-linkmarks-panel'), 2000, 'linkmarks closed again');
 
     // 编辑器三键存在（deck_con.cpp:172-191）
     const deckClearBtn = document.getElementById('deck-clear-btn');
@@ -474,6 +492,44 @@ const sideGrid = () => document.querySelectorAll('.deck-grid')[2];
     record('import-marks-dirty', document.querySelector('#deck-screen h2').textContent.includes('*'));
     record('import-names-deck', [...document.querySelectorAll('.deck-header input')]
       .some((i) => i.value === '导入卡组'));
+
+    // ---- 层叠布局（DrawDeckBd drawing.cpp:1228-1295）：60 主卡组 = 15 列×4 行、
+    // 列距 dx=436/14≈31.14 < 44 → 负 margin 层叠；额外/副 15 张单行同法压缩 ----
+    const bigMain = Array.from({ length: 60 }, (_, i) => 90000000 + i).join('\n');
+    const bigExtra = Array.from({ length: 15 }, (_, i) => 90010000 + i).join('\n');
+    const bigSide = Array.from({ length: 15 }, (_, i) => 90020000 + i).join('\n');
+    document.getElementById('deck-import-code-btn').click();
+    await waitFor(() => document.getElementById('deck-import-text'));
+    setTextareaValue(document.getElementById('deck-import-text'),
+      `#main\n${bigMain}\n#extra\n${bigExtra}\n!side\n${bigSide}\n`);
+    document.getElementById('deck-import-confirm').click();
+    await waitFor(() => mainGrid().querySelectorAll('.deck-card-chip').length === 60);
+    {
+      const mainRows = mainGrid().querySelectorAll('.deck-grid-row');
+      const extraRows = document.querySelectorAll('.deck-grid')[1].querySelectorAll('.deck-grid-row');
+      const sideRows = sideGrid().querySelectorAll('.deck-grid-row');
+      record('overlap-main-15x4', mainRows.length === 4
+        && [...mainRows].every((row) => row.querySelectorAll('.deck-card-chip').length === 15));
+      const m = parseFloat(mainRows[0].querySelectorAll('.deck-card-chip')[1].style.marginLeft);
+      // dx=436/14≈31.143 → marginLeft = dx-44 ≈ -12.857
+      record('overlap-main-negative-margin', m < -12 && m > -13);
+      record('overlap-extra-single-row', extraRows.length === 1
+        && extraRows[0].querySelectorAll('.deck-card-chip').length === 15
+        && parseFloat(extraRows[0].querySelectorAll('.deck-card-chip')[1].style.marginLeft) < 0);
+      record('overlap-side-single-row', sideRows.length === 1
+        && sideRows[0].querySelectorAll('.deck-card-chip').length === 15);
+      // 行首不层叠
+      record('overlap-row-head-flush', mainRows[1].querySelectorAll('.deck-card-chip')[0].style.marginLeft === '0px');
+    }
+    // 小卡组不层叠：≤40 主卡组列距恒 dx=436/9≈48.44（marginLeft ≈ +4.44 间隙）
+    document.getElementById('deck-import-code-btn').click();
+    await waitFor(() => document.getElementById('deck-import-text'));
+    setTextareaValue(document.getElementById('deck-import-text'), '#main\n46986414\n46986414\n');
+    document.getElementById('deck-import-confirm').click();
+    await waitFor(() => mainGrid().querySelectorAll('.deck-card-chip').length === 2);
+    const smallGap = parseFloat(mainGrid().querySelectorAll('.deck-card-chip')[1].style.marginLeft);
+    record('no-overlap-small-deck', mainGrid().querySelectorAll('.deck-grid-row').length === 1
+      && smallGap > 4.4 && smallGap < 4.5);
 
     // 垃圾文本 → 报错且不替换当前卡组
     document.getElementById('deck-import-code-btn').click();

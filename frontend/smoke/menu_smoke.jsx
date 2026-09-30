@@ -1,5 +1,6 @@
 // 波 H：主菜单 1:1 对齐 docs/layout_prototype.html 第 1 节 wMainMenu——
 // 320×210 窗口（20% 顶部留白）、版本标题、5 个纵排按钮；点联机切 lobby、退出经 bridge。
+import UiRoot from '../src/ui/UiRoot.tsx';
 import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { WailsBridge } from '../src/wails_bridge.ts';
@@ -15,6 +16,7 @@ const navs = [];
 const quitSends = [];
 const root = createRoot(document.getElementById('root'));
 root.render(
+  <UiRoot>
   <MainMenu
     onDuel={() => navs.push('lobby')}
     onPractice={() => navs.push('practice')}
@@ -22,6 +24,7 @@ root.render(
     onReplay={() => navs.push('replay')}
     onQuit={() => { WailsBridge.quit().then(() => quitSends.push(1)); }}
   />,
+  </UiRoot>
 );
 
 const $ = (id) => document.getElementById(id);

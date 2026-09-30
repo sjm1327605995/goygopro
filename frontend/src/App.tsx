@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import UiRoot from './ui/UiRoot.tsx';
 import { eventBus, WailsBridge } from './wails_bridge.ts';
 import { soundManager } from './audio/sound_manager.ts';
 import { bgmManager } from './audio/bgm_manager.ts';
@@ -104,6 +105,7 @@ export default function App() {
   };
 
   return (
+    <UiRoot>
     <div id="app">
       <button
         id="btn-sound-toggle"
@@ -155,5 +157,6 @@ export default function App() {
       <ReplaySavePrompt />
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
+    </UiRoot>
   );
 }

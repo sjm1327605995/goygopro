@@ -3,6 +3,7 @@
 // 插桩 clearBoard / duelStore.reset 计数，播放期间若持续增长即为重建循环；
 // 并断言播放推进后场上真的有卡（3D mesh + store 面板）。
 // 波 I：列表元信息面板 / 播放起始于回合（skip 语义）/ 提取卡组。
+import UiRoot from '../src/ui/UiRoot.tsx';
 import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { WailsBridge, eventBus } from '../src/wails_bridge.ts';
@@ -12,6 +13,7 @@ import { DuelField3D } from '../src/duel/field3d.ts';
 import ReplayTheater from '../src/components/ReplayTheater.tsx';
 import ReplaySavePrompt from '../src/components/ReplaySavePrompt.tsx';
 import '../css/style.css';
+import '../css/gframe-window.css';
 import '../css/duel-original.css';
 
 // ---- mock 卡图/卡信息（带 ▲ 方向标记，方便肉眼核对朝向） ----
@@ -82,10 +84,12 @@ duelStore.reset = (...args) => {
 
 const root = createRoot(document.getElementById('root'));
 root.render(
+  <UiRoot>
   <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
     <ReplayTheater onNavigate={() => {}} />
     <ReplaySavePrompt />
   </div>
+  </UiRoot>
 );
 
 window.__theaterSmoke = { checks: {}, ready: false };

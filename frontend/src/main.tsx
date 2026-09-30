@@ -1,9 +1,11 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import '@mantine/core/styles.css';
 import App from './App.tsx';
 import '../css/style.css';
 import '../css/gframe-window.css';
 import '../css/duel-original.css';
+import '../css/ui-kit.css';
 // duelStore 单例在此被创建并接到事件总线上（所有 store 消费方 import 它）
 import './duel/store.ts';
 

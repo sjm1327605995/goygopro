@@ -7,6 +7,7 @@
 //
 // P5 path: the modals live in components/PromptHost.tsx (hud.js is gone);
 // state assertions read duelStore + the React-rendered DOM.
+import UiRoot from '../src/ui/UiRoot.tsx';
 import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { DuelField3D } from '../src/duel/field3d.ts';
@@ -51,6 +52,7 @@ const leaveSends = [];
 WailsBridge.leaveGame = () => leaveSends.push(1);
 const root = createRoot(document.getElementById('root'));
 root.render(
+  <UiRoot>
   <React.Fragment>
     <PromptHost />
     <HintBar />
@@ -58,6 +60,7 @@ root.render(
     <RightControls onLeaveObserver={() => observerLeaves.push(1)} />
     <BattleOverlay />
   </React.Fragment>
+  </UiRoot>
 );
 
 // The manager still owns the command state + protocol plumbing the prompts
@@ -237,7 +240,7 @@ const run = async () => {
   await waitFor(() => hintBar().style.display === 'none' && duelStore.getState().hint === null);
   assert('waitingHintCleared', hintBar().style.display === 'none');
   const rockBtn = overlay().querySelector('#rps-rock');
-  assert('rpsHandTexture', /\/f1-[^"]*\.jpg/.test(getComputedStyle(rockBtn).backgroundImage),
+  assert('rpsHandTexture', /\/f2-[^"]*\.jpg/.test(getComputedStyle(rockBtn).backgroundImage),
     getComputedStyle(rockBtn).backgroundImage);
   overlay().querySelector('#rps-paper').click();
   r = await waitResp();
