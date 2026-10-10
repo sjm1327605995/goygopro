@@ -3,6 +3,7 @@ import { WailsBridge } from '../wails_bridge.ts';
 import GfwSelect from './ui/GfwSelect.tsx';
 import UiButton from '../ui/UiButton.tsx';
 import { UiInput } from '../ui/UiInput.tsx';
+import DesignSpace from '../ui/DesignSpace.tsx';
 
 // 卡组/分类管理窗口（原版 wDeckManage，game.cpp:660-683 + deck_con.cpp:423-676）。
 // 左分类列表 / 右该分类下的卡组列表；分类：新建/重命名/删除；卡组：新建/
@@ -112,25 +113,31 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
     <div
       id="deck-manage-overlay"
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2200,
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2200,
       }}
       onClick={onClose}
     >
+      {/* 原版 wDeckManage（game.cpp:660-683）：(310,135)-(800,515) 490×380，
+          lstCategories (10,30) 130×340 / lstDecks (150,30) 190×340 /
+          按钮列 x350-480 宽 130、y30 起 35 距 25 高。名称输入/目标分类/关闭是
+          扩展件（原版走 wDMQuery 弹窗），压在底部扩展行（列表收短到 300）。 */}
+      <DesignSpace>
       <div
         id="deck-manage-modal"
         className="modal-box"
-        style={{ width: 640, maxWidth: '92vw', maxHeight: '84vh', overflowY: 'auto' }}
+        style={{
+          position: 'absolute', left: '310px', top: '135px', width: '490px', height: '380px',
+          minWidth: 0, maxWidth: 'none', maxHeight: 'none', margin: 0, padding: '0 10px 8px',
+          boxSizing: 'border-box', overflow: 'hidden', gap: '4px',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-title">卡组管理</div>
-        <div style={{ display: 'flex', gap: 8, margin: '8px 0' }}>
-          {/* 左：分类列表（原版 lstCategories） */}
-          <div style={{ width: 180, flexShrink: 0 }}>
-            <div className="gfw-label">分类</div>
+        <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+          {/* 左：分类列表（原版 lstCategories (10,30)-(140,370)） */}
+          <div style={{ position: 'absolute', left: 0, top: '6px', width: '130px' }}>
             <div id="dm-category-list" style={{
-              border: '1px solid var(--primary)', borderRadius: 6, minHeight: 220,
-              maxHeight: 300, overflowY: 'auto', padding: 4,
+              border: '1px solid var(--primary)', borderRadius: 6, height: '300px', overflowY: 'auto', padding: 4,
             }}>
               {['', ...categories].map((c) => (
                 <div
@@ -146,18 +153,11 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
                 </div>
               ))}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
-              <UiButton id="dm-new-category" disabled={busy} onClick={newCategory}>新建分类</UiButton>
-              <UiButton id="dm-rename-category" disabled={busy || !selCategory} onClick={renameCategory}>重命名分类</UiButton>
-              <UiButton id="dm-delete-category" variant="danger" disabled={busy || !selCategory} onClick={deleteCategory}>删除分类</UiButton>
-            </div>
           </div>
-          {/* 右：卡组列表（原版 lstDecks） */}
-          <div style={{ flex: 1 }}>
-            <div className="gfw-label">卡组</div>
+          {/* 中：卡组列表（原版 lstDecks (150,30)-(340,370)） */}
+          <div style={{ position: 'absolute', left: '140px', top: '6px', width: '190px' }}>
             <div id="dm-deck-list" style={{
-              border: '1px solid var(--primary)', borderRadius: 6, minHeight: 220,
-              maxHeight: 300, overflowY: 'auto', padding: 4,
+              border: '1px solid var(--primary)', borderRadius: 6, height: '300px', overflowY: 'auto', padding: 4,
             }}>
               {decksInCategory.length === 0 ? (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 6 }}>该分类下没有卡组。</div>
@@ -175,43 +175,44 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
                 </div>
               ))}
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-              <UiButton id="dm-new-deck" disabled={busy} onClick={newDeck}>新建卡组</UiButton>
-              <UiButton id="dm-rename-deck" disabled={busy || !selDeck} onClick={renameDeck}>重命名</UiButton>
-              <UiButton id="dm-delete-deck" variant="danger" disabled={busy || !selDeck} onClick={deleteDeck}>删除</UiButton>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
-              {/* 目标分类（原版 cbDMCategory；__root__ 哨兵 = 未分类） */}
-              <GfwSelect
-                id="dm-target-category"
-                width={150}
-                value={targetCategory || '__root__'}
-                onValueChange={(v) => setTargetCategory(v === '__root__' ? '' : v)}
-                options={[
-                  { value: '__root__', label: '未分类卡组' },
-                  ...categories.map((c) => ({ value: c, label: c })),
-                ]}
-              />
-              <UiButton id="dm-copy-deck" disabled={busy || !selDeck} onClick={copyDeck}>复制到分类</UiButton>
-              <UiButton id="dm-move-deck" disabled={busy || !selDeck} onClick={moveDeck}>移动到分类</UiButton>
-            </div>
+          </div>
+          {/* 右：按钮列（原版 x350-480，y30 起 35 距；顺序 新建/重命名/删除分类 →
+              新建/重命名/删除卡组 → 移动 → 复制） */}
+          <div style={{ position: 'absolute', left: '340px', top: '6px', width: '130px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <UiButton id="dm-new-category" disabled={busy} onClick={newCategory}>新建分类</UiButton>
+            <UiButton id="dm-rename-category" disabled={busy || !selCategory} onClick={renameCategory}>重命名分类</UiButton>
+            <UiButton id="dm-delete-category" variant="danger" disabled={busy || !selCategory} onClick={deleteCategory}>删除分类</UiButton>
+            <UiButton id="dm-new-deck" disabled={busy} onClick={newDeck}>新建卡组</UiButton>
+            <UiButton id="dm-rename-deck" disabled={busy || !selDeck} onClick={renameDeck}>重命名</UiButton>
+            <UiButton id="dm-delete-deck" variant="danger" disabled={busy || !selDeck} onClick={deleteDeck}>删除</UiButton>
+            <UiButton id="dm-move-deck" disabled={busy || !selDeck} onClick={moveDeck}>移动到分类</UiButton>
+            <UiButton id="dm-copy-deck" disabled={busy || !selDeck} onClick={copyDeck}>复制到分类</UiButton>
+          </div>
+          {/* 扩展行：名称输入 + 目标分类 + 关闭（原版在 wDMQuery 弹窗内） */}
+          <div style={{ position: 'absolute', left: 0, right: 0, top: '314px', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <UiInput
+              id="dm-name-input"
+              style={{ flex: 1 }}
+              placeholder="新建/重命名用的名称"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+            />
+            {/* 目标分类（原版 cbDMCategory；__root__ 哨兵 = 未分类） */}
+            <GfwSelect
+              id="dm-target-category"
+              width={110}
+              value={targetCategory || '__root__'}
+              onValueChange={(v) => setTargetCategory(v === '__root__' ? '' : v)}
+              options={[
+                { value: '__root__', label: '未分类卡组' },
+                ...categories.map((c) => ({ value: c, label: c })),
+              ]}
+            />
+            <UiButton id="dm-close" variant="gold" onClick={onClose}>关闭</UiButton>
           </div>
         </div>
-        {/* 名称输入（原版 wDMQuery 的 ebDMName）：新建/重命名共用 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-          <label className="gfw-label">名称</label>
-          <UiInput
-            id="dm-name-input"
-            style={{ flex: 1 }}
-            placeholder="新建/重命名用的名称"
-            value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-          />
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <UiButton id="dm-close" variant="gold" onClick={onClose}>关闭</UiButton>
-        </div>
       </div>
+      </DesignSpace>
     </div>
   );
 }

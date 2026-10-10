@@ -79,6 +79,7 @@ export default function CardPreviewPanel() {
       {/* Radix Tabs：键盘左右切换 + roving tabindex；.active 类保留给冒烟/样式。
           两个 Tabs.Content 都在 Root 内，条件渲染保持旧的「非活动页不挂载」语义。 */}
       <Tabs.Root
+        className="preview-winfos"
         value={tab}
         onValueChange={(v) => setTab(v as 'info' | 'log')}
       >

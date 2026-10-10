@@ -104,7 +104,7 @@ const waitResp = () => waitFor(() => responses.length > respMark).then(() => {
   return responses[respMark - 1];
 });
 
-window.__promptsSmoke = { checks: {}, ready: false, responses, store: duelStore };
+window.__promptsSmoke = { checks: {}, ready: false, responses, store: duelStore, eventBus };
 
 const run = async () => {
   const checks = {};
@@ -247,6 +247,22 @@ const run = async () => {
   await waitModalClosed();
   assert('rpsPaperIsThree', r.kind === 'I' && r.v === 3, JSON.stringify(r));
 
+  // ---- STOC_SELECT_TP → wFTSelect 先攻/后攻窗（game.cpp:514-518：
+  // (550,240)-(780,340) 230×100，btnFirst (10,30) / btnSecond (10,60)）----
+  const tpSends = [];
+  WailsBridge.sendTPResult = (v) => tpSends.push(v);
+  eventBus.emit('stoc:select_tp', {});
+  await waitForModal('#ft-second-btn');
+  // modalPop 0.25s 缩放动画播完再量矩形
+  await new Promise((res) => setTimeout(res, 300));
+  const ftWin = overlay().querySelector('.modal-ftselect').getBoundingClientRect();
+  assert('ftSelectWindowRect', Math.abs(ftWin.width - 230) < 4 && Math.abs(ftWin.height - 100) < 4,
+    JSON.stringify(ftWin));
+  overlay().querySelector('#ft-second-btn').click();
+  await waitFor(() => tpSends.length === 1);
+  await waitModalClosed();
+  assert('ftSelectSecondSends0', tpSends[0] === 0, JSON.stringify(tpSends));
+
   // ---- MSG_PAY_LPCOST: LP drops by the paid amount (store holds the truth) ----
   const lpBefore = duelStore.getState().lp[0];
   eventBus.emit('duel:pay_lpcost', { player: 0, amount: 1000 });
@@ -311,14 +327,15 @@ const run = async () => {
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
   // 卡名包含匹配：'dark' 命中 Dark Magician（交集后 Blue-Eyes 被滤掉）
+  //（原版 lstANCard 是文本列表：行文本 = `名称（卡号）`，直接读 .cand-card 文本）
   setFilterVal('dark');
   await waitFor(() => overlay().querySelectorAll('.cand-card').length === 1);
-  assert('announceFilterByName', overlay().querySelector('.cand-card .card-tile-name')
+  assert('announceFilterByName', overlay().querySelector('.cand-card')
     .innerText.includes('Dark Magician'), overlay().querySelector('.cand-card').innerText);
   // 卡号片段匹配：'8963' 命中 Blue-Eyes（卡名查询无结果也保留）
   setFilterVal('8963');
   await waitFor(() => overlay().querySelectorAll('.cand-card').length === 1
-    && overlay().querySelector('.cand-card .card-tile-name').innerText.includes('Blue-Eyes'));
+    && overlay().querySelector('.cand-card').innerText.includes('Blue-Eyes'));
   assert('announceFilterByCode', true, overlay().querySelector('.cand-card').innerText);
   // 清空过滤词 → 候选全量恢复
   setFilterVal('');
@@ -336,7 +353,7 @@ const run = async () => {
   await waitForModal('#announce-card-filter');
   setFilterVal('pot');
   await waitFor(() => overlay().querySelectorAll('.cand-card').length >= 1);
-  assert('announceSearchFreeInput', overlay().querySelector('.cand-card .card-tile-name')
+  assert('announceSearchFreeInput', overlay().querySelector('.cand-card')
     .innerText.includes('Pot of Greed'), overlay().querySelector('.cand-card').innerText);
   overlay().querySelector('.cand-card').click();
   r = await waitResp();
@@ -476,17 +493,20 @@ const run = async () => {
   WailsBridge.resolveDesc = async () => '';
 
   // ---- swap_yes_no_button：开时是/否按钮交换左右（game.cpp SwapYesNoButtons）----
+  // 原版默认「是」左「否」右（btnYes (100,105)、btnNo (200,105)）；
+  // DOM 序恒为是/否，视觉左右由 flex order 控制 → 按 bounding x 判定
   eventBus.emit('duel:select_yesno', { player: 0, code: 89631139, loc: 0x4, desc: 0 });
   await waitForModal('#modal-btn-yes');
-  const btnRow = () => [...overlay().querySelectorAll('#modal-btn-yes, #modal-btn-no')].map((b) => b.id);
-  assert('yesNoDefaultOrder', btnRow()[0] === 'modal-btn-no' && btnRow()[1] === 'modal-btn-yes',
-    JSON.stringify(btnRow()));
+  const btnX = () => [
+    overlay().querySelector('#modal-btn-yes').getBoundingClientRect().x,
+    overlay().querySelector('#modal-btn-no').getBoundingClientRect().x,
+  ];
+  assert('yesNoDefaultOrder', btnX()[0] < btnX()[1], JSON.stringify(btnX()));
   settingsStore.set('swap_yes_no_button', 1);
-  await waitFor(() => btnRow()[0] === 'modal-btn-yes');
-  assert('yesNoSwappedOrder', btnRow()[0] === 'modal-btn-yes' && btnRow()[1] === 'modal-btn-no',
-    JSON.stringify(btnRow()));
+  await waitFor(() => btnX()[0] > btnX()[1]);
+  assert('yesNoSwappedOrder', btnX()[0] > btnX()[1], JSON.stringify(btnX()));
   settingsStore.set('swap_yes_no_button', 0);
-  await waitFor(() => btnRow()[0] === 'modal-btn-no');
+  await waitFor(() => btnX()[0] < btnX()[1]);
   overlay().querySelector('#modal-btn-yes').click();
   r = await waitResp();
   await waitModalClosed();

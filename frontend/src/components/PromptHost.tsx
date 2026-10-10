@@ -30,6 +30,7 @@ import { YesNoModal } from './prompts/YesNoModal.tsx';
 import { CardSelectModal } from './prompts/CardSelectModal.tsx';
 import { PositionModal } from './prompts/PositionModal.tsx';
 import { RpsModal } from './prompts/RpsModal.tsx';
+import { FtSelectModal } from './prompts/FtSelectModal.tsx';
 import { CounterModal } from './prompts/CounterModal.tsx';
 import { SumSelectModal } from './prompts/SumSelectModal.tsx';
 import { SortModal } from './prompts/SortModal.tsx';
@@ -109,10 +110,8 @@ export default function PromptHost() {
 
     reg('stoc:select_tp', () => {
       show(
-        <YesNoModal
-          title="先攻选择"
-          message="你先攻吗？（先攻的第一个回合不能攻击）"
-          respond={answer((yes) => WailsBridge.sendTPResult(yes ? 1 : 0))}
+        <FtSelectModal
+          respond={answer((first) => WailsBridge.sendTPResult(first ? 1 : 0))}
         />,
       );
     });
@@ -392,6 +391,7 @@ export default function PromptHost() {
           title={hint || sysString(563) || '请选择要宣言的种族'}
           options={RACES.filter(([v]) => available & (v as number)) as [number, string][]}
           count={data.count}
+          variant="race"
           respond={answer((mask) => WailsBridge.sendResponseI(mask))}
         />,
       );
@@ -405,6 +405,7 @@ export default function PromptHost() {
           title={hint || sysString(562) || '请选择要宣言的属性'}
           options={ATTRS.filter(([v]) => available & (v as number)) as [number, string][]}
           count={data.count}
+          variant="attrib"
           respond={answer((mask) => WailsBridge.sendResponseI(mask))}
         />,
       );

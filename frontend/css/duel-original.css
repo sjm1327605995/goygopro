@@ -8,57 +8,74 @@
  */
 
 /* ---- 左侧卡牌预览面板 ----
-   原版几何（game.cpp:335/356）：wCardImg (1,1)-(198,273)，wInfos 页签
-   (1,275)-(301,639)。这里合并为一列固定在左上到左下。 */
+   原版几何（game.cpp:335/356）：wCardImg (1,1)-(199,274) 灰底框 +
+   卡图 (10,9) 177×254；wInfos 页签 (1,275)-(301,639) 300×364。
+   面板外壳透明（两盒各自落位），位于决斗 DesignSpace 内。 */
 .card-preview-panel {
   position: absolute;
-  left: 1px;
-  top: 1px;
-  bottom: 1px;
-  width: 300px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
-  box-sizing: border-box;
-  background: rgba(13, 17, 32, 0.97);
-  border: 1px solid #6a7a9a;
-  border-radius: 2px;
+  left: 0;
+  top: 0;
+  width: 302px;
+  height: 640px;
   color: #e8e8d0;
   font-size: 12px;
   z-index: 30;
+  pointer-events: none; /* 只读列不挡场地；内部交互件各自恢复 auto */
+}
+
+/* wCardImg：灰底卡图框 (1,1)-(199,274) */
+.preview-image-box {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 198px;
+  height: 272px;
+  background: rgba(192, 192, 192, 0.75);
+  border: 1px solid #5a6a8a;
+  box-sizing: border-box;
   pointer-events: auto;
 }
 
-.preview-image-box {
-  width: 177px;
-  height: 254px;
-  margin: 0 auto;
-  background: #000;
-  border: 1px solid #5a6a8a;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
+/* imgCard (10,9)-(187,263)：177×254 等比 */
 .preview-image {
+  position: absolute;
+  left: 10px;
+  top: 9px;
   width: 177px;
   height: 254px;
   object-fit: contain;
+  background: #000;
 }
 
 .preview-image-empty {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #6a7a9a;
+  color: #4a4a4a;
   font-size: 12px;
+}
+
+/* wInfos 页签控件 (1,275)-(301,639) 300×364 */
+.preview-winfos {
+  position: absolute;
+  left: 1px;
+  top: 275px;
+  width: 300px;
+  height: 364px;
+  background: rgba(13, 17, 32, 0.97);
+  border: 1px solid #6a7a9a;
+  border-radius: 2px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 6px;
+  pointer-events: auto;
 }
 
 .preview-tabs {
   display: flex;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .preview-tab {
@@ -77,15 +94,19 @@
 }
 
 .preview-info {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding-top: 4px;
 }
 
 .preview-name {
   font-weight: 700;
   color: #ffe66a;
   font-size: 13px;
+  text-align: center; /* stName EGUIA_CENTER */
 }
 
 .preview-type,
@@ -98,20 +119,25 @@
   font-weight: 600;
 }
 
+/* stText (15,106)-(287,324) + scrCardText：效果文本区吃满剩余高度 */
 .preview-desc {
-  max-height: 130px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   line-height: 1.5;
   color: #c8d0e0;
   white-space: pre-wrap;
 }
 
+/* lstLog (10,10)-(290,290)：日志页吃满剩余高度 */
 .preview-log {
-  max-height: 160px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding-top: 4px;
 }
 
 .preview-log-line {
@@ -121,6 +147,18 @@
 
 .preview-log-line.log-damage {
   color: #ff9080;
+}
+
+/* ---- 决斗 HUD 进 DesignSpace 的指针穿透 ----
+   视口整体 none 让 3D 场地保持可点；交互根显式恢复 auto（显示型组件
+   ——hint-bar/player-state-panel/chat 消息区等——本就声明 none，不受影响）。 */
+.duel-stage .design-space-viewport {
+  pointer-events: none;
+}
+.duel-stage .design-space .right-controls,
+.duel-stage .design-space .card-select-bar,
+.duel-stage .design-space .modal-overlay {
+  pointer-events: auto;
 }
 
 /* ---- 玩家状态面板（原版 LP 血条，两条都在屏幕顶部：
@@ -143,12 +181,12 @@
 
 #player-panel {
   left: 32%;
-  top: 8px;
+  top: 10px;
 }
 
 #opponent-panel {
   right: 3.1%;
-  top: 8px;
+  top: 10px;
 }
 
 /* 当前回合方的整块背景框（drawing.cpp:582-588：0xa0000000 填充 + 0xffff8080 红描边） */
@@ -292,15 +330,16 @@
   }
 }
 
-/* ---- 回合数菱形块（原版 drawing.cpp (632,10)-(688,50) 顶部居中） ----
-   fixed：它挂在 .phase-strip 里，但要相对窗口顶居中 */
+/* ---- 回合数菱形块（原版 drawing.cpp:663-665 (632,10)-(688,50)，中心 x=660） ----
+   挂在 .phase-strip 里，但要锚到设计空间顶而不是阶段条：transform 祖先
+   （.design-space）下 fixed 即按设计像素定位 */
 .turn-block {
   position: fixed;
-  top: 8px;
-  left: 50%;
+  top: 10px;
+  left: 660px;
   transform: translateX(-50%);
   width: 56px;
-  height: 42px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -425,10 +464,11 @@
 /* ---- stHintMsg 提示条（game.cpp:636 (500,60)-(820,90)，中心约 64% 处） ---- */
 .hint-bar {
   position: absolute;
+  /* stHintMsg (500,60)-(820,90)：320×30，中心 x=660（game.cpp:636） */
   top: 60px;
-  left: 64%;
+  left: 660px;
   transform: translateX(-50%);
-  min-width: 320px;
+  width: 320px;
   max-width: 60vw;
   padding: 6px 18px;
   background: rgba(255, 255, 255, 0.92);
@@ -619,32 +659,36 @@
   display: none;
 }
 
-/* ---- 右侧控制组（gframe game.cpp:916-923 连锁三键 + wSurrender） ---- */
+/* ---- 左列控制条（原版全在 x205-295 竖排：btnLeaveGame (205,5)-(295,80)、
+   连锁三键 (205,100/140/180)-(295,·+35)、btnSpectatorSwap 同 ignore 位，
+   game.cpp:913-926/949） ---- */
 .right-controls {
   position: absolute;
-  right: 12px;
-  bottom: 120px;
+  left: 205px;
+  top: 5px;
+  width: 90px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
   z-index: 60;
 }
 
 .chain-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
+  margin-top: 20px; /* btnLeaveGame 底 80 → 连锁首键 100 */
 }
 
 .chain-btn {
-  width: 88px;
-  padding: 7px 0;
+  width: 90px;
+  height: 35px;
+  padding: 0;
   background: #1c2540;
   color: #9fb0d0;
   border: 1px solid #3a4a6a;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .chain-btn:hover { border-color: #ffe66a; color: #e8e8d0; }
@@ -657,9 +701,11 @@
   box-shadow: 0 0 8px rgba(255, 230, 106, 0.4) inset;
 }
 
+/* btnLeaveGame (205,5)-(295,80)：90×75 竖长大钮 */
 .surrender-btn {
-  width: 88px;
-  padding: 7px 0;
+  width: 90px;
+  height: 75px;
+  padding: 0;
   background: #3a1c1c;
   color: #e8a0a0;
   border: 1px solid #6a3a3a;
@@ -672,8 +718,9 @@
 
 /* 观战者的 btnLeaveGame（duelclient.cpp:653-656 SysString 1350「离开」） */
 .leave-game-btn {
-  width: 88px;
-  padding: 7px 0;
+  width: 90px;
+  height: 75px;
+  padding: 0;
   background: #2a2a3a;
   color: #c8c8e0;
   border: 1px solid #5a5a7a;
@@ -684,6 +731,15 @@
 
 .leave-game-btn:hover { border-color: #9a9aff; color: #e0e0ff; }
 
+/* btnSpectatorSwap (205,100)-(295,135) */
+#spectator-swap-btn {
+  width: 90px;
+  height: 35px;
+  padding: 0;
+  margin-top: 20px;
+  font-size: 12px;
+}
+
 /* 原版 DrawSelectionLine 的黄色高亮（0xffffff00）：组队赛队友已请求投降时
    btnLeaveGame 常亮黄框提醒（drawing.cpp:579-580） */
 .btn-hint-glow {
@@ -692,10 +748,15 @@
 }
 
 /* 投降两步确认（原版 wSurrender 弹窗） */
+/* 投降两步确认（原版 wSurrender (490,200)-(840,340) 350×140，game.cpp:543-549；
+   在设计空间内 fixed 即锚定设计像素） */
 .surrender-confirm {
-  position: absolute;
-  right: 96px;
-  bottom: 0;
+  position: fixed;
+  left: 490px;
+  top: 200px;
+  width: 350px;
+  height: 140px;
+  box-sizing: border-box;
   background: rgba(10, 14, 28, 0.96);
   border: 1px solid #ffe66a;
   border-radius: 6px;
@@ -733,7 +794,8 @@
    黑底白字、按身份着色 ---- */
 .chat-overlay {
   position: absolute;
-  left: 32%;
+  /* wChat (307,615)-(1024,640)（game.cpp:906）：底部聊天条从 x307 到右缘 */
+  left: 307px;
   right: 0;
   bottom: 0;
   z-index: 55;
@@ -1409,3 +1471,262 @@
   font-size: 14px;
   font-weight: 700;
 }
+
+/* ---- LP 变动浮字（原版 lpcstring，drawing.cpp:630-636）----
+   己方 (400,472)-(922,520)、对方 (400,162)-(922,210)，48px 大字渐隐 */
+.lp-float {
+  position: absolute;
+  left: 400px;
+  width: 522px;
+  text-align: center;
+  font-size: 48px;
+  font-weight: 700;
+  color: #ffff66;
+  text-shadow: 2px 2px 0 #000, -1px -1px 0 #000;
+  pointer-events: none;
+  z-index: 900;
+  animation: lp-float-fade 1.3s ease-out forwards;
+}
+.lp-float-0 { top: 472px; }
+.lp-float-1 { top: 162px; }
+@keyframes lp-float-fade {
+  0% { opacity: 1; transform: translateY(0); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-14px); }
+}
+
+/* ---- wCardSelect / wCardDisplay 原版窗（game.cpp:578-600）----
+   (320,100)-(1000,400) 680×300；位置标签 120×20 白底 + 卡图钮 120×170，
+   列距 125；>5 张横向滚动（原版 scrCardList 翻页的滚动等价）。 */
+.wcs-window {
+  position: absolute;
+  left: 320px;
+  top: 100px;
+  width: 680px;
+  height: 300px;
+  min-width: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 0 10px 8px;
+}
+.wcs-cardrow {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 5px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 5px 20px 0;
+  align-items: flex-start;
+}
+.wcs-cell {
+  width: 120px;
+  flex-shrink: 0;
+}
+/* stCardPos：白底居中区域名（无区域信息时保持占位高度对齐卡钮） */
+.wcs-pos {
+  height: 20px;
+  margin-bottom: 5px;
+  background: #f4f4f4;
+  color: #202020;
+  font-size: 11px;
+  line-height: 20px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.wcs-pos:empty {
+  background: transparent;
+}
+.wcs-cell .select-card-item {
+  width: 120px;
+  height: 170px;
+  margin: 0;
+}
+.wcs-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 6px;
+  flex-shrink: 0;
+}
+
+/* ---- wQuery 是/否窗（game.cpp:535-541）：(490,200)-(840,340) 350×140 ---- */
+.modal-query {
+  position: absolute;
+  left: 490px;
+  top: 200px;
+  width: 350px;
+  height: 140px;
+  min-width: 0;
+  margin: 0;
+  padding: 0 10px;
+  box-sizing: border-box;
+}
+.modal-query .query-msg {
+  position: absolute;
+  left: 20px;
+  top: 44px;
+  width: 320px;
+  height: 56px;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-main);
+}
+.modal-query .query-btns {
+  position: absolute;
+  left: 100px;
+  top: 105px;
+  display: flex;
+  gap: 50px;
+}
+.modal-query .query-btns .btn {
+  width: 50px;
+  height: 25px;
+  padding: 0;
+}
+
+/* ---- wPosSelect 表示形式窗（game.cpp:567-575）：(425,210)-(900,399) 475×189，
+   按钮 137×137 位于 (27/169/311, 35) ---- */
+.modal-pos {
+  position: absolute !important;
+  left: 425px;
+  top: 210px;
+  width: 475px;
+  height: 189px;
+  min-width: 0;
+  margin: 0;
+  padding: 0 10px;
+  box-sizing: border-box;
+}
+.modal-pos .pos-row {
+  position: absolute;
+  left: 27px;
+  top: 35px;
+  display: flex;
+  gap: 5px;
+  margin: 0;
+}
+
+/* ---- wANCard 宣言卡名窗（game.cpp:614-620）：(510,120)-(820,420) 310×300；
+   ebANCard (20,25)-(290,45)、lstANCard (20,50)-(290,265)、OK (110,270)-(200,295) ---- */
+.modal-announce-card {
+  position: absolute;
+  left: 510px;
+  top: 120px;
+  width: 310px;
+  height: 300px;
+  min-width: 0;
+  margin: 0;
+  padding: 0 10px 8px;
+  box-sizing: border-box;
+  gap: 5px;
+}
+.modal-announce-card .ancard-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ---- wANRace (480,200)-(850,410) 370×210 / wANAttribute (500,200)-(830,285) 330×85 ----
+   （game.cpp:622-634；原版是复选框阵列，我们沿用按钮阵列） */
+.modal-anrace,
+.modal-anattr {
+  position: absolute;
+  min-width: 0;
+  margin: 0;
+  padding: 0 10px 8px;
+  box-sizing: border-box;
+}
+.modal-anrace { left: 480px; top: 200px; width: 370px; height: 210px; }
+.modal-anattr { left: 500px; top: 200px; width: 330px; height: 85px; }
+.modal-anrace .modal-title,
+.modal-anattr .modal-title { padding: 2px 0; }
+
+/* ---- wOptions 选项/数字窗（game.cpp:551-565）：(490,200)-(840,340) 350×140，
+   一页 5 行 330×30 + <<< / >>> / OK ---- */
+.modal-options {
+  position: absolute;
+  left: 490px;
+  top: 200px;
+  width: 350px;
+  min-height: 140px;
+  min-width: 0;
+  margin: 0;
+  padding: 0 10px 8px;
+  box-sizing: border-box;
+  gap: 6px;
+}
+.modal-options .opt-list { gap: 5px; margin: 4px 0; }
+.modal-options .opt-list .num-opt { height: 30px; }
+
+/* ---- wHand 猜拳窗（game.cpp:504-512）：(500,450)-(825,605) 325×155，
+   三钮 95×134 位于 (10/115/220, 10) ---- */
+.modal-rps {
+  position: absolute;
+  left: 500px;
+  top: 450px;
+  width: 325px;
+  height: 155px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+.modal-rps .modal-title { display: none; } /* 原版 wHand 无标题栏 */
+.modal-rps .rps-row {
+  display: flex;
+  gap: 10px;
+  margin: 10px;
+}
+
+/* 种族/属性窗内按钮压紧：25 项种族 5 行要装进 210px 高（原版 25px 行距复选框） */
+.modal-anrace .mask-opt,
+.modal-anattr .mask-opt {
+  margin: 2px !important;
+  padding: 2px 8px !important;
+  font-size: 12px;
+  height: 24px;
+}
+.modal-anrace .modal-title { font-size: 12px; }
+
+/* 宣言窗内容垂直间距压紧（盖过 .modal-box 的 18px gap，否则底部按钮溢出边框） */
+.modal-anrace,
+.modal-anattr,
+.modal-announce-card,
+.modal-options,
+.modal-query,
+.modal-pos,
+.modal-rps {
+  gap: 4px;
+}
+.modal-anrace #mask-confirm,
+.modal-anattr #mask-confirm { height: 24px; }
+
+/* ---- wFTSelect 先后手窗（game.cpp:514-518）：(550,240)-(780,340) 230×100，
+   无标题文字；btnFirst (10,30)-(220,55) / btnSecond (10,60)-(220,85) 210×25 ---- */
+.modal-ftselect {
+  position: absolute;
+  left: 550px;
+  top: 240px;
+  width: 230px;
+  height: 100px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  display: block;
+}
+.modal-ftselect .btn {
+  position: absolute;
+  left: 10px;
+  width: 210px;
+  height: 25px;
+  padding: 0;
+}
+.modal-ftselect #ft-first-btn { top: 30px; }
+.modal-ftselect #ft-second-btn { top: 60px; }

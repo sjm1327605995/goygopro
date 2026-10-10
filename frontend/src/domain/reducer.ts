@@ -39,6 +39,18 @@ export interface BoardCard {
   link?: number;
   /** 连接标记位掩码（QUERY_LINK 后半，LINK_MARKER_*；0=未知/非连接） */
   linkMarker?: number;
+  /** 当前攻击力（QUERY_ATTACK；undefined=未查询到，原版 atkstring 为空时不画） */
+  attack?: number;
+  /** 当前守备力（QUERY_DEFENSE） */
+  defense?: number;
+  /** 原本攻击力（QUERY_BASE_ATTACK；攻守变色基准，drawing.cpp DrawStatus） */
+  baseAttack?: number;
+  /** 原本守备力（QUERY_BASE_DEFENSE） */
+  baseDefense?: number;
+  /** 等级（QUERY_LEVEL；非 XYZ/连接怪的等级串） */
+  level?: number;
+  /** 阶级（QUERY_RANK；XYZ 怪的 R 串） */
+  rank?: number;
 }
 
 /** 一个显示座的场地区（只追踪有 mesh 的区；deck/extra 走 piles 计数） */
@@ -701,9 +713,18 @@ const boardHandlers: Record<string, EventHandler> = {
         type: q.type ?? cur?.type ?? 0,
         link: q.link ?? cur?.link ?? 0,
         linkMarker: q.linkMarker ?? cur?.linkMarker ?? 0,
+        attack: q.attack ?? cur?.attack,
+        defense: q.defense ?? cur?.defense,
+        baseAttack: q.baseAttack ?? cur?.baseAttack,
+        baseDefense: q.baseDefense ?? cur?.baseDefense,
+        level: q.level ?? cur?.level,
+        rank: q.rank ?? cur?.rank,
       };
       if (!cur || cur.code !== card.code || cur.pos !== card.pos || (cur.status ?? 0) !== card.status
-        || (cur.type ?? 0) !== card.type || (cur.linkMarker ?? 0) !== card.linkMarker) {
+        || (cur.type ?? 0) !== card.type || (cur.linkMarker ?? 0) !== card.linkMarker
+        || cur.attack !== card.attack || cur.defense !== card.defense
+        || cur.baseAttack !== card.baseAttack || cur.baseDefense !== card.baseDefense
+        || cur.level !== card.level || cur.rank !== card.rank) {
         zone[seq] = card;
         changed = true;
       }
@@ -724,9 +745,18 @@ const boardHandlers: Record<string, EventHandler> = {
       type: ev.type ?? cur?.type ?? 0,
       link: ev.link ?? cur?.link ?? 0,
       linkMarker: ev.linkMarker ?? cur?.linkMarker ?? 0,
+      attack: ev.attack ?? cur?.attack,
+      defense: ev.defense ?? cur?.defense,
+      baseAttack: ev.baseAttack ?? cur?.baseAttack,
+      baseDefense: ev.baseDefense ?? cur?.baseDefense,
+      level: ev.level ?? cur?.level,
+      rank: ev.rank ?? cur?.rank,
     };
     if (cur && cur.code === card.code && cur.pos === card.pos && (cur.status ?? 0) === card.status
-      && (cur.type ?? 0) === card.type && (cur.linkMarker ?? 0) === card.linkMarker) return state;
+      && (cur.type ?? 0) === card.type && (cur.linkMarker ?? 0) === card.linkMarker
+      && cur.attack === card.attack && cur.defense === card.defense
+      && cur.baseAttack === card.baseAttack && cur.baseDefense === card.baseDefense
+      && cur.level === card.level && cur.rank === card.rank) return state;
     zone[ev.sequence] = card;
     return { ...state, board };
   },

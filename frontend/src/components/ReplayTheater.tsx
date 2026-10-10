@@ -312,7 +312,7 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
       <DuelStage onExit={onNavigate} showSurrender={false} interactive={false} compact onReady={handleStageReady} />
 
       <DesignSpace>
-      <div className="gfw-window gfw-replay">
+      <div className="gfw-window gfw-replay" style={{ display: events.length ? 'none' : 'block' }}>
         <div className="gfw-title">观看录像</div>
         {/* 内容区 396px（420-24）：
             lstReplayList (10,30)-(350,400) 340×370 / 录像信息 label (360,30) +
@@ -364,8 +364,56 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
         </div>
       </div>
 
-      {/* 播放控制（扩展件；原版对应决斗中的 wReplayControl 浮窗 game.cpp:897-904。
-          进度条/倍速无原版对应物，集中放在录像窗正下方 (220,530)） */}
+      {/* 播放控制（原版 wReplayControl，game.cpp:897-904：回放中悬浮在
+          (205,143) 90×130 的场上浮窗——播放/暂停 (5,5)、交换视角 (5,30)、
+          单步 (5,55)、撤销 (5,80)、退出 (5,105)，均 80×20）。
+          进度条/倍速无原版对应物，留在录像窗正下方 (220,530) 的扩展面板 */}
+      {events.length > 0 && (
+        <div
+          id="replay-control-panel"
+          className="gfw-window"
+          style={{ left: '205px', top: '143px', width: '90px', height: '130px', transform: 'none', borderRadius: '4px' }}
+        >
+          <UiButton
+            style={{ position: 'absolute', left: '5px', top: '5px', width: '80px', height: '20px', padding: 0, fontSize: '12px' }}
+            onClick={togglePlay}
+            disabled={!stageReady || !events.length}
+          >
+            {isPlaying ? '⏸ 暂停' : '▶ 播放'}
+          </UiButton>
+          {/* btnReplaySwap（game.cpp:901 → ReplayMode::SwapField）：交换双方视角 */}
+          <UiButton
+            id="replay-swap-btn"
+            style={{ position: 'absolute', left: '5px', top: '30px', width: '80px', height: '20px', padding: 0, fontSize: '12px' }}
+            title="交换双方视角（场地旋转 180°）"
+            onClick={() => duelStore.toggleViewSwap()}
+            disabled={!stageReady || !events.length}
+          >切换视角</UiButton>
+          <UiButton
+            style={{ position: 'absolute', left: '5px', top: '55px', width: '80px', height: '20px', padding: 0, fontSize: '12px' }}
+            onClick={stepForward}
+            disabled={!stageReady || currentStep >= events.length}
+          >单步 ⏭</UiButton>
+          <UiButton
+            style={{ position: 'absolute', left: '5px', top: '80px', width: '80px', height: '20px', padding: 0, fontSize: '12px' }}
+            onClick={stepBack}
+            disabled={!stageReady || currentStep === 0}
+          >撤销 ⏮</UiButton>
+          {/* btnReplayExit：停播回列表（原版 BUTTON_REPLAY_EXIT 退出回放模式） */}
+          <UiButton
+            id="replay-exit-btn"
+            style={{ position: 'absolute', left: '5px', top: '105px', width: '80px', height: '20px', padding: 0, fontSize: '12px' }}
+            onClick={() => {
+              pause();
+              setEvents([]);
+              setCurrentStep(0);
+              setStageReady(false);
+              duelStore.reset();
+              if (stageRef.current) stageRef.current.field3D.clearBoard();
+            }}
+          >退出</UiButton>
+        </div>
+      )}
       <div
         id="replay-playback-panel"
         className="gfw-window"
@@ -388,26 +436,7 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <UiButton style={{ width: '48px' }} onClick={stepBack} disabled={!stageReady || currentStep === 0}>⏮</UiButton>
-            <UiButton
-             
-              style={{ width: '96px' }}
-              onClick={togglePlay}
-              disabled={!stageReady || !events.length}
-            >
-              {isPlaying ? '⏸ 暂停' : '▶ 播放'}
-            </UiButton>
-            <UiButton style={{ width: '48px' }} onClick={stepForward} disabled={!stageReady || currentStep >= events.length}>⏭</UiButton>
-            {/* btnReplaySwap（game.cpp:901 → ReplayMode::SwapField）：交换双方视角 */}
-            <UiButton
-              id="replay-swap-btn"
-             
-              style={{ width: '96px' }}
-              title="交换双方视角（场地旋转 180°）"
-              onClick={() => duelStore.toggleViewSwap()}
-              disabled={!stageReady || !events.length}
-            >切换视角</UiButton>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             <GfwSelect
               aria-label="回放速度"
               width={90}

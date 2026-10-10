@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react';
 import DuelStage from './DuelStage.tsx';
-import CardListOverlay from './CardListOverlay.tsx';
 import { WailsBridge } from '../wails_bridge.ts';
 import { aiSimulator } from '../duel/ai_simulator.ts';
 import { installHotkeys } from '../duel/hotkeys.ts';
@@ -38,8 +37,6 @@ export default function DuelScreen({ mode, onNavigate }: DuelScreenProps) {
   return (
     <div id="duel-screen" className="screen active">
       <DuelStage onExit={onNavigate} />
-      {/* F1-F8 墓地/除外/额外/超量素材列表浮窗 */}
-      <CardListOverlay />
     </div>
   );
 }
