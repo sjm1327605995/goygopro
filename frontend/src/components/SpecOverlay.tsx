@@ -277,11 +277,14 @@ export default function SpecOverlay() {
       <div
         id="ac-message"
         style={{
-          position: 'absolute', left: '50%', top: '38%', transform: 'translateX(-50%)', zIndex: 950,
+          // 原版 wACMessage/stACMessage（game.cpp:527-533）：(490,240)-(840,300)
+          // 350×60 无边框、0xc0c0c0ff 浅蓝白底、黑字居中
+          position: 'absolute', left: '490px', top: '240px', width: '350px', height: '60px', zIndex: 950,
           display: acText ? 'block' : 'none',
-          background: 'rgba(10,12,20,0.85)', color: '#fff', border: '1px solid var(--border-cyan)',
-          padding: '10px 22px', borderRadius: '6px', fontSize: '14px', pointerEvents: 'none',
-          whiteSpace: 'nowrap',
+          textAlign: 'center', lineHeight: '58px',
+          background: 'rgba(192, 192, 255, 0.75)', color: '#000',
+          border: '1px solid #666', fontSize: '14px', pointerEvents: 'none',
+          whiteSpace: 'nowrap', boxSizing: 'border-box',
         }}
       >
         {acText || ''}

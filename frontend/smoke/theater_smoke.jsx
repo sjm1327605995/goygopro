@@ -92,7 +92,7 @@ root.render(
   </UiRoot>
 );
 
-window.__theaterSmoke = { checks: {}, ready: false };
+window.__theaterSmoke = { checks: {}, ready: false, eventBus };
 const checks = window.__theaterSmoke.checks;
 const $ = (sel) => document.querySelector(sel);
 
@@ -216,6 +216,33 @@ const setInputVal = (el, v) => {
     // 场上真的有卡：召唤事件（第 8 步）被播放后，store 面板应有青眼
     recordStore();
 
+    // ---- 原版回放形态：载入后列表窗隐藏、wReplayControl 浮窗在 (205,143) ----
+    checks.listHiddenWhilePlaying = document.querySelector('.gfw-replay').offsetParent === null
+      && !!document.getElementById('replay-control-panel');
+
+    // ---- btnReplaySwap（game.cpp:901 → ReplayMode::SwapField）：交换视角
+    // —— store 显示座翻转 + 相机绕到另一侧，再换一次复原 ----
+    const swapBtn = document.getElementById('replay-swap-btn');
+    record('replay-swap-btn-shown', !!swapBtn && !swapBtn.disabled);
+    const lpBeforeSwap = [duelStore.getState().lp[0], duelStore.getState().lp[1]];
+    swapBtn.click();
+    await waitFor(() => duelStore.getState().viewSwapped === true, 'view swapped');
+    record('replay-swap-flips-store', duelStore.getState().lp[0] === lpBeforeSwap[1]
+      && duelStore.getState().lp[1] === lpBeforeSwap[0], JSON.stringify(duelStore.getState().lp));
+    const fSwap = window.__theaterProbe.field;
+    await waitFor(() => fSwap.camera.position.z < 0, 'camera flips');
+    record('replay-swap-flips-camera', true);
+    swapBtn.click();
+    await waitFor(() => duelStore.getState().viewSwapped === false
+      && fSwap.camera.position.z > 0, 'view restored');
+    record('replay-swap-back', duelStore.getState().lp[0] === lpBeforeSwap[0]);
+
+    // btnReplayExit：退出回放 → 列表窗恢复可见（原版退回 wReplay 列表态）
+    document.getElementById('replay-exit-btn').click();
+    await waitFor(() => document.querySelector('.gfw-replay').offsetParent !== null
+      && !document.getElementById('replay-control-panel'), 'list restored after exit');
+    checks.exitRestoresList = true;
+
     // ---------- 波 E：回放列表改名/删除 ----------
     const renameBtn = document.getElementById('replay-rename-btn');
     checks.renameDeleteButtonsExist = !!renameBtn && !!document.getElementById('replay-delete-btn');
@@ -263,23 +290,6 @@ const setInputVal = (el, v) => {
     await waitFor(() => replayMutations.saved.length === 2, 'auto saved');
     checks.autoSavePath = replayMutations.saved[1] === 'auto_one'
       && !document.getElementById('replay-save-prompt');
-
-    // ---- btnReplaySwap（game.cpp:901 → ReplayMode::SwapField）：交换视角
-    // —— store 显示座翻转 + 相机绕到另一侧，再换一次复原 ----
-    const swapBtn = document.getElementById('replay-swap-btn');
-    record('replay-swap-btn-shown', !!swapBtn && !swapBtn.disabled);
-    const lpBeforeSwap = [duelStore.getState().lp[0], duelStore.getState().lp[1]];
-    swapBtn.click();
-    await waitFor(() => duelStore.getState().viewSwapped === true, 'view swapped');
-    record('replay-swap-flips-store', duelStore.getState().lp[0] === lpBeforeSwap[1]
-      && duelStore.getState().lp[1] === lpBeforeSwap[0], JSON.stringify(duelStore.getState().lp));
-    const fSwap = window.__theaterProbe.field;
-    await waitFor(() => fSwap.camera.position.z < 0, 'camera flips');
-    record('replay-swap-flips-camera', true);
-    swapBtn.click();
-    await waitFor(() => duelStore.getState().viewSwapped === false
-      && fSwap.camera.position.z > 0, 'view restored');
-    record('replay-swap-back', duelStore.getState().lp[0] === lpBeforeSwap[0]);
 
     record('no-fatal', true);
   } catch (err) {

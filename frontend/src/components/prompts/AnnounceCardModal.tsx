@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { WailsBridge } from '../../wails_bridge.ts';
-import { CardTile } from './CardTile.tsx';
 
 /** Card announcement（MSG_ANNOUNCE_CARD）：候选网格 + 实时过滤 + 自由输入卡号。
  * 原版 ebANCard 输入实时过滤宣言候选（client_field.cpp:1535-1569
@@ -71,9 +70,16 @@ export function AnnounceCardModal({ title, candidates, respond }: {
         />
       </div>
       {shown.length > 0 && (
-        <div className="modal-cards-grid">
+        // 原版 lstANCard (20,50)-(290,265)：候选是文本列表（非卡图网格）
+        <div className="gfw-list ancard-list">
           {shown.map(({ code, name }, idx) => (
-            <CardTile key={`${code}-${idx}`} code={code} name={name} className="cand-card" dataAttrs={{ 'data-idx': idx }} onPick={() => respond(code)} />
+            <div
+              key={`${code}-${idx}`}
+              className="gfw-list-item cand-card"
+              data-idx={idx}
+              style={{ cursor: 'pointer' }}
+              onClick={() => respond(code)}
+            >{`${name}（${code}）`}</div>
           ))}
         </div>
       )}

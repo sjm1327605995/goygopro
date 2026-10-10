@@ -16,10 +16,13 @@ export function StoreCardSelectModal({ title, cards, respond }: {
 }) {
   const cs = useSyncExternalStore(duelStore.subscribe, duelStore.getState).cardSelect;
   if (!cs) return null;
+  // 位置标签（原版 stCardPos）需要区域信息：named 只有 code/name，
+  // 从 cs.cards 按序并入 l/s
+  const withLoc = cards.map((c, i) => ({ ...c, l: cs.cards[i]?.l, s: cs.cards[i]?.s }));
   return (
     <CardSelectModal
       title={title}
-      cards={cards}
+      cards={withLoc}
       min={cs.min}
       max={cs.max}
       cancelable={cs.cancelable}

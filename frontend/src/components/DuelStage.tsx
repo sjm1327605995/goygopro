@@ -15,7 +15,10 @@ import PromptHost from './PromptHost.tsx';
 import VictoryOverlay from './VictoryOverlay.tsx';
 import SpecOverlay from './SpecOverlay.tsx';
 import BattleOverlay from './BattleOverlay.tsx';
+import LpFloatText from './LpFloatText.tsx';
 import CardTooltip from './CardTooltip.tsx';
+import DesignSpace from '../ui/DesignSpace.tsx';
+import CardListOverlay from './CardListOverlay.tsx';
 
 /**
  * Renders the 3D duel board + HUD and wires the imperative Three.js layer /
@@ -103,6 +106,11 @@ export default function DuelStage({
     <div className="duel-stage" style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div id="duel-canvas-container"></div>
 
+      {/* 2D HUD 全部进 1024×640 设计坐标系（DesignSpace），随窗口按原版
+          Resize 语义非均匀拉伸；视口 pointer-events 穿透（见 duel-original.css），
+          3D 场地点选不受影响。鼠标锚定的 ActionPopup/CardTooltip 用屏幕坐标，
+          留在设计空间外。 */}
+      <DesignSpace>
       {/* P2 新面板：单一 store 驱动（原版 wCardImg/wInfos + lp.png 血条） */}
       {!compact && <CardPreviewPanel />}
       <PlayerPanel side="opponent" />
@@ -115,7 +123,6 @@ export default function DuelStage({
       {!compact && <HintBar />}
       {/* 手牌坞在剧场也保留：回放里自己的手牌要从这里看（对手手背由 3D 场地渲染） */}
       <HandDock interactive={interactive} />
-      {!compact && <ActionPopup />}
       {interactive && <PromptHost />}
       <VictoryOverlay showVictory={interactive} />
 
@@ -129,6 +136,11 @@ export default function DuelStage({
       {/* P4 波 6 补完：DrawSpec 特效（翻卡/放大/揭示/无效化 + 猜硬币文本）与 stTip 悬浮提示 */}
       {!compact && <SpecOverlay />}
       {!compact && <BattleOverlay />}
+      {!compact && <LpFloatText />}
+      {/* F1-F8 墓地/除外/额外/超量素材列表浮窗（原版 wCardDisplay，进设计空间） */}
+      {!compact && <CardListOverlay />}
+      </DesignSpace>
+      {!compact && <ActionPopup />}
       {!compact && <CardTooltip />}
     </div>
   );

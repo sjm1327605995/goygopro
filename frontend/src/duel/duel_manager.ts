@@ -56,6 +56,10 @@ export class DuelManager {
   _lastViewSwapped = false;
   /** 上次布设高亮时的 cardSelect 指纹（kind:count:selected），避免重复重建 */
   _lastCardSelectKey = '';
+  /** store.board / piles 的上次引用：移动/表示变化等非 update_data 事件
+   * 同样要改变状态浮签与牌堆计数（update_data 路径另有显式同步） */
+  _lastBoard: any = null;
+  _lastPiles: any = null;
 
   constructor(field3D: DuelField3D, { interactive = true }: { interactive?: boolean } = {}) {
     this.field3D = field3D;
@@ -89,6 +93,13 @@ export class DuelManager {
     if (key !== this._lastCardSelectKey) {
       this._lastCardSelectKey = key;
       this.refreshCardSelectMarks();
+    }
+    // 场面/牌堆的任何 store 变化都刷新状态浮签与牌堆计数（幂等）；
+    // 覆盖 pos_change/move 等不走 update_data 的路径
+    if (st.board !== this._lastBoard || st.piles !== this._lastPiles) {
+      this._lastBoard = st.board;
+      this._lastPiles = st.piles;
+      this.syncLinkData();
     }
     if (!this.interactive || !cs || cs.kind !== 'card' || !cs.selected.length) return;
     // 选满自动应答（原版 event_handler.cpp:1389-1398：达到 select_max，
@@ -851,12 +862,16 @@ export class DuelManager {
   // 的 type/linkMarker（QUERY_TYPE/QUERY_LINK，update_data 携带）写到对应
   // mesh 的 userData；只有主怪兽区需要（连接怪只存在于 mzone）。悬停高亮
   // 本身由 field3d.updateLinkedZones 按 hoveredCard 重算。
+  // 同时写入攻守/等级字段（DrawStatus 的数据源），末尾刷新状态浮签与牌堆计数。
   syncLinkData(): void {
     const state = duelStore.getState();
     const bottom = bottomEngineSeat(state);
+    // 防御：smoke 的桩 field 没有 cardsOnField/syncStatusLabels 等
+    const cof = this.field3D.cardsOnField;
+    if (cof) {
     for (let disp = 0; disp < 2; disp++) {
       const seat = disp === 0 ? bottom : 1 - bottom;
-      const zone = (this.field3D.cardsOnField[seat] || {}).mzone || [];
+      const zone = (cof[seat] || {}).mzone || [];
       const cards = state.board[disp].mzone;
       for (let i = 0; i < zone.length; i++) {
         const mesh = zone[i];
@@ -864,8 +879,26 @@ export class DuelManager {
         const card = cards[i] || null;
         mesh.userData.cardType = card ? (card.type || 0) : 0;
         mesh.userData.linkMarker = card ? (card.linkMarker || 0) : 0;
+        mesh.userData.link = card ? (card.link || 0) : 0;
+        mesh.userData.cardPos = card ? card.pos : 0;
+        mesh.userData.attack = card ? card.attack : undefined;
+        mesh.userData.defense = card ? card.defense : undefined;
+        mesh.userData.baseAttack = card ? card.baseAttack : undefined;
+        mesh.userData.baseDefense = card ? card.baseDefense : undefined;
+        mesh.userData.level = card ? card.level : undefined;
+        mesh.userData.rank = card ? card.rank : undefined;
       }
     }
+    }
+    // DrawStatus（drawing.cpp:771-786）+ 牌堆计数（:724-769）浮签刷新。
+    // store.piles 按显示座索引，field3d 的堆区按引擎 seat → 换算后再传。
+    if (typeof this.field3D.syncStatusLabels === 'function')
+      this.field3D.syncStatusLabels(state.playerSlot);
+    const pilesBySeat = bottom === 0
+      ? [state.piles[0], state.piles[1]]
+      : [state.piles[1], state.piles[0]];
+    if (typeof this.field3D.syncPileCounts === 'function')
+      this.field3D.syncPileCounts(pilesBySeat);
   }
 
   async resyncFromStore(): Promise<void> {

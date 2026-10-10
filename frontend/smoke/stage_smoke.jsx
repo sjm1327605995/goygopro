@@ -82,12 +82,20 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     // 聊天监听器随组件挂载，首条在挂载前发出会丢；挂载后再发一条保证可见
     eventBus.emit('stoc:chat', { player: 0, msg: '决斗吧！' });
 
-    // ---- 左侧预览面板：原版 wCardImg(1,1)-(198,273) + wInfos(1,275)-(301,639)
-    // 合并列，固定左上、宽约 300，1024 宽度下必须可见 ----
+    // ---- 左侧预览面板（HUD 已进 1024×640 DesignSpace，断言换算设计像素 × sx）：
+    // 外壳透明 302×640 贴左上；wCardImg 灰框 (1,1) 198×272；wInfos (1,275) 300×364 ----
+    const sx = W / 1024;
     const pv = rectOf('.card-preview-panel');
     record('preview-visible-at-1024', pv.width > 0 && pv.height > 100);
     record('preview-anchored-topleft', pv.left <= 3 && pv.top <= 3, JSON.stringify(pv));
-    record('preview-original-width', pv.width >= 290 && pv.width <= 310, String(pv.width));
+    record('preview-original-width', Math.abs(pv.width - 302 * sx) < 4, `${pv.width} vs ${302 * sx}`);
+    const pib = rectOf('.preview-image-box');
+    const sy = H / 640;
+    record('preview-cardimg-box', pib && Math.abs(pib.left - sx) < 3 && Math.abs(pib.top - sy) < 3
+      && Math.abs(pib.width - 198 * sx) < 3 && Math.abs(pib.height - 272 * sy) < 3, JSON.stringify(pib));
+    const pw = rectOf('.preview-winfos');
+    record('preview-winfos-rect', pw && Math.abs(pw.top - 275 * sy) < 4
+      && Math.abs(pw.width - 300 * sx) < 4 && Math.abs(pw.height - 364 * sy) < 4, JSON.stringify(pw));
 
     // ---- LP 条：两条都在顶部（p0 左中 32%、p1 右侧 3.1%），LP 数字在框上 ----
     const pp = rectOf('#player-panel');
@@ -97,13 +105,22 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     record('lp-opponent-right-band', op.right >= W * 0.95, `op.right=${op.right}`);
     record('lp-values-on-frame', $('#player-panel-lp').innerText === '4000'
       && $('#opponent-panel-lp').innerText === '8000');
+    // LP 变动浮字（原版 lpcstring，drawing.cpp:630-636）：damage/recover →
+    // 场中大字。本页 playerType=1（自己=引擎座 1）：player 1 → 显示座 0（底部
+    // (400,472)），player 0 → 显示座 1（顶部 (400,162)），1.3s 渐隐
+    eventBus.emit('duel:damage', { player: 1, amount: 700 });
+    await waitFor(() => $('#lp-float-0') && $('#lp-float-0').textContent === '-700', 'lp float damage shows');
+    record('lp-float-damage', rectOf('#lp-float-0').top > 300 * (H / 640));
+    eventBus.emit('duel:recover', { player: 0, amount: 500 });
+    await waitFor(() => $('#lp-float-1') && $('#lp-float-1').textContent === '+500', 'lp float recover shows');
+    record('lp-float-recover', rectOf('#lp-float-1').top < 300 * (H / 640));
     // lpf.png 被 vite 内联成 data URL，只断言背景图确实解析成功
     record('lp-frame-uses-texture', getComputedStyle($('.lp-frame')).backgroundImage.startsWith('url('));
 
-    // ---- 回合数菱形块：顶部居中 ----
+    // ---- 回合数菱形块：原版 (632,10)-(688,50)，中心 x=660 设计像素 ----
     const tb = rectOf('#turn-block');
-    record('turn-block-centered', tb && Math.abs(tb.left + tb.width / 2 - W / 2) < 30
-      && tb.top <= 20, JSON.stringify(tb));
+    record('turn-block-centered', tb && Math.abs(tb.left + tb.width / 2 - 660 * sx) < 30
+      && tb.top <= 20 * (H / 640) + 2, JSON.stringify(tb));
 
     // ---- 阶段条：原版 wPhase (480,310)-(855,330) → 右中横向 ----
     const ps = rectOf('#phase-strip');
@@ -306,14 +323,16 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     f.placeCard(0, 'mzone', 5, 10000004, null, 0x1); // EMZ link-2，标记 ↓+↑
     // 经 update_data 事件走完整数据链（reducer 合并 → manager syncLinkData
     // 写 mesh userData）；本次 update_data 会触发一次漂移重建（上面直接
-    // placeCard 的画廊卡不在 store.board），重建后 mesh 与 board 一致
+    // placeCard 的画廊卡不在 store.board），重建后 mesh 与 board 一致。
+    // 卡片同时带 attack/baseAttack（DrawStatus 浮签数据源）：mzone0 攻守
+    // 升高（黄）、mzone3 降低（#ff2090）；mzone4 里侧对方怪（不画浮签）
     eventBus.emit('duel:update_data', { player: 0, location: 0x04, cards: [
-      { code: 10000001, position: { c: 0, l: 0x04, s: 0, p: 1 }, type: LINK_TYPE, link: 1, linkMarker: 0x20 },
-      { code: 10000002, position: { c: 0, l: 0x04, s: 1, p: 1 }, type: LINK_TYPE, link: 1, linkMarker: 0x08 },
+      { code: 10000001, position: { c: 0, l: 0x04, s: 0, p: 1 }, type: LINK_TYPE, link: 1, linkMarker: 0x20, attack: 1000, baseAttack: 800 },
+      { code: 10000002, position: { c: 0, l: 0x04, s: 1, p: 1 }, type: LINK_TYPE, link: 1, linkMarker: 0x08, attack: 800, baseAttack: 800 },
       null,
-      { code: 10000003, position: { c: 0, l: 0x04, s: 3, p: 1 }, type: LINK_TYPE, link: 1, linkMarker: 0x08 },
-      null,
-      { code: 10000004, position: { c: 0, l: 0x04, s: 5, p: 1 }, type: LINK_TYPE, link: 2, linkMarker: 0x82 },
+      { code: 10000003, position: { c: 0, l: 0x04, s: 3, p: 1 }, type: LINK_TYPE, link: 1, linkMarker: 0x08, attack: 500, baseAttack: 800 },
+      { code: 89631139, position: { c: 0, l: 0x04, s: 4, p: 0x8 }, type: 0x21, attack: 1200, baseAttack: 1200, defense: 1000, baseDefense: 1000, level: 4 },
+      { code: 10000004, position: { c: 0, l: 0x04, s: 5, p: 1 }, type: LINK_TYPE, link: 2, linkMarker: 0x82, attack: 1500, baseAttack: 1500 },
       null,
     ] });
     await waitFor(() => {
@@ -369,7 +388,11 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     record('linkzones-non-link-clears', f.linkZoneMarks.length === 0, JSON.stringify(markInfo()));
     hoverMesh(f.cardsOnField[0].mzone[0]);
     record('linkzones-rehover-works', f.linkZoneMarks.length === 1);
-    f.mouse.set(0, 0); // 盘面正上方两 EMZ 之间的空缝
+    // 防抖：先 snap 悬停抬升 tween，再指向屏幕左上角——NDC(0,0) 在不对称视锥
+    //（盘面右移，setViewOffset）下会命中 EMZ 卡，且相机/抬升动画中结果不稳定；
+    // 左上角恒无卡，raycast 必落空
+    f.tweenGroup.update(performance.now() + 5000);
+    f.mouse.set(-0.95, 0.95);
     f.handleHover();
     record('linkzones-clear-on-hover-end', f.linkZoneMarks.length === 0 && !f.hoveredCard,
       `marks=${f.linkZoneMarks.length}`);
@@ -384,6 +407,95 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
       `${beforeSwap} vs ${markInfo()}`);
     duelStore.toggleViewSwap();
     f.clearLinkedZones();
+
+    // ---- 怪兽攻守状态浮签（drawing.cpp:771-786 DrawStatus）+ 牌堆计数
+    //（DrawMisc :724-769）：上面的 update_data 已带 attack/baseAttack/level，
+    // syncLinkData 写进 mesh.userData 后生成 canvas sprite（元数据在
+    // sprite.userData.statusText / statusColors，断言不解析像素）----
+    // seat0 = 对方（playerSlot=1）全表侧 → 4 只连接怪各挂浮签
+    await waitFor(() => f.statusLabels.length === 4, 'link monster status labels');
+    const labelOf = (seat, seq) => {
+      const e = f.statusLabels.find((x) => x.mesh === f.cardsOnField[seat].mzone[seq]);
+      return e ? e.sprite : null;
+    };
+    record('status-label-faceup-drawn', !!labelOf(0, 0) && !!labelOf(0, 1)
+      && !!labelOf(0, 3) && !!labelOf(0, 5), `count=${f.statusLabels.length}`);
+    record('status-label-text-atk', labelOf(0, 0).userData.statusText.line2 === '1000 / LINK-1',
+      labelOf(0, 0).userData.statusText.line2);
+    // atk>base → 黄 #ffff00；atk<base → #ff2090；连接串青 #99ffff
+    record('status-label-atk-buffed-yellow', labelOf(0, 0).userData.statusColors.atk === '#ffff00',
+      labelOf(0, 0).userData.statusColors.atk);
+    record('status-label-atk-dropped-pink', labelOf(0, 3).userData.statusColors.atk === '#ff2090',
+      labelOf(0, 3).userData.statusColors.atk);
+    record('status-label-link-cyan', labelOf(0, 0).userData.statusColors.def === '#99ffff');
+    // 里侧对方怪（mzone4，p=0x8）不画
+    record('status-label-facedown-opponent-hidden', !labelOf(0, 4) && !!f.cardsOnField[0].mzone[4]);
+
+    // 本方（seat1）普通怪：等级串 ☆7 白字、攻守等于原本值 → 白
+    f.placeCard(1, 'mzone', 4, 89631139, null, 0x1);
+    eventBus.emit('duel:update_data', { player: 1, location: 0x04, cards: [
+      null, null, null, null,
+      { code: 89631139, position: { c: 1, l: 0x04, s: 4, p: 1 }, type: 0x21,
+        attack: 2400, baseAttack: 2400, defense: 2000, baseDefense: 2000, level: 7 },
+      null, null,
+    ] });
+    await waitFor(() => !!labelOf(1, 4), 'own monster status label');
+    record('status-label-level-star', labelOf(1, 4).userData.statusText.line1 === '☆7'
+      && labelOf(1, 4).userData.statusText.line2 === '2400 / 2000',
+      JSON.stringify(labelOf(1, 4).userData.statusText));
+    record('status-label-atk-eq-base-white', labelOf(1, 4).userData.statusColors.atk === '#ffffff'
+      && labelOf(1, 4).userData.statusColors.def === '#ffffff');
+
+    // update_card 改攻守 → 浮签文本与颜色更新（reducer change 检测必须放行）
+    eventBus.emit('duel:update_card', { player: 1, location: 0x04, sequence: 4,
+      code: 89631139, position: { c: 1, l: 0x04, s: 4, p: 1 }, type: 0x21,
+      attack: 3400, baseAttack: 2400, defense: 2000, baseDefense: 2000, level: 7 });
+    await waitFor(() => labelOf(1, 4)
+      && labelOf(1, 4).userData.statusText.line2 === '3400 / 2000', 'update_card refreshes label');
+    record('status-label-update-card-refreshes',
+      labelOf(1, 4).userData.statusText.line2 === '3400 / 2000');
+    record('status-label-update-card-color', labelOf(1, 4).userData.statusColors.atk === '#ffff00');
+
+    // ---- 牌堆计数黄字（DrawMisc :724-769）：deck/extra/grave/banish 四堆
+    // >0 才画；数字与 store.piles 一致（piles 按显示座，sprite 按引擎 seat）----
+    const pileOk = () => {
+      const st = duelStore.getState();
+      const ofSeat = (seat) => st.piles[seat === st.playerSlot ? 0 : 1];
+      return ['deck', 'extra', 'grave', 'banish'].every((p) => [0, 1].every((seat) => {
+        const n = ofSeat(seat)[p];
+        const s = f.pileCountSprites[`${seat}:${p}`];
+        return n > 0 ? !!s && s.userData.pileText === String(n) : !s;
+      }));
+    };
+    record('pile-counts-match-store', pileOk(), JSON.stringify(Object.keys(f.pileCountSprites)));
+    // 清零后移除（reload_field 整表覆盖 piles → onStoreChange 同步）
+    const zeroPiles = { lp: 8000, mzone: [], szone: [], deck: 0, hand: 0, grave: 0, removed: 0, extra: 0, extraP: 0 };
+    eventBus.emit('duel:reload_field', { rule: 5, players: [zeroPiles, zeroPiles], chainCount: 0 });
+    await waitFor(() => Object.keys(f.pileCountSprites).length === 0, 'pile sprites removed at zero');
+    record('pile-count-zero-removes', Object.keys(f.pileCountSprites).length === 0);
+    // 回种计数（供截图与清盘断言）
+    eventBus.emit('duel:reload_field', { rule: 5, players: [
+      { lp: 8000, mzone: [], szone: [], deck: 40, hand: 0, grave: 0, removed: 0, extra: 15, extraP: 0 },
+      { lp: 4000, mzone: [], szone: [], deck: 34, hand: 0, grave: 0, removed: 0, extra: 12, extraP: 0 },
+    ], chainCount: 0 });
+    await waitFor(() => Object.keys(f.pileCountSprites).length === 4, 'pile sprites reseeded');
+    record('pile-counts-reseed', pileOk());
+
+    // 清盘：状态浮签与牌堆计数全部移除
+    f.clearBoard();
+    record('status-labels-clear-with-board', f.statusLabels.length === 0
+      && Object.keys(f.pileCountSprites).length === 0);
+    // 恢复场面供截图（表侧怪 + 攻守浮签 + 牌堆黄字）
+    eventBus.emit('duel:update_data', { player: 0, location: 0x04, cards: [
+      { code: 10000001, position: { c: 0, l: 0x04, s: 0, p: 1 }, type: LINK_TYPE, link: 1, linkMarker: 0x20, attack: 1000, baseAttack: 800 },
+      null,
+      { code: 89631139, position: { c: 0, l: 0x04, s: 2, p: 1 }, type: 0x21,
+        attack: 3000, baseAttack: 2500, defense: 2000, baseDefense: 2000, level: 8 },
+      null, null, null, null,
+    ] });
+    await waitFor(() => f.statusLabels.length >= 2
+      && Object.keys(f.pileCountSprites).length === 4, 'scene restored for screenshot');
+    record('status-labels-respawn-after-clear', f.statusLabels.length >= 2);
   } catch (err) {
     checks.fatalMsg = String(err && err.stack || err);
     record('fatal', false);

@@ -1,5 +1,7 @@
 /**
- * 右侧控制组（原版 gframe game.cpp:916-923 的连锁三键 + wSurrender）。
+ * 左列控制条（原版 gframe game.cpp:913-949：btnLeaveGame (205,5)-(295,80) +
+ * 连锁三键 btnChainIgnore/Always/WhenAvail (205,100/140/180)-(295,·+35) +
+ * btnSpectatorSwap (205,100)-(295,135) + wSurrender 确认窗 (490,200)-(840,340)）。
  *
  * 连锁三键不发任何包：它们是本地偏好，决定 duel:select_chain 到来时是否
  * 自动代答 -1（语义见 duel/chain_prefs.js，已核对 duelclient.cpp:1776）。
@@ -67,14 +69,6 @@ export default function RightControls({ onSurrendered, onLeaveObserver }: {
     return (
       <div id="right-controls" className="right-controls">
         <button
-          id="spectator-swap-btn"
-          className={`leave-game-btn${state.viewSwapped ? ' pressed' : ''}`}
-          title="交换双方视角（场地旋转 180°）"
-          onClick={() => duelStore.toggleViewSwap()}
-        >
-          切换视角
-        </button>
-        <button
           id="leave-game-btn"
           className={`leave-game-btn${teammateSurrender ? ' btn-hint-glow' : ''}`}
           onClick={() => {
@@ -84,12 +78,24 @@ export default function RightControls({ onSurrendered, onLeaveObserver }: {
         >
           离开
         </button>
+        <button
+          id="spectator-swap-btn"
+          className={`chain-btn${state.viewSwapped ? ' pressed' : ''}`}
+          title="交换双方视角（场地旋转 180°）"
+          onClick={() => duelStore.toggleViewSwap()}
+        >
+          切换视角
+        </button>
       </div>
     );
   }
 
   return (
     <div id="right-controls" className="right-controls">
+      {/* btnLeaveGame 在最上（205,5)-(295,80)；连锁三键在其下 y100 起 */}
+      <button id="surrender-btn" className="surrender-btn" onClick={() => setConfirming(true)}>
+        {teammateSurrender ? '投降(1/2)' : '投降'}
+      </button>
       <div className="chain-group">
         {MODES.map((m) => (
           <button
@@ -103,9 +109,6 @@ export default function RightControls({ onSurrendered, onLeaveObserver }: {
           </button>
         ))}
       </div>
-      <button id="surrender-btn" className="surrender-btn" onClick={() => setConfirming(true)}>
-        {teammateSurrender ? '投降(1/2)' : '投降'}
-      </button>
       {confirming && (
         <div className="surrender-confirm">
           <div className="surrender-confirm-title">是否确定投降？</div>

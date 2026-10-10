@@ -8,7 +8,7 @@ import * as TWEEN from '../../libs/tween.esm.js';
 import { settingsStore } from '../domain/settings.ts';
 import { ChainVisualizer } from './chain_visualizer.ts';
 import {
-  LOC_NAMES, TYPE_LINK,
+  LOC_NAMES, TYPE_LINK, TYPE_MONSTER, TYPE_XYZ, TYPE_TUNER,
   LINK_MARKER_BOTTOM_LEFT, LINK_MARKER_BOTTOM, LINK_MARKER_BOTTOM_RIGHT,
   LINK_MARKER_LEFT, LINK_MARKER_RIGHT,
   LINK_MARKER_TOP_LEFT, LINK_MARKER_TOP, LINK_MARKER_TOP_RIGHT,
@@ -99,6 +99,13 @@ export class DuelField3D {
   // 标记）= 0xff009900 绿 ----
   linkZoneMarks: { mesh: any; mutual: boolean }[] = [];
   linkZoneTextures: { link: any; mutual: any } | null = null;
+  // ---- 怪兽攻守状态浮签（原版 drawing.cpp:771-786 DrawStatus）----
+  // statusLabels = 每只可见怪兽的两行文本 sprite（等级串 + atk/def），
+  // scene 直挂（不做 mesh 子节点，避免随守备表示旋转），逐帧跟随 mesh 位置。
+  statusLabels: { sprite: any; mesh: any; seat: number }[] = [];
+  // ---- 牌堆计数浮签（原版 drawing.cpp:724-769 DrawMisc 的黄色数字）----
+  // 键 `seat:pile`（引擎 seat；deck/extra/grave/banish），>0 才存在。
+  pileCountSprites: Record<string, any> = {};
   // 点选/右键回调由 DuelStage 挂到 manager 方法上（构造时还没有 manager）
   onPlaceZoneClick: ((zone: { player: number; loc: number; seq: number }) => void) | null = null;
   onCardSelectPick: ((idx: number) => void) | null = null;
@@ -1074,6 +1081,8 @@ export class DuelField3D {
     this.clearCardSelectMarks();
     this.clearHintZones();
     this.clearLinkedZones();
+    this.clearStatusLabels();
+    this.clearPileCounts();
     this.tweenGroup.removeAll();
     // Force the field-spell background to re-evaluate (and fade out).
     this.fieldSpellCode = -1;
@@ -1179,6 +1188,221 @@ export class DuelField3D {
         badge.material.dispose();
         delete mesh.userData.negatedBadge;
       }
+    }
+  }
+
+  // ---- 怪兽攻守状态浮签（drawing.cpp:771-786 DrawStatus）----
+  // 原版是 2D 屏幕文本：本方 code!=0 即画、对方仅表侧；内容第一行等级串
+  // （XYZ 阶级 #ff80ff / 调整 #ffff00 / 其他白；连接怪无等级）、第二行
+  // atk / def（连接怪 atk / LINK-n，LINK 串 #99ffff）。攻/防相对原本值
+  // 升高画 #ffff00、降低画 #ff2090、相等画白。这里译为 canvas→sprite，
+  // 数据由 DuelManager.syncLinkData 写进 mesh.userData。
+
+  /** DrawStatus 一卡的文本与配色（null = 不画） */
+  statusContentFor(ud: any): {
+    line1: string; line1Color: string;
+    atkText: string; atkColor: string; defText: string; defColor: string;
+  } | null {
+    if (((ud.cardType || 0) & TYPE_MONSTER) === 0) return null;
+    if (ud.attack === undefined) return null; // 数据未到（未 query 过攻守）不画
+    const isLink = (ud.cardType & TYPE_LINK) !== 0;
+    const colorOf = (cur: number, base: number | undefined): string =>
+      base === undefined ? '#ffffff'
+        : cur > base ? '#ffff00' : cur < base ? '#ff2090' : '#ffffff';
+    const atkText = ud.attack < 0 ? '?' : String(ud.attack);
+    const atkColor = ud.attack < 0 ? '#ffffff' : colorOf(ud.attack, ud.baseAttack);
+    let line1 = '';
+    let line1Color = '#ffffff';
+    let defText: string;
+    let defColor: string;
+    if (isLink) {
+      defText = `LINK-${ud.link || 0}`;
+      defColor = '#99ffff';
+    } else {
+      const isXyz = (ud.cardType & TYPE_XYZ) !== 0;
+      line1 = isXyz ? `R${ud.rank || 0}` : `☆${ud.level || 0}`;
+      line1Color = isXyz ? '#ff80ff' : (ud.cardType & TYPE_TUNER) ? '#ffff00' : '#ffffff';
+      const def = ud.defense ?? 0;
+      defText = def < 0 ? '?' : String(def);
+      defColor = def < 0 ? '#ffffff' : colorOf(def, ud.baseDefense);
+    }
+    return { line1, line1Color, atkText, atkColor, defText, defColor };
+  }
+
+  /** canvas → status sprite（仿 renderCounterBadge；影子偏移复刻 DrawShadowText） */
+  buildStatusSprite(content: NonNullable<ReturnType<DuelField3D['statusContentFor']>>): any {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 96;
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, 256, 96);
+    ctx.textBaseline = 'middle';
+    const drawShadowed = (text: string, x: number, y: number, color: string, align: CanvasTextAlign) => {
+      ctx.textAlign = align;
+      ctx.fillStyle = '#000000';
+      ctx.fillText(text, x + 2, y + 2, 240);
+      ctx.fillStyle = color;
+      ctx.fillText(text, x, y, 240);
+    };
+    if (content.line1) {
+      ctx.font = 'bold 30px sans-serif';
+      drawShadowed(content.line1, 128, 24, content.line1Color, 'center');
+    }
+    // 第二行 atk / def 三段异色：量宽后整体居中
+    ctx.font = 'bold 32px sans-serif';
+    const segs: [string, string][] = [
+      [content.atkText, content.atkColor], [' / ', '#ffffff'], [content.defText, content.defColor],
+    ];
+    const widths = segs.map(([t]) => ctx.measureText(t).width);
+    let x = (256 - widths.reduce((a, b) => a + b, 0)) / 2;
+    segs.forEach(([t, color], i) => {
+      drawShadowed(t, x, 66, color, 'left');
+      x += widths[i];
+    });
+    const tex = new (THREE as any).CanvasTexture(canvas);
+    const sprite = new (THREE as any).Sprite(new (THREE as any).SpriteMaterial({
+      map: tex, transparent: true, depthTest: false,
+    }));
+    sprite.scale.set(2.3, 0.86, 1);
+    sprite.renderOrder = 10;
+    // 元数据供冒烟断言（颜色规则与文本内容不必解析像素）
+    sprite.userData.isStatusLabel = true;
+    sprite.userData.statusText = { line1: content.line1, line2: `${content.atkText} / ${content.defText}` };
+    sprite.userData.statusColors = {
+      line1: content.line1Color, atk: content.atkColor, def: content.defColor,
+    };
+    sprite.userData.statusFingerprint = JSON.stringify(sprite.userData.statusText)
+      + JSON.stringify(sprite.userData.statusColors);
+    return sprite;
+  }
+
+  disposeTextSprite(sprite: any): void {
+    this.scene.remove(sprite);
+    if (sprite.material.map) sprite.material.map.dispose();
+    sprite.material.dispose();
+  }
+
+  /**
+   * 按 mesh.userData（syncLinkData 写入）维护全场怪兽的状态浮签；幂等——
+   * 指纹未变的 sprite 不重画。ownSeat = 本方引擎 seat（原版 controler 0
+   * 的判定：本方 code!=0 即画，对方仅表侧 pos&0x5）。
+   */
+  syncStatusLabels(ownSeat = 0): void {
+    const wanted = new Set<any>();
+    for (const seat of [0, 1]) {
+      const zone = (this.cardsOnField[seat] || {}).mzone || [];
+      for (const mesh of zone) {
+        if (!mesh) continue;
+        const ud = mesh.userData;
+        const content = this.statusContentFor(ud);
+        if (!content) continue;
+        const faceUp = ud.cardPos !== undefined
+          ? (ud.cardPos & 0x5) !== 0
+          : ud.positionState !== 'FACEDOWN';
+        if (seat === ownSeat ? !ud.cardCode : !faceUp) continue;
+        wanted.add(mesh);
+        const existing = this.statusLabels.find((e) => e.mesh === mesh);
+        const fingerprint = JSON.stringify({ line1: content.line1, line2: `${content.atkText} / ${content.defText}` })
+          + JSON.stringify({ line1: content.line1Color, atk: content.atkColor, def: content.defColor });
+        if (existing && existing.sprite.userData.statusFingerprint === fingerprint) continue;
+        if (existing) {
+          this.disposeTextSprite(existing.sprite);
+          this.statusLabels.splice(this.statusLabels.indexOf(existing), 1);
+        }
+        const sprite = this.buildStatusSprite(content);
+        sprite.position.set(mesh.position.x, mesh.position.y + 0.35,
+          mesh.position.z + (seat === 0 ? 0.55 : -0.55));
+        this.scene.add(sprite);
+        this.statusLabels.push({ sprite, mesh, seat });
+      }
+    }
+    // 离场/变里侧/变非怪的卡摘除浮签
+    this.statusLabels = this.statusLabels.filter((e) => {
+      if (wanted.has(e.mesh)) return true;
+      this.disposeTextSprite(e.sprite);
+      return false;
+    });
+  }
+
+  clearStatusLabels(): void {
+    for (const e of this.statusLabels) this.disposeTextSprite(e.sprite);
+    this.statusLabels = [];
+  }
+
+  // ---- 牌堆计数浮签（drawing.cpp:724-769 DrawMisc：四堆旁黄色数字）----
+  // counts 按引擎 seat 索引（换算在 DuelManager 做）；>0 才画，幂等。
+
+  buildPileCountSprite(text: string): any {
+    const canvas = document.createElement('canvas');
+    canvas.width = 96;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, 96, 64);
+    ctx.font = 'bold 44px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#000000';
+    ctx.fillText(text, 50, 34);
+    ctx.fillStyle = '#ffff00';
+    ctx.fillText(text, 48, 32);
+    const tex = new (THREE as any).CanvasTexture(canvas);
+    const sprite = new (THREE as any).Sprite(new (THREE as any).SpriteMaterial({
+      map: tex, transparent: true, depthTest: false,
+    }));
+    sprite.scale.set(1.05, 0.7, 1);
+    sprite.renderOrder = 10;
+    sprite.userData.isPileCount = true;
+    sprite.userData.pileText = text;
+    return sprite;
+  }
+
+  syncPileCounts(counts: ({ deck: number; grave: number; banish: number; extra: number })[]): void {
+    for (const seat of [0, 1]) {
+      for (const pile of ['deck', 'extra', 'grave', 'banish'] as const) {
+        const n = (counts[seat] && counts[seat][pile]) || 0;
+        const key = `${seat}:${pile}`;
+        const existing = this.pileCountSprites[key];
+        if (n <= 0) {
+          if (existing) {
+            this.disposeTextSprite(existing);
+            delete this.pileCountSprites[key];
+          }
+          continue;
+        }
+        if (existing && existing.userData.pileText === String(n)) continue;
+        if (existing) this.disposeTextSprite(existing);
+        const sprite = this.buildPileCountSprite(String(n));
+        sprite.userData.pilePlayer = seat;
+        sprite.userData.pile = pile;
+        const c = this.getZonePosition(seat, pile, 0);
+        sprite.position.set(c.x, c.y + 0.35, c.z);
+        this.scene.add(sprite);
+        this.pileCountSprites[key] = sprite;
+      }
+    }
+  }
+
+  clearPileCounts(): void {
+    for (const key of Object.keys(this.pileCountSprites)) {
+      this.disposeTextSprite(this.pileCountSprites[key]);
+    }
+    this.pileCountSprites = {};
+  }
+
+  /** 逐帧跟随：状态浮签贴卡（z 向持卡方屏幕侧偏移），计数浮签随堆高抬升 */
+  repositionTextSprites(): void {
+    for (const e of this.statusLabels) {
+      e.sprite.position.set(e.mesh.position.x, e.mesh.position.y + 0.35,
+        e.mesh.position.z + (e.seat === 0 ? 0.55 : -0.55));
+    }
+    for (const key of Object.keys(this.pileCountSprites)) {
+      const sprite = this.pileCountSprites[key];
+      const seat = sprite.userData.pilePlayer;
+      const pile = sprite.userData.pile;
+      const c = ZONE_COORDS[seat] && ZONE_COORDS[seat][pile];
+      if (!c) continue;
+      const stack = (this.cardsOnField[seat] && this.cardsOnField[seat][pile]) || [];
+      sprite.position.set(c.x, c.y + 0.35 + Math.min(stack.length, 20) * 0.02, c.z);
     }
   }
 
@@ -1565,6 +1789,7 @@ export class DuelField3D {
         m.mesh.material.opacity = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(t / 240));
       }
     }
+    this.repositionTextSprites();
     // 可选卡黄框同样呼吸（与落点高亮同节律）
     for (const m of this.cardSelectMarks) {
       if (!m.mesh.userData.selected) {
@@ -1604,6 +1829,8 @@ export class DuelField3D {
       this.clearCardSelectMarks();
       this.clearHintZones();
       this.clearLinkedZones();
+      this.clearStatusLabels();
+      this.clearPileCounts();
       this.setFieldDisabled(0);
     }
     this.cardTextureCache.forEach((tex) => tex.dispose());

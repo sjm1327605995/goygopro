@@ -12,6 +12,7 @@
 import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { eventBus, WailsBridge } from '../wails_bridge.ts';
 import { duelStore } from '../duel/store.ts';
+import { CardTile } from './prompts/CardTile.tsx';
 
 export type ShowPile = 'grave' | 'banish' | 'extra' | 'overlay';
 
@@ -93,51 +94,36 @@ export default function CardListOverlay() {
   const opponent = open.player === 1;
   const title = `${opponent ? '对方' : ''}${PILE_LABEL[open.pile]}(${cards.length})`;
 
+  // 原版 wCardDisplay（game.cpp:590-600）：窗口 (320,100)-(1000,400) 680×300，
+  // 每卡一列 = 位置标签 120×20 + 卡图 120×170（列距 125），>5 张横向滚动，
+  // 底部确定 (300,265)-(380,290)。悬停卡片左侧预览面板同步查看（原版同语义）。
   return (
-    <div id="card-display-overlay" className="card-display-overlay">
-      <div className="card-display-window">
-        <div className="card-display-header">
-          <span id="card-display-title">{title}</span>
-          <button
-            id="card-display-close"
-            className="card-display-close"
-            onClick={() => setOpen(null)}
-            aria-label="关闭"
-          >×</button>
-        </div>
-        <div id="card-display-list" className="card-display-list">
-          {cards.length === 0
-            ? <div className="card-display-empty">（空）</div>
-            : cards.map((code, i) => (
+    <div id="card-display-overlay" className="modal-box wcs-window card-display-overlay">
+      <div className="modal-title"><span id="card-display-title">{title}</span></div>
+      <div id="card-display-list" className="wcs-cardrow">
+        {cards.length === 0
+          ? <div className="card-display-empty">（空）</div>
+          : cards.map((code, i) => (
+            <div className="wcs-cell" key={`${code}-${i}`}>
+              <div className="wcs-pos"></div>
               <div
-                key={`${code}-${i}`}
                 className="card-display-item"
                 onMouseEnter={() => duelStore.inspect(code)}
               >
-                <CardThumb code={code} name={names[code] || `#${code}`} />
+                <CardTile code={code} name={names[code] || `#${code}`} />
               </div>
-            ))}
-        </div>
+            </div>
+          ))}
+      </div>
+      <div className="wcs-footer">
+        <span />
+        <button
+          id="card-display-close"
+          className="btn btn-gold"
+          style={{ width: '80px' }}
+          onClick={() => setOpen(null)}
+        >确定</button>
       </div>
     </div>
-  );
-}
-
-function CardThumb({ code, name }: { code: number; name: string }) {
-  const [pic, setPic] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    WailsBridge.getCardImage(code).then((p) => {
-      if (alive) setPic(p && p.url ? p.url : null);
-    });
-    return () => { alive = false; };
-  }, [code]);
-  return (
-    <>
-      {pic
-        ? <img className="card-display-pic" src={pic} alt={name} />
-        : <div className="card-display-pic card-display-pic-empty" />}
-      <span className="card-display-name">{name}</span>
-    </>
   );
 }
