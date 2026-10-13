@@ -38,6 +38,9 @@ func findFrontendDir() (string, error) {
 }
 
 func main() {
+	if err := useResourceDir(); err != nil {
+		panic(fmt.Errorf("locate runtime resources: %w", err))
+	}
 	frontendDir, err := findFrontendDir()
 	if err != nil {
 		panic(err)

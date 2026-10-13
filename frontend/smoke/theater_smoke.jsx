@@ -317,7 +317,7 @@ function recordStore() {
       m2: !!f.cardsOnField[0].mzone[2],
       grave: f.cardsOnField[0].grave && f.cardsOnField[0].grave.length,
     }));
-  // 对手手背行：seat0 开局 5 张，召唤青眼离手 -1 → 终态 4 张背面
-  record('opp-hand-backs', !!f && Array.isArray(f.opponentHandMeshes) && f.opponentHandMeshes.length === 4,
-    f ? f.opponentHandMeshes.length : 'no-field');
+  // 对手 3D 手牌行：seat0 开局 5 张，召唤青眼离手 -1 → 终态 4 张背面/真码
+  record('opp-hand-backs', !!f && Array.isArray(f.handMeshes[0]) && f.handMeshes[0].length === 4,
+    f ? (f.handMeshes && f.handMeshes[0] && f.handMeshes[0].length) : 'no-field');
 }

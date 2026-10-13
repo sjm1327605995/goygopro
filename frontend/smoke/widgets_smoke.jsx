@@ -67,7 +67,7 @@ const waitFor = (predicate, timeoutMs = 5000) => new Promise((resolve, reject) =
   const started = Date.now();
   const tick = () => {
     if (predicate()) return resolve();
-    if (Date.now() - started > timeoutMs) return reject(new Error('waitFor timeout'));
+    if (Date.now() - started > timeoutMs) return reject(new Error('waitFor timeout: '+String(predicate)));
     setTimeout(tick, 25);
   };
   tick();
@@ -176,8 +176,8 @@ const run = async () => {
   duelStore.inspect(89631139);
 
   // ---- card preview resolves name/desc via the (mock) bridge ----
-  await waitFor(() => $('preview-card-name').innerText === 'Blue-Eyes White Dragon');
-  assert('previewInfo', $('preview-card-name').innerText === 'Blue-Eyes White Dragon',
+  await waitFor(() => $('preview-card-name').innerText === 'Blue-Eyes White Dragon[89631139]');
+  assert('previewInfo', $('preview-card-name').innerText === 'Blue-Eyes White Dragon[89631139]',
     `got ${$('preview-card-name').innerText}`);
   assert('previewDesc', $('preview-card-desc').innerText.includes('legendary dragon'),
     `desc=${$('preview-card-desc').innerText.slice(0, 40)}`);
@@ -196,7 +196,7 @@ const run = async () => {
   };
   WailsBridge.getCard = async (code) => (code === 1861629 ? LINK_MONSTER : origGetCard(code));
   duelStore.inspect(1861629);
-  await waitFor(() => $('preview-card-name').innerText === 'Decode Talker');
+  await waitFor(() => $('preview-card-name').innerText === 'Decode Talker[01861629]');
   const statsEl = document.querySelector('.preview-stats');
   // textContent 保留多空格（innerText 会折叠），核对与格式串的空格一致
   assert('previewLinkArrows', statsEl && statsEl.textContent === 'LINK-3  2300/-   [↑][↙][↘]',
@@ -370,11 +370,17 @@ const run = async () => {
   });
   await waitFor(() => $('player-pile-extra').innerText === '13'); // 12+1
   keyup('F2');
-  await waitFor(() => $('card-display-title') && $('card-display-title').innerText === '除外(0)');
-  assert('f2BanishSwitch', $('card-display-title').innerText === '除外(0)');
+  assert('pileHotkeysIgnoredWhileOpen', $('card-display-title').innerText === '墓地(1)');
+  $('card-display-close').click();
+  await waitFor(() => !$('card-display-overlay'));
+  keyup('F2');
+  await new Promise(r=>setTimeout(r,30));
+  assert('emptyBanishDoesNotOpen', !$('card-display-overlay'));
   keyup('F3');
-  await waitFor(() => $('card-display-title').innerText === '额外(1)');
+  await waitFor(() => $('card-display-title')?.innerText === '额外(1)');
   assert('f3ExtraList', $('card-display-title').innerText === '额外(1)');
+  $('card-display-close').click();
+  await waitFor(() => !$('card-display-overlay'));
 
   // 超量素材：extra 卡吸附到 mzone[2]（LOC_OVERLAY=0x80，cs=槽位）
   eventBus.emit('duel:move', {
@@ -384,27 +390,34 @@ const run = async () => {
   await waitFor(() => duelStore.getState().board[0].overlay[2].length === 1);
   assert('overlayMaterialTracked', duelStore.getState().board[0].overlay[2][0] === 46986414);
   keyup('F4');
-  await waitFor(() => $('card-display-title').innerText === '叠放(1)');
+  await waitFor(() => $('card-display-title')?.innerText === '叠放(1)');
   assert('f4OverlayList', $('card-display-title').innerText === '叠放(1)');
   assert('extraDrainedByOverlayMove', $('player-pile-extra').innerText === '12');
 
-  // 对方视角：F5 = 对方墓地（空 → 标题带「对方」+（空）占位）
-  keyup('F5');
-  await waitFor(() => $('card-display-title').innerText === '对方墓地(0)');
-  assert('f5OpponentPile', $('card-display-title').innerText === '对方墓地(0)'
-    && !!document.querySelector('.card-display-empty'));
-
-  // 再按同一键关闭（浮层 toggle）
-  keyup('F5');
+  $('card-display-close').click();
   await waitFor(() => !$('card-display-overlay'));
-  assert('sameKeyCloses', !$('card-display-overlay'));
+  // C++ does not open empty piles.
+  keyup('F5');
+  await new Promise(r=>setTimeout(r,30));
+  assert('emptyOpponentGraveDoesNotOpen', !$('card-display-overlay'));
+  eventBus.emit('duel:move',{code:1001,pc:0,pl:1,ps:0,pp:1,cc:0,cl:16,cs:0,cp:1});
+  keyup('F5');
+  await waitFor(() => $('card-display-title')?.innerText === '对方墓地(1)');
+  assert('f5OpponentPile',true);
+  keyup('F5');
+  await new Promise(r=>setTimeout(r,30));
+  assert('sameKeyKeepsOpen',!!$('card-display-overlay'));
+  $('card-display-close').click();
+  await waitFor(() => !$('card-display-overlay'));
 
-  // ESC 关闭
+  // ESC minimises the native window instead of closing the card list.
   keyup('F1');
   await waitFor(() => !!$('card-display-overlay'));
+  let minimises=0;WailsBridge.minimise=()=>{minimises++;};
   window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert('escMinimisesWindow',minimises===1&&!!$('card-display-overlay'));
+  $('card-display-close').click();
   await waitFor(() => !$('card-display-overlay'));
-  assert('escClosesOverlay', !$('card-display-overlay'));
 
   // 决斗未开始（reset 后）F 键不弹窗
   duelStore.reset();

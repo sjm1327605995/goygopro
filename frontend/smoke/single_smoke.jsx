@@ -147,9 +147,9 @@ try {
   record('puzzle-hand-rebuilt',
     hand.length === 3 && hand[0].code === 89631139 && hand[1].code === 46986414 && hand[2] === null);
 
-  // DuelManager：reload_field 直接定双座手牌数，远侧（显示座 1）落手背行
-  const handCounts = [];
-  const stubField = { setFarHandCount: (c) => handCounts.push(c) };
+  // DuelManager：reload_field 直接定双座手牌数，setHands 收到补零码的双座手牌
+  let lastHands = null;
+  const stubField = { setHands: (codes) => { lastHands = codes; } };
   const manager = new DuelManager(stubField, { interactive: false });
   eventBus.emit('duel:reload_field', {
     rule: 1, chainCount: 0,
@@ -158,7 +158,7 @@ try {
       { lp: 500, mzone: [], szone: [], deck: 0, hand: 4, grave: 0, removed: 0, extra: 0, extraP: 0 },
     ],
   });
-  record('puzzle-manager-opponent-hand', handCounts.length === 1 && handCounts[0] === 4);
+  record('puzzle-manager-opponent-hand', !!lastHands && lastHands[1].length === 4 && lastHands[1].every((c) => c === 0));
   manager.dispose();
 
   record('no-fatal', true);

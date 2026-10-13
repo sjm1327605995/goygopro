@@ -235,6 +235,8 @@ export const WailsBridge = {
     }
   },
 
+  minimise() { if (isWails) return callWails('Minimise'); },
+
   // ---- 单人模式（wSinglePlay，menu_handler.cpp:400-411）----
 
   async listSingles(): Promise<{ name: string; message: string }[]> {
@@ -487,7 +489,7 @@ export const WailsBridge = {
     atkFilter?: string; defFilter?: string; levelFilter?: string; scaleFilter?: string;
     effect?: number; linkMarks?: number; multiKeywords?: number;
     minScale?: number; maxScale?: number;
-    limit?: number; offset?: number;
+    limit?: number; offset?: number; allResults?: boolean;
   }) {
     if (isWails) {
       return await callWails("SearchCards", filter);
@@ -669,6 +671,17 @@ export const WailsBridge = {
     if (isWails) return await callWails("CreateDeckCategory", name);
     console.log("[MockBridge] CreateDeckCategory:", name);
     return null;
+  },
+
+  async listDeckCategories(): Promise<string[]> {
+    if (isWails) return (await callWails('ListDeckCategories')) || [];
+    return [];
+  },
+
+  async getFieldImage(code:number):Promise<{url:string}|null> {
+    if(!isWails)return null;
+    const url=await callWails('GetFieldImage',code);
+    return url?{url}:null;
   },
 
   async renameDeckCategory(oldName: string, newName: string) {

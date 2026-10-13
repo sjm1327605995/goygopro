@@ -73,7 +73,7 @@ const waitFor = (predicate, timeoutMs = 5000) => new Promise((resolve, reject) =
   const started = Date.now();
   const tick = () => {
     if (predicate()) return resolve();
-    if (Date.now() - started > timeoutMs) return reject(new Error('waitFor timeout'));
+    if (Date.now() - started > timeoutMs) return reject(new Error('waitFor timeout: '+String(predicate)));
     setTimeout(tick, 25);
   };
   tick();
@@ -181,8 +181,8 @@ const run = async () => {
   // select-list first, then the unselect list（非场上来源 → 纯弹窗路径）----
   eventBus.emit('duel:select_unselect', {
     player: 0, finishable: false, cancelable: true, min: 1, max: 1,
-    cards: [{ code: 21, c: 0, l: 0x2, s: 0 }],
-    unselectList: [{ code: 22, c: 0, l: 0x2, s: 1 }]
+    cards: [{ code: 21, c: 0, l: 0x10, s: 0 }],
+    unselectList: [{ code: 22, c: 0, l: 0x10, s: 1 }]
   });
   await waitForModal('.select-card-item');
   const unselCards = overlay().querySelectorAll('.select-card-item');
@@ -390,7 +390,7 @@ const run = async () => {
   // ---- 卡片图块：选择卡牌弹窗的卡牌项异步换上真实卡图（cover 兜底） ----
   eventBus.emit('duel:select_card', {
     player: 0, cancelable: false, min: 1, max: 1,
-    cards: [{ code: 89631139, c: 0, l: 0x2, s: 0 }],
+    cards: [{ code: 89631139, c: 0, l: 0x10, s: 0 }],
   });
   await waitForModal('.card-tile');
   const tile = overlay().querySelector('.card-tile');
@@ -414,7 +414,7 @@ const run = async () => {
   assert('selectHintStored', duelStore.getState().selectHint === 502);
   eventBus.emit('duel:select_card', {
     player: 0, cancelable: false, min: 1, max: 2,
-    cards: [{ code: 89631139, c: 0, l: 0x2, s: 0 }],
+    cards: [{ code: 89631139, c: 0, l: 0x10, s: 0 }],
   });
   await waitForModal('.card-tile');
   await waitFor(() => overlay().querySelector('.modal-title').innerText.includes('请选择要破坏的卡'));
@@ -517,8 +517,8 @@ const run = async () => {
   eventBus.emit('duel:select_card', {
     player: 0, cancelable: false, min: 1, max: 2,
     cards: [
-      { code: 89631139, c: 0, l: 0x2, s: 0 },
-      { code: 46986414, c: 0, l: 0x2, s: 1 },
+      { code: 89631139, c: 0, l: 0x10, s: 0 },
+      { code: 46986414, c: 0, l: 0x10, s: 1 },
     ],
   });
   await waitForModal('.card-tile');
@@ -723,24 +723,68 @@ const run = async () => {
   assert('counterBadgeCleared', !cntMesh.userData.counters[String(0x1051)]
     && duelStore.getState().counters[cntKey] === undefined);
 
-  // ---- MSG_EQUIP / MSG_UNEQUIP → 装备线（橙）出现与消失 ----
+  // ---- 悬停关系图标（SetShowMark，drawing.cpp:446-457）：原版无事件驱动
+  // 连线——equip/card_target 事件只维护关系，悬停关联卡时才在对方卡上
+  // 画 equip.png/target.png/chaintarget.png 平铺图标 ----
   field.placeCard(0, 'szone', 0, 5318639, null, 0x1);
   field.placeCard(0, 'mzone', 1, 46986414, null, 0x1);
+  const hoverRel = (mesh) => {
+    const v = mesh.position.clone().project(field.camera);
+    field.mouse.set(v.x, v.y);
+    field.handleHover();
+  };
+  const unhoverRel = () => {
+    field.tweenGroup.update(performance.now() + 5000);
+    field.mouse.set(-0.95, 0.95);
+    field.handleHover();
+  };
   eventBus.emit('duel:equip', { card: { c: 0, l: 0x8, s: 0 }, target: { c: 0, l: 0x4, s: 1 } });
-  await waitFor(() => field.relationLines.some((l) => l.kind === 'equip'));
-  assert('equipLineAdded', field.relationLines.length === 1
-    && field.relationLines[0].fromMesh.userData.cardCode === 5318639);
+  assert('equipNoMarkWithoutHover', field.relationMarks.length === 0);
+  // 悬停装备卡 → 对象卡上出 equip 图标（MSG_EQUIP 后关系双向可见）
+  hoverRel(field.cardsOnField[0].szone[0]);
+  assert('equipMarkOnHover', field.relationMarks.length === 1
+    && field.relationMarks[0].icon.userData.relationMark === 'equip'
+    && field.relationMarks[0].mesh === field.cardsOnField[0].mzone[1]);
+  // 悬停对象卡 → 图标回到装备卡上
+  hoverRel(field.cardsOnField[0].mzone[1]);
+  assert('equipMarkReverseHover', field.relationMarks.length === 1
+    && field.relationMarks[0].mesh === field.cardsOnField[0].szone[0]);
+  unhoverRel();
+  assert('equipMarkClearedOnUnhover', field.relationMarks.length === 0);
+  // MSG_UNEQUIP 解除关系 → 再悬停不出图标
   eventBus.emit('duel:unequip', { card: { c: 0, l: 0x8, s: 0 } });
-  await waitFor(() => !field.relationLines.some((l) => l.kind === 'equip'));
-  assert('equipLineRemoved', field.relationLines.length === 0);
+  hoverRel(field.cardsOnField[0].szone[0]);
+  assert('equipMarkGoneAfterUnequip', field.relationMarks.length === 0);
+  unhoverRel();
 
-  // ---- MSG_CARD_TARGET / MSG_CANCEL_TARGET → 目标线（青） ----
+  // ---- MSG_CARD_TARGET / MSG_CANCEL_TARGET → target.png 图标 ----
   eventBus.emit('duel:card_target', { card: { c: 0, l: 0x4, s: 0 }, target: { c: 0, l: 0x4, s: 1 } });
-  await waitFor(() => field.relationLines.some((l) => l.kind === 'target'));
-  assert('targetLineAdded', field.relationLines.length === 1);
+  hoverRel(field.cardsOnField[0].mzone[0]);
+  assert('targetMarkOnHover', field.relationMarks.length === 1
+    && field.relationMarks[0].icon.userData.relationMark === 'target'
+    && field.relationMarks[0].mesh === field.cardsOnField[0].mzone[1]);
+  unhoverRel();
   eventBus.emit('duel:cancel_target', { card: { c: 0, l: 0x4, s: 0 }, target: { c: 0, l: 0x4, s: 1 } });
-  await waitFor(() => field.relationLines.length === 0);
-  assert('targetLineRemoved', true);
+  hoverRel(field.cardsOnField[0].mzone[0]);
+  assert('targetMarkGoneAfterCancel', field.relationMarks.length === 0);
+  unhoverRel();
+
+  // ---- MSG_BECOME_TARGET → 连锁对象的 chaintarget.png 图标；chain_end 清除 ----
+  eventBus.emit('duel:chaining', { code: 46986414, cc: 0, cl: 0x4, cs: 0 });
+  eventBus.emit('duel:become_target', { targets: [{ c: 0, l: 0x4, s: 1 }] });
+  hoverRel(field.cardsOnField[0].mzone[0]);
+  assert('chainTargetMarkOnHover', field.relationMarks.length === 1
+    && field.relationMarks[0].icon.userData.relationMark === 'chaintarget'
+    && field.relationMarks[0].mesh === field.cardsOnField[0].mzone[1]);
+  // 悬停对象卡 → 图标回到连锁发动卡上（SetShowMark 的 ch.target 分支）
+  hoverRel(field.cardsOnField[0].mzone[1]);
+  assert('chainTargetMarkReverseHover', field.relationMarks.length === 1
+    && field.relationMarks[0].mesh === field.cardsOnField[0].mzone[0]);
+  unhoverRel();
+  eventBus.emit('duel:chain_end', {});
+  hoverRel(field.cardsOnField[0].mzone[0]);
+  assert('chainTargetMarkGoneAfterChainEnd', field.relationMarks.length === 0);
+  unhoverRel();
 
   // ---- MSG_SHUFFLE_SET_CARD：盖卡 mesh 按卡密码配对换位 ----
   const setA = field.placeCard(0, 'szone', 2, 10000001, null, 0x8);
@@ -879,7 +923,7 @@ const run = async () => {
     player: 0, cancelable: false, min: 1, max: 2,
     cards: [
       { code: 89631139, c: 0, l: 0x4, s: 3 },
-      { code: 89631139, c: 0, l: 0x2, s: 0 },
+      { code: 89631139, c: 0, l: 0x10, s: 0 },
     ],
   });
   await waitForModal('.card-tile');
@@ -916,8 +960,8 @@ const run = async () => {
       { code: 46986414, c: 1, l: 0x4, s: 1 },
     ],
   });
-  await waitFor(() => document.getElementById('card-select-bar-finish')
-    && document.getElementById('card-select-bar-cancel'));
+  await waitFor(() => document.getElementById('card-select-bar-cancel')
+    && !document.getElementById('card-select-bar-finish'));
   assert('hintButtonsShownByDefault', true);
   settingsStore.set('hide_hint_button', 1);
   await waitFor(() => !!document.getElementById('card-select-bar')

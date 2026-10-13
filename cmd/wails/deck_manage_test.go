@@ -66,6 +66,16 @@ func TestDeckCategoryOps(t *testing.T) {
 	}
 }
 
+func TestListDeckCategoriesIncludesEmptyFolders(t *testing.T) {
+	a := &App{deckDir: t.TempDir()}
+	if err := a.CreateDeckCategory("Empty"); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.ListDeckCategories(); len(got) != 1 || got[0] != "Empty" {
+		t.Fatalf("empty category missing: %v", got)
+	}
+}
+
 func TestDeckRenameCopyMove(t *testing.T) {
 	a := &App{deckDir: t.TempDir(), cardDB: &CardDBManager{}}
 	writeTestDeck(t, a, "环境/青眼")

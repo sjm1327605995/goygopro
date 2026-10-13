@@ -30,6 +30,7 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
+        ui_parity_smoke: resolve(root, 'ui_parity_smoke.html'),
         smoke: resolve(root, 'smoke.html'),
         replay_smoke: resolve(root, 'replay_smoke.html'),
         practice_smoke: resolve(root, 'practice_smoke.html'),

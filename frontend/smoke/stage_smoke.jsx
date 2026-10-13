@@ -129,9 +129,11 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     record('phase-strip-horizontal', ps.width > ps.height * 2, `${ps.width}x${ps.height}`);
 
     // ---- 手牌：底部居中（原版手牌画在场地底部） ----
-    const hd = rectOf('#hand-cards-dock');
-    record('hand-bottom-centered', hd.bottom >= H - 70 && hd.bottom <= H
-      && Math.abs(hd.left + hd.width / 2 - W / 2) < W * 0.06, JSON.stringify(hd));
+    const handScene = window.__stage.field3D;
+    const handMeshes = handScene.handMeshes[1];
+    record('hand-bottom-centered', handMeshes.length >= 4
+      && handMeshes.every((m) => m.userData.slot.loc === 'hand' && m.position.z < 0)
+      && handMeshes.every((m) => Math.abs(m.rotation.x + 0.798056) < 0.0001));
     record('hand-after-summon', $('#hand-cards-dock').children.length === 4);
 
     // ---- 聊天：底部输入条 + 着色消息（原版 wChat 全宽条） ----
@@ -145,7 +147,7 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     eventBus.emit('duel:waiting', {});
     await waitFor(() => rectOf('.hint-bar') && $('.hint-bar').style.display === 'block', 'hint bar shows');
     const hb = rectOf('.hint-bar');
-    record('hint-top-right-of-center', Math.abs(hb.top - 60) <= 12
+    record('hint-top-right-of-center', Math.abs(hb.top - 60 * H / 640) <= 2
       && hb.left + hb.width / 2 > W * 0.55, JSON.stringify(hb));
 
     // ---- 朝向陈列：双方各放 ATK / 守备表 / 盖卡 / 墓地卡，肉眼对照 ----
@@ -267,10 +269,7 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
       attacker: { c: 1, l: 0x4, s: 0 }, attackerATK: 3000, attackerDEF: 2500, attackerDestroyed: false,
       target: { c: 0, l: 0x4, s: 0 }, targetATK: 1200, targetDEF: 2100, targetDestroyed: true,
     });
-    await waitFor(() => !!document.getElementById('battle-overlay'), 'battle overlay mounts');
-    record('battle-overlay-shows', document.getElementById('battle-overlay').innerText.includes('3000'));
-    await waitFor(() => !document.getElementById('battle-overlay'), 'battle overlay fades', 6000);
-    record('battle-overlay-fades', !document.getElementById('battle-overlay'));
+    record('battle-does-not-add-modern-overlay', !document.getElementById('battle-overlay'));
 
     // ---- LP 数字滚动：变化滚动到位（rAF 插值）+ 滚动中接入 playLPTick ----
     // 虚拟时间下中间值采样不稳定，改用 playLPTick 计数证明滚动确实发生

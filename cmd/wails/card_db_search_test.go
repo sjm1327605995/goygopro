@@ -89,6 +89,25 @@ func codes(res []CardInfo) map[uint32]bool {
 	return out
 }
 
+func TestSearchAllResultsForDeckEditor(t *testing.T) {
+	m := newTestCardDB(t)
+	for i := 0; i < 250; i++ {
+		code := 500000 + i
+		if _, err := m.db.Exec(`INSERT INTO datas VALUES (?,1,0,0,17,1000,1000,4,1,1,0)`, code); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.db.Exec(`INSERT INTO texts VALUES (?, 'parity-card', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '')`, code); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := len(m.SearchCards(CardFilter{Keyword: "parity-card", Limit: 60})); got != 60 {
+		t.Fatalf("paged search = %d, want 60", got)
+	}
+	if got := len(m.SearchCards(CardFilter{Keyword: "parity-card", AllResults: true})); got != 250 {
+		t.Fatalf("deck editor search = %d, want all 250", got)
+	}
+}
+
 func expectCodes(t *testing.T, got map[uint32]bool, want ...uint32) {
 	t.Helper()
 	wantSet := make(map[uint32]bool)

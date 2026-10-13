@@ -8,12 +8,14 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { duelStore } from '../duel/store.ts';
+import { settingsStore } from '../domain/settings.ts';
 import { WailsBridge } from '../wails_bridge.ts';
 import {
   TYPE_MONSTER, TYPE_SPELL, TYPE_TRAP, TYPE_NORMAL, TYPE_EFFECT,
   TYPE_FUSION, TYPE_RITUAL, TYPE_SYNCHRO, TYPE_XYZ, TYPE_LINK,
   TYPE_PENDULUM, TYPE_QUICKPLAY, TYPE_CONTINUOUS, TYPE_EQUIP, TYPE_FIELD,
   TYPE_TUNER, TYPE_FLIP, TYPE_SPIRIT, TYPE_UNION, TYPE_DUAL,
+  TYPE_TOON, TYPE_COUNTER, TYPE_SPSUMMON,
   RACES, ATTRS, formatLinkMarker,
 } from '../domain/constants.ts';
 
@@ -25,6 +27,7 @@ const TYPE_SEGMENTS: [number, string][] = [
   [TYPE_CONTINUOUS, '永续'], [TYPE_EQUIP, '装备'], [TYPE_FIELD, '场地'],
   [TYPE_TUNER, '调整'], [TYPE_FLIP, '反转'], [TYPE_SPIRIT, '灵魂'],
   [TYPE_UNION, '同盟'], [TYPE_DUAL, '二重'],
+  [TYPE_TOON,'卡通'],[TYPE_COUNTER,'反击'],[TYPE_SPSUMMON,'特殊召唤'],
 ];
 
 function typeLabel(type: number): string {
@@ -48,6 +51,7 @@ function attrRaceLine(type: number, info: Record<string, unknown>): string | nul
 
 export default function CardPreviewPanel() {
   const state = useSyncExternalStore(duelStore.subscribe, duelStore.getState);
+  const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
   const insp = state.inspection;
   const [tab, setTab] = useState<'info' | 'log'>('info');
   const [img, setImg] = useState<string | null>(null);
@@ -74,7 +78,7 @@ export default function CardPreviewPanel() {
       <div className="preview-image-box">
         {img
           ? <img className="preview-image" src={img} alt="" />
-          : <div className="preview-image preview-image-empty">{code ? `#${code}` : '卡片预览'}</div>}
+          : <img className="preview-image" src="textures/cover.jpg" alt="" />}
       </div>
       {/* Radix Tabs：键盘左右切换 + roving tabindex；.active 类保留给冒烟/样式。
           两个 Tabs.Content 都在 Root 内，条件渲染保持旧的「非活动页不挂载」语义。 */}
@@ -96,8 +100,9 @@ export default function CardPreviewPanel() {
         {tab === 'info' ? (
           <Tabs.Content value="info" id="preview-info" className="preview-info">
             <div id="preview-card-name" className="preview-name">
-              {info ? String(info.name ?? `#${code}`) : (code ? `#${code}` : '选择一张卡')}
+              {info ? `${info.name ?? ''}[${String(code).padStart(8,'0')}]` : ''}
             </div>
+            {info && !settings.hide_setname && Array.isArray(info.setNames) && info.setNames.length ? <div className="preview-setnames">系列：{info.setNames.join(' / ')}</div> : null}
             {info && type ? <div className="preview-type">{typeLabel(type)}</div> : null}
             {info && attrRaceLine(type, info) ? (
               <div className="preview-attr">{attrRaceLine(type, info)}</div>
@@ -110,7 +115,7 @@ export default function CardPreviewPanel() {
               </div>
             ) : null}
             <div id="preview-card-desc" className="preview-desc">
-              {info ? String(info.desc ?? '') : '悬停场上的卡牌查看详情。'}
+              {info ? String(info.desc ?? '') : ''}
             </div>
           </Tabs.Content>
         ) : (

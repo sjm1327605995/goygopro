@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { WailsBridge } from '../wails_bridge.ts';
 import GfwSelect from './ui/GfwSelect.tsx';
 import UiButton from '../ui/UiButton.tsx';
@@ -9,20 +9,31 @@ import DesignSpace from '../ui/DesignSpace.tsx';
 // 左分类列表 / 右该分类下的卡组列表；分类：新建/重命名/删除；卡组：新建/
 // 重命名/删除/复制到分类/移动到分类。文件操作全走 Go 侧 deck_manage.go 绑定，
 // 成功后由父组件刷新卡组清单。
-export default function DeckManageModal({ deckList, onClose, onRefresh }: {
+export default function DeckManageModal({ deckList, onClose, onRefresh, onImport, onExport, categoryList = [], onSelectDeck }: {
   deckList: string[];
   onClose: () => void;
   onRefresh: (list: string[]) => void;
+  onImport?: () => void;
+  onExport?: () => void;
+  categoryList?: string[];
+  onSelectDeck?: (name:string)=>void;
 }) {
   const [selCategory, setSelCategory] = useState(''); // '' = 未分类（根目录）
   const [selDeck, setSelDeck] = useState(''); // 完整相对名（含分类前缀）
   const [nameInput, setNameInput] = useState('');
   const [targetCategory, setTargetCategory] = useState('');
   const [busy, setBusy] = useState(false);
+  const [query,setQuery]=useState<{message:string;kind:'name'|'category'|'confirm'}|null>(null);
+  const queryResolve=useRef<((value:string|null)=>void)|null>(null);
+  const ask=(message:string,kind:'name'|'category'|'confirm',initial=''):Promise<string|null>=>{
+    setNameInput(initial);setTargetCategory(selCategory);setQuery({message,kind});
+    return new Promise(resolve=>{queryResolve.current=resolve;});
+  };
+  const answer=(value:string|null)=>{setQuery(null);queryResolve.current?.(value);queryResolve.current=null;};
 
   const categories = useMemo(
-    () => Array.from(new Set(deckList.filter((n) => n.includes('/')).map((n) => n.split('/')[0]))),
-    [deckList],
+    () => Array.from(new Set([...categoryList,...deckList.filter((n) => n.includes('/')).map((n) => n.split('/')[0])])),
+    [deckList,categoryList],
   );
   const decksInCategory = useMemo(
     () => deckList.filter((n) => (selCategory === '' ? !n.includes('/') : n.startsWith(selCategory + '/'))),
@@ -49,8 +60,8 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
   };
 
   const newCategory = (): Promise<void> => run(async () => {
-    const name = nameInput.trim();
-    if (!name) { alert('请输入分类名。'); return; }
+    const name = await ask('请输入新分类名。','name');
+    if (!name) return;
     await WailsBridge.createDeckCategory(name);
     setSelCategory(name);
     setSelDeck('');
@@ -58,8 +69,8 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
 
   const renameCategory = (): Promise<void> => run(async () => {
     if (!selCategory) { alert('根目录（未分类）不能重命名。'); return; }
-    const name = nameInput.trim();
-    if (!name) { alert('请输入新分类名。'); return; }
+    const name = await ask('请输入新分类名。','name',selCategory);
+    if (!name) return;
     await WailsBridge.renameDeckCategory(selCategory, name);
     setSelCategory(name);
     setSelDeck('');
@@ -67,25 +78,26 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
 
   const deleteCategory = (): Promise<void> => run(async () => {
     if (!selCategory) { alert('根目录（未分类）不能删除。'); return; }
-    if (!window.confirm(`确定删除分类「${selCategory}」及其中全部卡组？此操作不可撤销。`)) return;
+    if (!await ask(`确定删除分类「${selCategory}」？`,'confirm')) return;
     await WailsBridge.deleteDeckCategory(selCategory);
     setSelCategory('');
     setSelDeck('');
   });
 
   const newDeck = (): Promise<void> => run(async () => {
-    const base = nameInput.trim();
-    if (!base) { alert('请输入卡组名。'); return; }
+    const base = await ask('请输入新卡组名。','name');
+    if (!base) return;
     const name = selCategory ? `${selCategory}/${base}` : base;
     if (deckList.includes(name)) { alert(`卡组「${name}」已存在。`); return; }
     await WailsBridge.saveDeck({ name, main: [], extra: [], side: [] });
     setSelDeck(name);
+    onSelectDeck?.(name);
   });
 
   const renameDeck = (): Promise<void> => run(async () => {
     if (!selDeck) { alert('请先选择卡组。'); return; }
-    const base = nameInput.trim();
-    if (!base) { alert('请输入新卡组名。'); return; }
+    const base = await ask('请输入新卡组名。','name',selDeck.split('/').pop());
+    if (!base) return;
     await WailsBridge.renameDeck(selDeck, base);
     const cat = selDeck.includes('/') ? selDeck.split('/')[0] : '';
     setSelDeck(cat ? `${cat}/${base}` : base);
@@ -93,20 +105,24 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
 
   const deleteDeck = (): Promise<void> => run(async () => {
     if (!selDeck) { alert('请先选择卡组。'); return; }
-    if (!window.confirm(`确定删除卡组「${selDeck}」？此操作不可撤销。`)) return;
+    if (!await ask(`确定删除卡组「${selDeck}」？`,'confirm')) return;
     await WailsBridge.deleteDeck(selDeck);
     setSelDeck('');
   });
 
   const copyDeck = (): Promise<void> => run(async () => {
     if (!selDeck) { alert('请先选择卡组。'); return; }
-    await WailsBridge.copyDeck(selDeck, targetCategory);
+    const target=await ask('请选择目标分类。','category');
+    if(target===null)return;
+    await WailsBridge.copyDeck(selDeck, target);
   });
 
   const moveDeck = (): Promise<void> => run(async () => {
     if (!selDeck) { alert('请先选择卡组。'); return; }
-    await WailsBridge.moveDeck(selDeck, targetCategory);
-    if (selCategory !== targetCategory) setSelDeck('');
+    const target=await ask('请选择目标分类。','category');
+    if(target===null)return;
+    await WailsBridge.moveDeck(selDeck, target);
+    if (selCategory !== target) setSelDeck('');
   });
 
   return (
@@ -115,7 +131,7 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
       style={{
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2200,
       }}
-      onClick={onClose}
+      onClick={() => {if(!busy)onClose();}}
     >
       {/* 原版 wDeckManage（game.cpp:660-683）：(310,135)-(800,515) 490×380，
           lstCategories (10,30) 130×340 / lstDecks (150,30) 190×340 /
@@ -132,12 +148,12 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-title">卡组管理</div>
+        <div className="modal-title">卡组管理<UiButton id="dm-close" style={{position:'absolute',right:4,top:2,width:20,height:20,padding:0}} onClick={onClose}>×</UiButton></div>
         <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
           {/* 左：分类列表（原版 lstCategories (10,30)-(140,370)） */}
           <div style={{ position: 'absolute', left: 0, top: '6px', width: '130px' }}>
             <div id="dm-category-list" style={{
-              border: '1px solid var(--primary)', borderRadius: 6, height: '300px', overflowY: 'auto', padding: 4,
+              border: '1px solid #808080', borderRadius: 0, height: '340px', overflowY: 'auto', padding: 4,
             }}>
               {['', ...categories].map((c) => (
                 <div
@@ -157,7 +173,7 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
           {/* 中：卡组列表（原版 lstDecks (150,30)-(340,370)） */}
           <div style={{ position: 'absolute', left: '140px', top: '6px', width: '190px' }}>
             <div id="dm-deck-list" style={{
-              border: '1px solid var(--primary)', borderRadius: 6, height: '300px', overflowY: 'auto', padding: 4,
+              border: '1px solid #808080', borderRadius: 0, height: '340px', overflowY: 'auto', padding: 4,
             }}>
               {decksInCategory.length === 0 ? (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 6 }}>该分类下没有卡组。</div>
@@ -169,7 +185,7 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
                     padding: '3px 6px', cursor: 'pointer', borderRadius: 4, fontSize: 12,
                     background: selDeck === n ? 'rgba(56,189,248,0.25)' : 'transparent',
                   }}
-                  onClick={() => setSelDeck(n)}
+                  onClick={() => {setSelDeck(n);onSelectDeck?.(n);}}
                 >
                   {n.split('/').pop()}
                 </div>
@@ -187,31 +203,38 @@ export default function DeckManageModal({ deckList, onClose, onRefresh }: {
             <UiButton id="dm-delete-deck" variant="danger" disabled={busy || !selDeck} onClick={deleteDeck}>删除</UiButton>
             <UiButton id="dm-move-deck" disabled={busy || !selDeck} onClick={moveDeck}>移动到分类</UiButton>
             <UiButton id="dm-copy-deck" disabled={busy || !selDeck} onClick={copyDeck}>复制到分类</UiButton>
+            <UiButton id="deck-import-code-btn" onClick={onImport}>导入卡组码</UiButton>
+            <UiButton id="deck-export-code-btn" onClick={onExport}>导出卡组码</UiButton>
           </div>
-          {/* 扩展行：名称输入 + 目标分类 + 关闭（原版在 wDMQuery 弹窗内） */}
-          <div style={{ position: 'absolute', left: 0, right: 0, top: '314px', display: 'flex', alignItems: 'center', gap: 6 }}>
+        </div>
+      </div>
+      {query&&<div id="dm-query" className="gfw-window" style={{left:400,top:200,width:310,height:120,transform:'none',zIndex:3000}}>
+        <div className="gfw-title">卡组管理</div>
+        <div style={{position:'relative',height:96}}>
+          <div style={{position:'absolute',left:20,top:6,width:270,textAlign:'center'}}>{query.message}</div>
+          {query.kind==='name'&&
             <UiInput
               id="dm-name-input"
-              style={{ flex: 1 }}
+              style={{position:'absolute',left:30,top:26,width:250,height:20}}
               placeholder="新建/重命名用的名称"
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
-            />
+            />}
             {/* 目标分类（原版 cbDMCategory；__root__ 哨兵 = 未分类） */}
-            <GfwSelect
+            {query.kind==='category'&&<div style={{position:'absolute',left:30,top:26}}><GfwSelect
               id="dm-target-category"
-              width={110}
+              width={250}
               value={targetCategory || '__root__'}
               onValueChange={(v) => setTargetCategory(v === '__root__' ? '' : v)}
               options={[
                 { value: '__root__', label: '未分类卡组' },
                 ...categories.map((c) => ({ value: c, label: c })),
               ]}
-            />
-            <UiButton id="dm-close" variant="gold" onClick={onClose}>关闭</UiButton>
-          </div>
+            /></div>}
+            <UiButton id="dm-query-ok" style={{position:'absolute',left:60,top:56,width:80,height:25}} onClick={()=>{const value=query.kind==='name'?nameInput.trim():query.kind==='category'?targetCategory:'yes';if(query.kind!=='name'||value)answer(value);}}>确定</UiButton>
+            <UiButton id="dm-query-cancel" style={{position:'absolute',left:170,top:56,width:80,height:25}} onClick={()=>answer(null)}>取消</UiButton>
         </div>
-      </div>
+      </div>}
       </DesignSpace>
     </div>
   );

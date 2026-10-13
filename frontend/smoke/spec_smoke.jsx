@@ -101,21 +101,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     // --- showcard=100：猜拳双拳下落对碰（res = 我 | 对方<<2；1=剪刀 2=石头 3=布） ---
     eventBus.emit('duel:hand_res', { res: 1 | (3 << 2) }); // 我剪刀 vs 对方布
     await waitFor(() => !!$('#rps-arena'));
-    record('hand-res-plays-rps', $('#rps-arena').textContent.includes('✌️')
-      && $('#rps-arena').textContent.includes('✋'));
+    record('hand-res-plays-rps', $('#rps-arena .rps-hand-bottom').src.endsWith('/f1.jpg')
+      && $('#rps-arena .rps-hand-top').src.endsWith('/f3.jpg'));
     await waitFor(() => !$('#rps-arena'), 3000);
 
     // --- 猜硬币/骰子：图标动画 + ACMessage 文本弹条 ---
     eventBus.emit('duel:toss_coin', { player: 0, results: [1, 0] });
-    await waitFor(() => !!$('#toss-arena') && document.querySelectorAll('.toss-coin').length === 2);
-    record('coin-icon-flips', !!$('.toss-coin'));
+    record('coin-original-text-only', !$('#toss-arena'));
     await waitFor(() => $('#ac-message') && $('#ac-message').style.display === 'block');
     record('coin-popup-text', $('#ac-message').textContent.includes('正面') && $('#ac-message').textContent.includes('反面'));
     await waitFor(() => $('#ac-message').style.display === 'none' && !$('#toss-arena'), 3000);
 
     eventBus.emit('duel:toss_dice', { player: 0, results: [3, 5] });
-    await waitFor(() => !!$('#toss-arena') && document.querySelectorAll('.toss-die').length === 2);
-    record('dice-icon-bounces', $('.toss-die') && $('.toss-die').textContent === '3');
+    record('dice-original-text-only', !$('#toss-arena'));
     await waitFor(() => $('#ac-message').style.display === 'block');
     record('dice-popup-text', $('#ac-message').textContent.includes('3') && $('#ac-message').textContent.includes('5'));
     await waitFor(() => $('#ac-message').style.display === 'none', 3000);

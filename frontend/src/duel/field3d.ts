@@ -14,6 +14,7 @@ import {
   LINK_MARKER_TOP_LEFT, LINK_MARKER_TOP, LINK_MARKER_TOP_RIGHT,
 } from '../domain/constants.ts';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_DEPTH, ZONE_COORDS } from './field3d_geometry.ts';
+import { fieldZonePosition, handPose } from './original_geometry.ts';
 import { generateCardTexture as buildCardTexture } from './field3d_textures.ts';
 import {
   animateDrawCard as runDrawCard,
@@ -47,8 +48,9 @@ export class DuelField3D {
     1: { mzone: [], szone: [], grave: [], banish: [], deck: [], extra: [] }
   };
   cardMeshes: any[] = [];
-  // 对手手牌的背面小卡（原版画面上缘一排微重叠的卡背；自己的手牌在 2D 手牌坞）
-  opponentHandMeshes: any[] = [];
+  handMeshes: [any[], any[]] = [[], []];
+  duelRule = 5;
+  localSeat = 0;
   hoveredCard: any = null;
   textureLoader: any = new (THREE as any).TextureLoader();
   cardBackTexture: any = null;
@@ -57,6 +59,9 @@ export class DuelField3D {
   // picture arrives the cached canvas texture is redrawn in place so every
   // mesh sharing it picks the art up on the next frame.
   cardImageProvider: ((code: number) => Promise<{ url: string } | null>) | null = null;
+  fieldImageProvider: ((code:number)=>Promise<{url:string}|null>) | null = null;
+  fieldSpellPlanes: any[] = [];
+  fieldSpellSignature = '';
   // Field spell art as the board background (the YGOPro field.png effect).
   fieldSpellPlane: any = null;
   fieldSpellTexture: any = null;
@@ -72,8 +77,15 @@ export class DuelField3D {
   actTexture: any = null;
   chainMarkTexture: any = null;
   numberTexture: any = null;
-  // 装备/目标关系线（duel:equip / card_target / cancel_target / unequip）
-  relationLines: any[] = [];
+  // ---- 悬停关系图标（drawing.cpp:446-457 + client_field.cpp SetShowMark）----
+  // 悬停某卡时它的装备/对象/连锁对象关联卡上画 equip.png/target.png/
+  // chaintarget.png 平铺图标；关联数据由 DuelManager 维护，悬停时经
+  // onHoverChange 重算（见 setRelationMarks）。原版无事件驱动关系连线。
+  relationMarks: { icon: any; mesh: any }[] = [];
+  equipTexture: any = null;
+  targetTexture: any = null;
+  chainTargetTexture: any = null;
+  onHoverChange: ((mesh: any | null) => void) | null = null;
   disposed = false;
   // ---- MSG_SELECT_PLACE 落点选择（原版 drawing.cpp:187-209 的虚线高亮）----
   // placeSelectMarks = 可选格的虚线描边面片（点击射线检测目标）；
@@ -157,14 +169,14 @@ export class DuelField3D {
     const height = this.container.clientHeight || window.innerHeight;
 
     this.camera = new (THREE as any).PerspectiveCamera(45, width / height, 0.1, 100);
-    this.camera.position.set(0, 14.5, 12.5);
-    this.camera.lookAt(0, 0, 0.3);
+    this.camera.position.set(0.4, 15.6, 16);
+    this.camera.lookAt(0.4, 0, 0);
     this.applyViewOffset();
 
     this.renderer = new (THREE as any).WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = false;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.container.appendChild(this.renderer.domElement);
@@ -177,6 +189,9 @@ export class DuelField3D {
     this.actTexture = this.textureLoader.load('textures/act.png');
     this.chainMarkTexture = this.textureLoader.load('textures/chain.png');
     this.numberTexture = this.textureLoader.load('textures/number.png');
+    this.equipTexture = this.textureLoader.load('textures/equip.png');
+    this.targetTexture = this.textureLoader.load('textures/target.png');
+    this.chainTargetTexture = this.textureLoader.load('textures/chaintarget.png');
   }
 
   initLights(): void {
@@ -186,12 +201,6 @@ export class DuelField3D {
     const ambientLight = new (THREE as any).AmbientLight(0xffffff, 1.0);
     this.scene.add(ambientLight);
 
-    const dirLight = new (THREE as any).DirectionalLight(0xffffff, 0.7);
-    dirLight.position.set(0, 20, 10);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = 2048;
-    dirLight.shadow.mapSize.height = 2048;
-    this.scene.add(dirLight);
   }
 
   initField(): void {
@@ -233,13 +242,7 @@ export class DuelField3D {
   // ChainVisualizer) call this instead of keeping their own copy of ZONE_COORDS
   // so the layout cannot drift out of sync.
   getZonePosition(player: number, loc: string, seq = 0): { x: number; y: number; z: number } {
-    const zone = ZONE_COORDS[player] && ZONE_COORDS[player][loc];
-    if (!zone) return { x: 0, y: 0.02, z: 0 };
-    if (Array.isArray(zone)) {
-      const pos = zone[seq];
-      return pos ? { ...pos } : { x: 0, y: 0.02, z: 0 };
-    }
-    return { ...zone };
+    return fieldZonePosition(player, loc, seq, this.duelRule) as any;
   }
 
   /** 某槽位当前渲染着的卡片 mesh（chain_visualizer 贴卡角标用） */
@@ -445,6 +448,8 @@ export class DuelField3D {
       const mesh = new (THREE as any).Mesh(geo, mat);
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.set(cardMesh.position.x, cardMesh.position.y + 0.06, cardMesh.position.z);
+      mesh.quaternion.copy(cardMesh.quaternion);
+      mesh.rotateX(-Math.PI/2);
       mesh.renderOrder = 6;
       mesh.userData.selected = selected;
       this.scene.add(mesh);
@@ -474,19 +479,18 @@ export class DuelField3D {
   // ---- 视角交换（观战 btnSpectatorSwap / 回放 btnReplaySwap）----
   // 相机绕到场地另一侧（等效场地旋转 180°）：卡牌朝向/守备方向随观看侧
   // 自然正确，3D 座标与 ZONE_COORDS 不变。2D HUD 的座位显示由 store 的
-  // viewSwapped 负责（localSeat 翻转），这里只搬相机与远侧手背行。
+  // viewSwapped 负责（localSeat 翻转），这里只搬相机。
   setViewSwapped(on: boolean): void {
     if (this.viewSwapped === on) return;
     this.viewSwapped = on;
     const targetZ = on ? -12.5 : 12.5;
     const lookZ = on ? -0.3 : 0.3;
     this.makeTween(this.camera.position)
-      .to({ z: targetZ }, 500)
+      .to({ x:targetZ>0?0.4:-0.6,z:targetZ },500)
       .easing(TWEEN.Easing.Quadratic.InOut)
-      .onUpdate(() => this.camera.lookAt(0, 0, lookZ))
-      .onComplete(() => this.camera.lookAt(0, 0, lookZ))
+      .onUpdate(() => this.camera.lookAt(targetZ>0?0.4:-0.6,0,0))
+      .onComplete(() => this.camera.lookAt(targetZ>0?0.4:-0.6,0,0))
       .start();
-    this.layoutFarHandRow();
   }
 
   // ---- HINT_ZONE 区域高亮（绿色实线+浅填充，与 select_place 蓝虚线区分）----
@@ -751,30 +755,36 @@ export class DuelField3D {
   // ---------------------------------------------------------------
 
   refreshFieldSpell(): void {
-    if (!this.cardsOnField) return;
-    // draw_field_spell=0（原版 system.conf 开关）时不显示场地魔法背景
-    if (settingsStore.get('draw_field_spell') === 0) {
-      if (this.fieldSpellCode !== 0) {
-        this.fieldSpellCode = 0;
-        this.hideFieldSpell();
-      }
-      return;
-    }
-    let code = 0;
-    for (const player of [0, 1]) {
-      const zone = this.cardsOnField[player] && this.cardsOnField[player].szone;
-      const mesh = zone ? zone[5] : null;
-      if (mesh && mesh.userData.cardCode && mesh.userData.positionState !== 'FACEDOWN') {
-        code = mesh.userData.cardCode;
-        break;
-      }
-    }
-    if (code === this.fieldSpellCode) return;
-    this.fieldSpellCode = code;
-    if (code === 0) {
-      this.hideFieldSpell();
-    } else {
-      this.showFieldSpell(code);
+    const codes=[0,1].map(seat=>{
+      const m=this.cardsOnField[seat]?.szone[5];
+      return settingsStore.get('draw_field_spell')===0||!m||m.userData.positionState==='FACEDOWN'?0:m.userData.cardCode||0;
+    });
+    const signature=codes.join(':');
+    if(signature===this.fieldSpellSignature)return;
+    this.fieldSpellSignature=signature;
+    this.fieldSpellCode=codes[0]||codes[1];
+    for(const plane of this.fieldSpellPlanes){this.scene.remove(plane);plane.geometry.dispose();plane.material.map?.dispose();plane.material.dispose();}
+    this.fieldSpellPlanes=[];this.fieldSpellPlane=null;
+    if(this.matMesh)this.matMesh.material.map=this.matTexture;
+    if(!this.fieldSpellCode||!this.fieldImageProvider)return;
+    const split=!!codes[0]&&!!codes[1]&&codes[0]!==codes[1];
+    const entries=split?[{code:codes[0],seat:0},{code:codes[1],seat:1}]:[{code:this.fieldSpellCode,seat:-1}];
+    for(const entry of entries){
+      this.fieldImageProvider(entry.code).then(pic=>{
+        if(!pic?.url||this.disposed||this.fieldSpellSignature!==signature)return;
+        const tex=this.textureLoader.load(pic.url,()=>{
+          if(this.disposed||this.fieldSpellSignature!==signature){tex.dispose();return;}
+          tex.colorSpace=THREE.SRGBColorSpace;
+          // vFieldSpell1/2 UV ranges from materials.cpp, including the mirrored far half.
+          if(split){if(entry.seat===0){tex.repeat.set(1,.43636);tex.offset.set(0,.36364);}else{tex.repeat.set(-1,-.43636);tex.offset.set(1,.8);}}
+          const geo=new (THREE as any).PlaneGeometry(11,split?4.8:12.8);
+          const mat=new (THREE as any).MeshBasicMaterial({map:tex,depthWrite:false});
+          const plane=new (THREE as any).Mesh(geo,mat);plane.rotation.x=-Math.PI/2;
+          plane.position.set(-.1,.01,split?(entry.seat===0?4:-4):0);
+          this.scene.add(plane);this.fieldSpellPlanes.push(plane);this.fieldSpellPlane=this.fieldSpellPlanes[0];
+          this.matMesh.material.map=this.transparentMatTexture;
+        });
+      }).catch(()=>{});
     }
   }
 
@@ -888,16 +898,12 @@ export class DuelField3D {
 
   createCardMesh(cardCode: number, cardInfo: any = null): any {
     const geo = new (THREE as any).BoxGeometry(CARD_WIDTH, CARD_DEPTH, CARD_HEIGHT);
-    const borderMat = new (THREE as any).MeshStandardMaterial({ color: 0x111827 });
-    const frontMat = new (THREE as any).MeshStandardMaterial({
+    const borderMat = new (THREE as any).MeshBasicMaterial({ color: 0x000000 });
+    const frontMat = new (THREE as any).MeshBasicMaterial({
       map: this.generateCardTexture(cardCode),
-      roughness: 0.4,
-      metalness: 0.1
     });
-    const backMat = new (THREE as any).MeshStandardMaterial({
+    const backMat = new (THREE as any).MeshBasicMaterial({
       map: this.cardBackTexture,
-      roughness: 0.4,
-      metalness: 0.1
     });
 
     const materials = [borderMat, borderMat, frontMat, backMat, borderMat, borderMat];
@@ -1070,13 +1076,13 @@ export class DuelField3D {
       this.scene.remove(mesh);
     });
     this.cardMeshes = [];
-    this.opponentHandMeshes = [];
+    this.handMeshes = [[], []];
     this.cardsOnField = {
       0: { mzone: [], szone: [], grave: [], banish: [], deck: [], extra: [] },
       1: { mzone: [], szone: [], grave: [], banish: [], deck: [], extra: [] }
     };
     if (this.chainVisualizer) this.chainVisualizer.clearChain();
-    this.clearRelationLines();
+    this.clearRelationMarks();
     this.clearPlaceSelectZones();
     this.clearCardSelectMarks();
     this.clearHintZones();
@@ -1086,39 +1092,85 @@ export class DuelField3D {
     this.tweenGroup.removeAll();
     // Force the field-spell background to re-evaluate (and fade out).
     this.fieldSpellCode = -1;
+    this.fieldSpellSignature = '!';
     this.refreshFieldSpell();
   }
 
-  /**
-   * 远侧（显示座 1）手牌：画面远端一排背面朝上的卡（原版对方手牌的呈现
-   * 方式）。count 增减时直接落位（无飞入动画——抽牌动画已由
-   * animateDrawCard 负责，落位只是把持久表示同步成最新数量）。
-   * 视角交换后远侧换边，z 符号随 viewSwapped 翻转。
-   */
-  setFarHandCount(count: number): void {
-    const target = Math.max(0, Math.min(count, 10));
-    while (this.opponentHandMeshes.length > target) {
-      const mesh = this.opponentHandMeshes.pop();
-      this.scene.remove(mesh);
+  // 双方手牌的 3D 直排（client_field.cpp GetCardLocation LOCATION_HAND：
+  // 同旋转、≤6 张固定间距、更多压缩；零码 = 卡背）。无飞入动画——
+  // 抽牌动画由 animateDrawCard 负责，这里只把持久表示同步成最新张数。
+  setHands(codes: [number[], number[]]): void {
+    for (const seat of [0,1] as const) {
+      const meshes = this.handMeshes[seat];
+      while (meshes.length > codes[seat].length) this.retireMesh(meshes.pop(),true);
+      codes[seat].forEach((code,seq) => {
+        let mesh = meshes[seq];
+        if (!mesh || mesh.userData.cardCode !== code) {
+          if (mesh) this.retireMesh(mesh,true);
+          mesh = this.createCardMesh(code);
+          meshes[seq] = mesh;
+          mesh.userData.slot = {player:seat,loc:'hand',seq};
+          this.scene.add(mesh);
+        }
+        const pose = handPose(seat,seq,codes[seat].length,mesh === this.hoveredCard);
+        mesh.userData.handCount = codes[seat].length;
+        mesh.userData.originalY = pose.y;
+        if (mesh.userData.drawing) return;
+        mesh.position.set(pose.x,pose.y,pose.z);
+        mesh.rotation.set(seat===0?0.798056:-0.798056,0,0);
+        if (!code) mesh.rotation.x += Math.PI;
+      });
     }
-    while (this.opponentHandMeshes.length < target) {
-      const mesh = this.createCardMesh(0, null);
-      mesh.userData.slot = { player: 1, loc: 'hand', seq: this.opponentHandMeshes.length };
-      this.opponentHandMeshes.push(mesh);
-      this.scene.add(mesh);
-    }
-    this.layoutFarHandRow();
   }
 
-  /** 远侧手背行落位：卡背朝上（x=PI），排在远侧后场之后居中微重叠 */
-  layoutFarHandRow(): void {
-    const z = this.viewSwapped ? 8.8 : -8.8;
-    const spacing = CARD_WIDTH * 0.55;
-    this.opponentHandMeshes.forEach((mesh, i) => {
-      const offset = i - (this.opponentHandMeshes.length - 1) / 2;
-      mesh.position.set(-offset * spacing, 0.35, z);
-      mesh.rotation.set(Math.PI, 0, 0);
-    });
+  setHandHover(mesh: any, on: boolean): void {
+    const slot = mesh.userData.slot;
+    const pose = handPose(slot.player,slot.seq,mesh.userData.handCount,on);
+    this.makeTween(mesh.position).to({x:pose.x,y:pose.y,z:pose.z},5*1000/60).start();
+  }
+
+  shuffleHand(player: number): void {
+    const meshes = this.handMeshes[player as 0|1];
+    for (const mesh of meshes) {
+      const pose = handPose(player,mesh.userData.slot.seq,meshes.length);
+      mesh.userData.shuffling = true;
+      this.makeTween(mesh.position).to({x:-0.2},5*1000/60).chain(
+        this.makeTween(mesh.position).to({x:pose.x},5*1000/60).delay(6*1000/60)
+          .onComplete(()=>{mesh.userData.shuffling=false;})
+      ).start();
+    }
+  }
+
+  setDuelRule(rule: number): void {
+    if (this.duelRule === rule) return;
+    this.duelRule = rule;
+    const suffix = rule >= 4 ? '3' : '2';
+    this.matTexture?.dispose();
+    this.transparentMatTexture?.dispose();
+    this.matTexture = this.textureLoader.load('textures/field'+suffix+'.png');
+    this.transparentMatTexture = this.textureLoader.load('textures/field-transparent'+suffix+'.png');
+    this.matTexture.colorSpace = THREE.SRGBColorSpace;
+    this.transparentMatTexture.colorSpace = THREE.SRGBColorSpace;
+    this.matMesh.material.map = this.fieldSpellPlanes.length > 0 ? this.transparentMatTexture : this.matTexture;
+    for (const seat of [0,1]) for (const loc of ['mzone','szone','grave','banish']) {
+      this.cardsOnField[seat][loc].forEach((mesh:any,seq:number) => {
+        if (!mesh) return;
+        const p = this.getZonePosition(seat,loc,seq);
+        mesh.visible = !!p;
+        if (p) mesh.position.set(p.x,p.y+0.02,p.z);
+      });
+    }
+    this.repositionGraveLockSprites();
+  }
+
+  setBottomSeat(seat: number, instant = false): void {
+    const swap = seat === 1;
+    this.localSeat = seat;
+    if (instant) {
+      this.camera.position.set(swap?-0.6:0.4,15.6,swap?-16:16);
+      this.camera.lookAt(swap?-0.6:0.4,0,0);
+      this.camera.updateMatrixWorld(true);
+    }
   }
 
   // ---- 墓地禁查（drawing.cpp:564-575 的 tNegated 贴图）----
@@ -1149,7 +1201,7 @@ export class DuelField3D {
   repositionGraveLockSprites(): void {
     this.graveLockSprites.forEach((sprite) => {
       const p: number = sprite.userData.gravePlayer;
-      const c = ZONE_COORDS[p].grave;
+      const c = this.getZonePosition(p,'grave');
       const stack = (this.cardsOnField[p] && this.cardsOnField[p].grave) || [];
       sprite.position.set(c.x, 0.07 + Math.min(stack.length, 20) * 0.02 + 0.15, c.z);
       sprite.scale.set(1.1, 1.1, 1);
@@ -1399,7 +1451,7 @@ export class DuelField3D {
       const sprite = this.pileCountSprites[key];
       const seat = sprite.userData.pilePlayer;
       const pile = sprite.userData.pile;
-      const c = ZONE_COORDS[seat] && ZONE_COORDS[seat][pile];
+      const c = this.getZonePosition(seat,pile);
       if (!c) continue;
       const stack = (this.cardsOnField[seat] && this.cardsOnField[seat][pile]) || [];
       sprite.position.set(c.x, c.y + 0.35 + Math.min(stack.length, 20) * 0.02, c.z);
@@ -1412,6 +1464,7 @@ export class DuelField3D {
   // 堆区按序号取栈顶近似）
   meshAt(player: number, loc: number, seq: number): any {
     const locName = LOC_NAMES[loc];
+    if (locName === 'hand') return this.handMeshes[player as 0|1][seq] || null;
     if (!locName || !this.cardsOnField[player]) return null;
     const zone = this.cardsOnField[player][locName];
     if (!zone) return null;
@@ -1473,52 +1526,39 @@ export class DuelField3D {
     mesh.userData.counterSprite = sprite;
   }
 
-  // MSG_EQUIP / MSG_CARD_TARGET：两张场卡之间连一条关系线
-  // （equip 橙色 / target 青色；同一条线不重复添加）
-  addRelationLine(
-    from: { player: number; loc: number; seq: number },
-    to: { player: number; loc: number; seq: number },
-    kind: 'equip' | 'target',
-  ): void {
-    const fromMesh = this.meshAt(from.player, from.loc, from.seq);
-    const toMesh = this.meshAt(to.player, to.loc, to.seq);
-    if (!fromMesh || !toMesh) return;
-    const dup = this.relationLines.some((r) => r.kind === kind
-      && r.fromMesh === fromMesh && r.toMesh === toMesh);
-    if (dup) return;
-    const pts = [
-      new (THREE as any).Vector3().copy(fromMesh.position).setY(0.25),
-      new (THREE as any).Vector3().copy(toMesh.position).setY(0.25),
-    ];
-    const geo = new (THREE as any).BufferGeometry().setFromPoints(pts);
-    const line = new (THREE as any).Line(geo, new (THREE as any).LineBasicMaterial({
-      color: kind === 'equip' ? 0xf97316 : 0x22d3ee,
-      transparent: true,
-      opacity: 0.85,
-    }));
-    this.scene.add(line);
-    this.relationLines.push({ line, fromMesh, toMesh, kind });
+  setRelationMarks(marks: { mesh: any; kind: 'equip' | 'target' | 'chaintarget' }[]): void {
+    this.clearRelationMarks();
+    for (const mark of marks || []) {
+      const tex = mark.kind === 'equip' ? this.equipTexture
+        : mark.kind === 'target' ? this.targetTexture : this.chainTargetTexture;
+      // 原版 vSymbol：0.7×0.7 平铺在卡面中心（materials.cpp:19）
+      const geo = new (THREE as any).PlaneGeometry(0.7, 0.7);
+      const mat = new (THREE as any).MeshBasicMaterial({
+        map: tex, transparent: true, depthWrite: false,
+      });
+      const icon = new (THREE as any).Mesh(geo, mat);
+      icon.rotation.x = -Math.PI / 2;
+      icon.position.set(mark.mesh.position.x, mark.mesh.position.y + 0.06, mark.mesh.position.z);
+      icon.renderOrder = 6;
+      icon.userData.relationMark = mark.kind;
+      this.scene.add(icon);
+      this.relationMarks.push({ icon, mesh: mark.mesh });
+      // 原版 else-if 链（equip > target > chaintarget > negated）：
+      // 关系图标显示期间该卡的无效化徽章不画
+      const badge = mark.mesh.userData.negatedBadge;
+      if (badge) badge.visible = false;
+    }
   }
 
-  // MSG_UNEQUIP / MSG_CANCEL_TARGET：解除关系线。to/kind 缺省时按起点
-  // 宽松匹配（unequip 只带装备卡）。
-  removeRelationLine(
-    from: { player: number; loc: number; seq: number },
-    to?: { player: number; loc: number; seq: number },
-    kind?: 'equip' | 'target',
-  ): void {
-    const fromMesh = this.meshAt(from.player, from.loc, from.seq);
-    if (!fromMesh) return;
-    const toMesh = to ? this.meshAt(to.player, to.loc, to.seq) : null;
-    this.relationLines = this.relationLines.filter((r) => {
-      if (r.fromMesh !== fromMesh) return true;
-      if (kind && r.kind !== kind) return true;
-      if (toMesh && r.toMesh !== toMesh) return true;
-      this.scene.remove(r.line);
-      r.line.geometry.dispose();
-      r.line.material.dispose();
-      return false;
-    });
+  clearRelationMarks(): void {
+    for (const m of this.relationMarks) {
+      this.scene.remove(m.icon);
+      m.icon.geometry.dispose();
+      m.icon.material.dispose();
+      const badge = m.mesh.userData.negatedBadge;
+      if (badge) badge.visible = true;
+    }
+    this.relationMarks = [];
   }
 
   // MSG_CONFIRM_CARDS：揭示序列（原版 duelclient.cpp:2161-2260 的简化版）——
@@ -1567,28 +1607,7 @@ export class DuelField3D {
 
   // MSG_SUMMONED/SPSUMMONED/FLIPSUMMONED：召唤落定的顿点表现——怪兽槽位
   // 小冲击波 + 卡的轻微压实弹跳（原版只有日志事件串，这里是轻量增强）
-  settleCard(player: number, slot: number): void {
-    const mesh = this.cardsOnField[player] && this.cardsOnField[player].mzone[slot];
-    const coord = ZONE_COORDS[player].mzone && ZONE_COORDS[player].mzone[slot];
-    if (coord) this.createShockwave(coord.x, coord.z, 0x94a3b8);
-    if (!mesh) return;
-    this.makeTween(mesh.scale)
-      .to({ x: 1.12, y: 1.12, z: 1.12 }, 110)
-      .yoyo(true)
-      .repeat(1)
-      .easing(TWEEN.Easing.Quadratic.Out)
-      .onComplete(() => mesh.scale.set(1, 1, 1))
-      .start();
-  }
-
-  clearRelationLines(): void {
-    this.relationLines.forEach((r) => {
-      this.scene.remove(r.line);
-      r.line.geometry.dispose();
-      r.line.material.dispose();
-    });
-    this.relationLines = [];
-  }
+  settleCard(_player: number, _slot: number): void {}
 
   createShockwave(x: number, z: number, colorHex = 0x00d2ff): void {
     runShockwave(this, x, z, colorHex);
@@ -1615,6 +1634,7 @@ export class DuelField3D {
     };
     this._onClick = (e: MouseEvent) => {
       this.updateMouseFromEvent(e);
+      this.handleHover();
       // 落点选择模式优先：点到高亮格 → 交给 manager 累计选位；
       // 点空处吞掉点击（原版选位期间不响应其他场上点击）
       if (this.placeSelectMarks.length) {
@@ -1630,6 +1650,7 @@ export class DuelField3D {
         return;
       }
       if (this.hoveredCard && this.onCardClick) {
+        e.stopPropagation();
         // Screen coordinates let the caller position an action popup (e.g.
         // the battle-phase attack menu) right where the player clicked.
         this.onCardClick(e.clientX, e.clientY, this.hoveredCard.userData);
@@ -1681,7 +1702,7 @@ export class DuelField3D {
     const p = hits[0].point;
     for (const player of [0, 1]) {
       for (const pile of ['grave', 'banish', 'extra', 'deck']) {
-        const c = ZONE_COORDS[player][pile];
+        const c = this.getZonePosition(player,pile);
         if (!c) continue;
         if (Math.abs(p.x - c.x) <= 0.95 && Math.abs(p.z - c.z) <= 1.25) {
           return { player, pile };
@@ -1692,6 +1713,8 @@ export class DuelField3D {
   }
 
   handleHover(): void {
+    this.scene.updateMatrixWorld(true);
+    this.camera.updateMatrixWorld(true);
     // 落点选择期间：悬停可选格给手型光标（原版悬停 zone 高亮由
     // DrawSelectionLine 呼吸承担，光标反馈是 Web 习惯的补充）
     if (this.placeSelectMarks.length) {
@@ -1715,12 +1738,16 @@ export class DuelField3D {
       const mesh = intersects[0].object;
       if (this.hoveredCard !== mesh) {
         if (this.hoveredCard) {
-          this.makeTween(this.hoveredCard.position)
+          if (this.hoveredCard.userData.slot?.loc === 'hand') this.setHandHover(this.hoveredCard,false);
+          else this.makeTween(this.hoveredCard.position)
             .to({ y: this.hoveredCard.userData.originalY || 0.05 }, 120)
             .start();
         }
         this.hoveredCard = mesh;
-        this.makeTween(mesh.position)
+        // 悬停关系图标重算（client_field.cpp SetShowMark 的触发点）
+        this.onHoverChange?.(mesh);
+        if (mesh.userData.slot?.loc === 'hand') this.setHandHover(mesh,true);
+        else this.makeTween(mesh.position)
           .to({ y: (mesh.userData.originalY || 0.05) + 0.35 }, 120)
           .start();
 
@@ -1739,10 +1766,12 @@ export class DuelField3D {
         this.updateLinkedZones();
       }
     } else if (this.hoveredCard) {
-      this.makeTween(this.hoveredCard.position)
+      if (this.hoveredCard.userData.slot?.loc === 'hand') this.setHandHover(this.hoveredCard,false);
+      else this.makeTween(this.hoveredCard.position)
         .to({ y: this.hoveredCard.userData.originalY || 0.05 }, 120)
         .start();
       this.hoveredCard = null;
+      this.onHoverChange?.(null);
       this.container.dispatchEvent(new CustomEvent('ygo:cardhoverend'));
       this.clearLinkedZones();
     }
@@ -1752,13 +1781,9 @@ export class DuelField3D {
   // 右 0.45，中心偏左约 16.7%）：等效于把盘面往右推，给左侧 HUD 面板留位。
   // 用 three 的 setViewOffset 复刻；窄屏（面板隐藏）时取消偏移。
   applyViewOffset(): void {
-    const width = this.container.clientWidth || window.innerWidth;
-    const height = this.container.clientHeight || window.innerHeight;
-    if (width > 820) {
-      this.camera.setViewOffset(width, height, -width * 0.15, 0, width, height);
-    } else {
-      this.camera.clearViewOffset();
-    }
+    // game.cpp's fixed asymmetric projection; window resizing stretches it.
+    this.camera.projectionMatrix.makePerspective(-1.8,0.9,0.84,-0.84,2,200);
+    this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
   }
 
   onWindowResize(): void {
@@ -1797,6 +1822,16 @@ export class DuelField3D {
       }
     }
     this.chainVisualizer?.tick();
+    for (const mark of this.cardSelectMarks) {
+      mark.mesh.position.copy(mark.cardMesh.position);
+      mark.mesh.position.y += 0.04;
+      mark.mesh.quaternion.copy(mark.cardMesh.quaternion);
+      mark.mesh.rotateX(-Math.PI/2);
+    }
+    // 关系图标逐帧跟随卡 mesh（悬停中卡可能移动/被抬升）
+    for (const m of this.relationMarks) {
+      m.icon.position.set(m.mesh.position.x, m.mesh.position.y + 0.06, m.mesh.position.z);
+    }
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -1836,6 +1871,9 @@ export class DuelField3D {
     this.cardTextureCache.forEach((tex) => tex.dispose());
     this.cardTextureCache.clear();
     if (this.cardBackTexture) this.cardBackTexture.dispose();
+    for (const t of [this.equipTexture, this.targetTexture, this.chainTargetTexture]) {
+      if (t) t.dispose();
+    }
     if (this.matMesh) {
       this.scene.remove(this.matMesh);
       this.matMesh.geometry.dispose();
@@ -1864,7 +1902,7 @@ export class DuelField3D {
       this.fieldSpellTexture = null;
     }
     this.tweenGroup.removeAll();
-    this.clearRelationLines();
+    this.clearRelationMarks();
     if (this.placeSelectTextures) {
       this.placeSelectTextures.on.dispose();
       this.placeSelectTextures.off.dispose();

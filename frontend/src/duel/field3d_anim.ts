@@ -13,122 +13,26 @@ import type { DuelField3D } from './field3d.ts';
 
 export function animateDrawCard(self: DuelField3D, player: number, cardCode: number, cardInfo: any = null, onComplete: (() => void) | null = null): void {
   soundManager.playDraw();
-  const cardMesh = self.createCardMesh(cardCode, cardInfo);
-  const startCoord = ZONE_COORDS[player].deck;
-
-  cardMesh.position.set(startCoord.x, 0.4, startCoord.z);
-  cardMesh.rotation.set(Math.PI, 0, 0);
-  self.scene.add(cardMesh);
-
-  const targetPos = player === 0 ? { x: 0, y: 3, z: 8.5 } : { x: 0, y: 3, z: -8.5 };
-
-  self.makeTween(cardMesh.position)
-    .to({ x: targetPos.x, y: 4.5, z: (startCoord.z + targetPos.z) / 2 }, 350)
-    .easing(TWEEN.Easing.Quadratic.Out)
-    .chain(
-      self.makeTween(cardMesh.position)
-        .to({ x: targetPos.x, y: targetPos.y, z: targetPos.z }, 300)
-        .easing(TWEEN.Easing.Quadratic.In)
-        .onComplete(() => {
-          self.scene.remove(cardMesh);
-          const idx = self.cardMeshes.indexOf(cardMesh);
-          if (idx > -1) self.cardMeshes.splice(idx, 1);
-          if (onComplete) onComplete();
-        })
-    )
-    .start();
-
-  self.makeTween(cardMesh.rotation)
-    .to({ x: player === 0 ? 0 : Math.PI, y: 0, z: 0 }, 650)
-    .easing(TWEEN.Easing.Cubic.Out)
-    .start();
+  const mesh = self.handMeshes[player as 0|1].slice().reverse().find((m:any)=>m.userData.cardCode===cardCode&&!m.userData.drawing);
+  if (!mesh) { onComplete?.(); return; }
+  const target = {x:mesh.position.x,y:mesh.position.y,z:mesh.position.z};
+  const deck = self.getZonePosition(player,'deck');
+  mesh.userData.drawing=true;
+  mesh.position.set(deck.x,0.02,deck.z);
+  self.makeTween(mesh.position).to(target,10*1000/60).onComplete(()=>{mesh.userData.drawing=false;onComplete?.();}).start();
 }
 
 export function animateSummon(self: DuelField3D, player: number, cardCode: number, slotIndex: number, position = 0x1, cardInfo: any = null, isSpecial = false): any {
-  if (isSpecial) soundManager.playSpecialSummon();
-  else soundManager.playSummon();
-
-  const targetCoord = ZONE_COORDS[player].mzone[slotIndex];
-  if (!targetCoord) return;
-
-  // The engine often moves the card into the slot (e.g. grave → mzone for a
-  // special summon) before announcing the summoning; recycle that mesh
-  // instead of stacking a second card in the same slot. The same applies to
-  // flip summons, where the set card already occupies the slot.
-  const existing = self.cardsOnField[player].mzone[slotIndex];
-  if (existing) self.retireMesh(existing, true);
-
-  const cardMesh = self.createCardMesh(cardCode, cardInfo);
-
-  cardMesh.position.set(targetCoord.x, 5.0, targetCoord.z + (player === 0 ? 2 : -2));
-  cardMesh.scale.set(0.2, 0.2, 0.2);
-  self.scene.add(cardMesh);
-
-  // A card on the board is a thin box lying flat (thickness along y). Turning
-  // it sideways for defense means rotating about y (the face normal), NOT z:
-  // a z-rotation tips the card up onto its edge, perpendicular to the board.
-  const targetRot = self.cardRotationFor(player, position);
-
-  self.makeTween(cardMesh.scale)
-    .to({ x: 1, y: 1, z: 1 }, 450)
-    .easing(TWEEN.Easing.Back.Out)
-    .start();
-
-  self.makeTween(cardMesh.position)
-    .to({ x: targetCoord.x, y: targetCoord.y + 0.05, z: targetCoord.z }, 450)
-    .easing(TWEEN.Easing.Bounce.Out)
-    .onComplete(() => {
-      createShockwave(self, targetCoord.x, targetCoord.z, isSpecial ? 0xf59e0b : 0x00d2ff);
-    })
-    .start();
-
-  self.makeTween(cardMesh.rotation)
-    .to(targetRot, 450)
-    .easing(TWEEN.Easing.Cubic.Out)
-    .start();
-
-  cardMesh.userData.slot = { player, loc: 'mzone', seq: slotIndex };
-  cardMesh.userData.positionState = self.positionStateFor(position);
-  self.cardsOnField[player].mzone[slotIndex] = cardMesh;
-  return cardMesh;
+  if (isSpecial) soundManager.playSpecialSummon(); else soundManager.playSummon();
+  // MSG_MOVE places the card; SUMMONING only adds gframe's DrawSpec reveal.
+  const mesh = self.cardsOnField[player].mzone[slotIndex];
+  return mesh || self.placeCard(player,'mzone',slotIndex,cardCode,cardInfo,position);
 }
 
 export function animateSetCard(self: DuelField3D, player: number, cardCode: number, slotIndex: number, isMonster = false, cardInfo: any = null): any {
   soundManager.playDraw();
-  const targetCoord = isMonster
-    ? ZONE_COORDS[player].mzone[slotIndex]
-    : ZONE_COORDS[player].szone[slotIndex];
-  if (!targetCoord) return;
-
-  // Validate the slot before creating anything, and recycle any mesh the
-  // preceding MSG_MOVE already placed there.
-  const locName = isMonster ? 'mzone' : 'szone';
-  const existing = self.cardsOnField[player][locName][slotIndex];
-  if (existing) self.retireMesh(existing, true);
-
-  const cardMesh = self.createCardMesh(cardCode, cardInfo);
-
-  cardMesh.position.set(targetCoord.x, 3.5, targetCoord.z);
-  // Face-down sets lie with the back up (x=PI); set monsters are set in
-  // defense, so their top edge follows the same owner's-right-hand rule as
-  // cardRotationFor. Set spells keep their top edge toward the owner.
-  cardMesh.rotation.set(
-    Math.PI,
-    isMonster ? (player === 1 ? Math.PI / 2 : -Math.PI / 2) : 0,
-    0
-  );
-  self.scene.add(cardMesh);
-
-  self.makeTween(cardMesh.position)
-    .to({ x: targetCoord.x, y: targetCoord.y + 0.05, z: targetCoord.z }, 350)
-    .easing(TWEEN.Easing.Quadratic.Out)
-    .start();
-
-  cardMesh.userData.slot = { player, loc: locName, seq: slotIndex };
-  cardMesh.userData.positionState = 'FACEDOWN';
-  self.cardsOnField[player][locName][slotIndex] = cardMesh;
-  self.refreshFieldSpell();
-  return cardMesh;
+  const loc = isMonster?'mzone':'szone';
+  return self.cardsOnField[player][loc][slotIndex] || self.placeCard(player,loc,slotIndex,cardCode,cardInfo,isMonster?8:2);
 }
 
 export function animateReposition(self: DuelField3D, player: number, locName: any = 'mzone', slotIndex?: any, newPos?: any): void {
@@ -165,38 +69,31 @@ export function animateReposition(self: DuelField3D, player: number, locName: an
 
 export function animateAttack(self: DuelField3D, attackerPlayer: number, attackerSlot: number, targetPlayer: number, targetSlot: number | undefined, isDirect = false): void {
   soundManager.playAttack();
-  const attackerMesh = self.cardsOnField[attackerPlayer].mzone[attackerSlot];
-  if (!attackerMesh) return;
-
-  const startPos = { ...attackerMesh.position };
-  let targetPos;
-
-  if (isDirect || targetSlot === undefined || targetSlot < 0) {
-    targetPos = { x: 0, y: 1.5, z: targetPlayer === 1 ? -6.0 : 6.0 };
-  } else {
-    const targetCoord = ZONE_COORDS[targetPlayer].mzone[targetSlot];
-    targetPos = { x: targetCoord.x, y: 0.5, z: targetCoord.z };
+  const attacker = self.cardsOnField[attackerPlayer].mzone[attackerSlot];
+  if (!attacker) return;
+  const target = isDirect || targetSlot === undefined || targetSlot < 0
+    ? {x:-0.1,z:attackerPlayer===0?-7:7} : self.getZonePosition(targetPlayer,'mzone',targetSlot);
+  if (!target) return;
+  const start = attacker.position;
+  const dx=target.x-start.x,dz=target.z-start.z,d=Math.hypot(dx,dz)||1;
+  const positions:number[]=[],colors:number[]=[];
+  // Materials::GenArrow: 20 pairs, parabolic height, widening arrowhead.
+  for(let i=0;i<20;i++) {
+    const ay=1-i*.1,t=i===19?1:i*.05;
+    const width=i===19?0:i===18?.4:.2;
+    for(const sign of [1,-1]) {
+      positions.push(start.x+dx*t+sign*width*dz/d,i===19?0:4*(1-ay*ay),start.z+dz*t-sign*width*dx/d);
+      colors.push(i===19?1:0,1,i===19?1:0);
+    }
   }
-
-  self.makeTween(attackerMesh.position)
-    .to({ y: 1.6 }, 200)
-    .easing(TWEEN.Easing.Quadratic.Out)
-    .chain(
-      self.makeTween(attackerMesh.position)
-        .to({ x: targetPos.x, y: targetPos.y + 0.3, z: targetPos.z }, 180)
-        .easing(TWEEN.Easing.Exponential.In)
-        .onComplete(() => {
-          soundManager.playDamage();
-          createHitSparks(self, targetPos.x, targetPos.z);
-          cameraShake(self, 0.2, 200);
-        })
-        .chain(
-          self.makeTween(attackerMesh.position)
-            .to(startPos, 300)
-            .easing(TWEEN.Easing.Cubic.Out)
-        )
-    )
-    .start();
+  const geo=new (THREE as any).BufferGeometry();
+  geo.setAttribute('position',new (THREE as any).Float32BufferAttribute(positions,3));
+  geo.setAttribute('color',new (THREE as any).Float32BufferAttribute(colors,3));
+  const mat=new (THREE as any).MeshBasicMaterial({vertexColors:true,transparent:true,opacity:192/255,side:THREE.DoubleSide});
+  const arrow=new (THREE as any).Mesh(geo,mat);arrow.userData.attackArrow=true;self.scene.add(arrow);
+  const progress={frame:0};
+  const draw=()=>{const sv=(Math.floor(progress.frame)%8)*4,idx:number[]=[];for(let i=0;i<10;i++){const a=sv+i;idx.push(a,a+1,a+2);}geo.setIndex(idx);};draw();
+  self.makeTween(progress).to({frame:40},40*1000/60).onUpdate(draw).onComplete(()=>{self.scene.remove(arrow);geo.dispose();mat.dispose();}).start();
 }
 
 export function animateDestroy(self: DuelField3D, player: number, loc: string, slotIndex: number): void {

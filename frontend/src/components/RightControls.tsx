@@ -23,7 +23,8 @@ const MODES: { key: ChainPrefMode; label: string; title: string }[] = [
   { key: 'whenAvail', label: '可用时点', title: '有任何可发动时询问' },
 ];
 
-export default function RightControls({ onSurrendered, onLeaveObserver }: {
+export default function RightControls({ onSurrendered, onLeaveObserver, singleMode = false }: {
+  singleMode?: boolean;
   onSurrendered?: () => void;
   /** 观战者的 btnLeaveGame：CTOS_LEAVE_GAME 后退出决斗画面 */
   onLeaveObserver?: () => void;
@@ -33,17 +34,18 @@ export default function RightControls({ onSurrendered, onLeaveObserver }: {
   const [confirming, setConfirming] = useState(false);
   // 组队赛队友已请求投降（STOC_TEAMMATE_SURRENDER）→ 文案换 SysString 1355
   const [teammateSurrender, setTeammateSurrender] = useState(false);
+  const [surrenderSent, setSurrenderSent] = useState(false);
 
   useEffect(() => chainPrefs.subscribe(setMode), []);
   useEffect(() => {
-    const onMate = (): void => setTeammateSurrender(true);
+    const onMate = (): void => { setTeammateSurrender(true); setConfirming(true); };
     eventBus.on('stoc:teammate_surrender', onMate);
     return () => { eventBus.off('stoc:teammate_surrender', onMate); };
   }, []);
   useEffect(() => {
     // 标记是单局语义：下一局开始/决斗结束即复位（原版 btnLeaveGame 文案在
     // STOC_DUEL_START 重置为 SysString 1351，teammate_surrender 时再换 1355）
-    const reset = (): void => setTeammateSurrender(false);
+    const reset = (): void => { setTeammateSurrender(false); setSurrenderSent(false); setConfirming(false); };
     eventBus.on('stoc:duel_start', reset);
     eventBus.on('stoc:duel_end', reset);
     return () => {
@@ -59,6 +61,8 @@ export default function RightControls({ onSurrendered, onLeaveObserver }: {
 
   const doSurrender = () => {
     setConfirming(false);
+    if (surrenderSent) return;
+    setSurrenderSent(true);
     WailsBridge.surrender();
     if (onSurrendered) onSurrendered();
   };
@@ -93,8 +97,11 @@ export default function RightControls({ onSurrendered, onLeaveObserver }: {
   return (
     <div id="right-controls" className="right-controls">
       {/* btnLeaveGame 在最上（205,5)-(295,80)；连锁三键在其下 y100 起 */}
-      <button id="surrender-btn" className="surrender-btn" onClick={() => setConfirming(true)}>
-        {teammateSurrender ? '投降(1/2)' : '投降'}
+      <button id="surrender-btn" className="surrender-btn" disabled={surrenderSent} onClick={() => {
+        if (singleMode) { WailsBridge.stopSingle(); onLeaveObserver?.(); }
+        else setConfirming(true);
+      }}>
+        {singleMode ? '退出' : teammateSurrender ? '投降(1/2)' : '投降'}
       </button>
       <div className="chain-group">
         {MODES.map((m) => (
@@ -109,6 +116,7 @@ export default function RightControls({ onSurrendered, onLeaveObserver }: {
           </button>
         ))}
       </div>
+      {state.phasePrompt?.canShuffle && !state.cardSelect && <button id="shuffle-hand-btn" className="chain-btn" onClick={() => WailsBridge.respondIdleCmd(0,8)}>洗切手牌</button>}
       {confirming && (
         <div className="surrender-confirm">
           <div className="surrender-confirm-title">是否确定投降？</div>
@@ -124,7 +132,7 @@ export default function RightControls({ onSurrendered, onLeaveObserver }: {
                 <button key="y" id="surrender-yes" className="btn btn-gold" onClick={doSurrender}>是</button>
               );
               const no = (
-                <button key="n" id="surrender-no" className="btn btn-secondary" onClick={() => setConfirming(false)}>否</button>
+                <button key="n" id="surrender-no" className="btn btn-secondary" onClick={() => { setConfirming(false); setTeammateSurrender(false); }}>否</button>
               );
               return settingsStore.get('swap_yes_no_button') ? [no, yes] : [yes, no];
             })()}

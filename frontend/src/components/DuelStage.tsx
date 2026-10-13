@@ -14,7 +14,6 @@ import ActionPopup from './ActionPopup.tsx';
 import PromptHost from './PromptHost.tsx';
 import VictoryOverlay from './VictoryOverlay.tsx';
 import SpecOverlay from './SpecOverlay.tsx';
-import BattleOverlay from './BattleOverlay.tsx';
 import LpFloatText from './LpFloatText.tsx';
 import CardTooltip from './CardTooltip.tsx';
 import DesignSpace from '../ui/DesignSpace.tsx';
@@ -38,6 +37,7 @@ export interface StageHandle {
 }
 
 interface DuelStageProps {
+  singleMode?: boolean;
   onExit?: (screen: string) => void;
   showSurrender?: boolean;
   interactive?: boolean;
@@ -57,6 +57,7 @@ export default function DuelStage({
   interactive = true,
   compact = false,
   onReady,
+  singleMode = false,
 }: DuelStageProps) {
   const fieldRef = useRef<StageHandle | null>(null);
   // Kept in a ref so the mount effect does not depend on the callback identity.
@@ -79,9 +80,10 @@ export default function DuelStage({
         if (manager) manager.onFieldCardClick(x, y, userData);
       }
     );
-    manager = new DuelManager(field3D, { interactive });
     // Real card art (pics/<code>.jpg in the app, YGOProDeck CDN in preview).
     field3D.cardImageProvider = (code: number) => WailsBridge.getCardImage(code);
+    field3D.fieldImageProvider = (code:number) => WailsBridge.getFieldImage(code);
+    manager = new DuelManager(field3D, { interactive });
 
     fieldRef.current = { field3D, duelManager: manager };
     if (onReadyRef.current) onReadyRef.current(fieldRef.current);
@@ -95,12 +97,6 @@ export default function DuelStage({
       fieldRef.current = null;
     };
   }, [interactive]);
-
-  const handleSurrender = (): void => {
-    // 右控组确认弹窗（wSurrender）确认后走到这里；离开对局由 onExit 完成。
-    WailsBridge.surrender();
-    if (onExit) onExit('menu');
-  };
 
   return (
     <div className="duel-stage" style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -128,14 +124,13 @@ export default function DuelStage({
 
       {showSurrender && (
         <RightControls
-          onSurrendered={handleSurrender}
+          singleMode={singleMode}
           onLeaveObserver={onExit ? () => onExit('menu') : undefined}
         />
       )}
       {!compact && <ChatOverlay />}
       {/* P4 波 6 补完：DrawSpec 特效（翻卡/放大/揭示/无效化 + 猜硬币文本）与 stTip 悬浮提示 */}
       {!compact && <SpecOverlay />}
-      {!compact && <BattleOverlay />}
       {!compact && <LpFloatText />}
       {/* F1-F8 墓地/除外/额外/超量素材列表浮窗（原版 wCardDisplay，进设计空间） */}
       {!compact && <CardListOverlay />}
