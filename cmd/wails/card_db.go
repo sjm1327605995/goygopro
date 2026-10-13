@@ -70,9 +70,10 @@ type CardFilter struct {
 	MaxScale    *int   `json:"maxScale"`
 	// MultiKeywords：0=单关键词（整串一个元素）、1=空格分隔、2=加号分隔
 	// （gframe gameConf.search_multiple_keywords）。缺省 0 保持旧行为。
-	MultiKeywords int `json:"multiKeywords"`
-	Limit         int `json:"limit"`
-	Offset        int `json:"offset"`
+	MultiKeywords int  `json:"multiKeywords"`
+	AllResults    bool `json:"allResults"` // deck editor filters/sorts the entire result set, as gframe does
+	Limit         int  `json:"limit"`
+	Offset        int  `json:"offset"`
 }
 
 type DeckData struct {
@@ -516,8 +517,10 @@ func (m *CardDBManager) SearchCards(f CardFilter) []CardInfo {
 	if f.Limit > 0 && f.Limit <= 200 {
 		limit = f.Limit
 	}
-	query += " LIMIT ? OFFSET ?"
-	args = append(args, limit, f.Offset)
+	if !f.AllResults {
+		query += " LIMIT ? OFFSET ?"
+		args = append(args, limit, f.Offset)
+	}
 
 	rows, err := m.db.Query(query, args...)
 	if err != nil {

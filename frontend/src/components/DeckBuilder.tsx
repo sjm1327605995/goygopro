@@ -6,6 +6,9 @@ import UiButton from '../ui/UiButton.tsx';
 import { UiInput, UiCheckbox } from '../ui/UiInput.tsx';
 import DesignSpace from '../ui/DesignSpace.tsx';
 import DeckManageModal from './DeckManageModal.tsx';
+import BigCardPanel from './BigCardPanel.tsx';
+import CardAvailabilityBadge from './CardAvailabilityBadge.tsx';
+import { compareDeckCards, type DeckSortMode } from '../domain/deck_sort.ts';
 import {
   EXTRA_TYPES, TYPE_MONSTER, TYPE_SPELL, TYPE_TRAP,
   TYPE_NORMAL, TYPE_EFFECT, TYPE_FUSION, TYPE_RITUAL, TYPE_SYNCHRO, TYPE_XYZ,
@@ -29,7 +32,7 @@ const cardKind = (t: number): string =>
 const cardSubtypes = (t: number): string[] =>
   SUBTYPE_LABELS.filter(([mask]) => (t & mask) !== 0).map(([, label]) => label);
 // atk/def -2 是引擎的「?」占位
-const fmtStat = (v: any): string => (v === -2 ? '?' : String(v ?? 0));
+const fmtStat = (v: any): string => (v < 0 ? '?' : String(v ?? 0));
 
 // 效果类型过滤：gframe wCategories 32 复选框，标签 = SysString 1100-1131，
 // bit = 1<<i，匹配语义 (category & filter) != 0（deck_con.cpp:1534）
@@ -86,17 +89,18 @@ const LIMIT_OPTIONS: string[] = [
 // 卡图缩略格子（原版 deck editor 是纯图片网格）。拉一次卡图与卡名缓存。
 // lfLimit：禁限卡表档位（0 禁/1 限/2 准限，undefined = 无限制），画左上角
 // 角标（原版 DrawThumb 在缩略图左上叠 lim 贴图，drawing.cpp:1176-1198）。
-function CardChip({ code, count, lfLimit, style, onInspect, onRemove, onZoom, onContextMenu, onDragStart, onDrop }: {
+function CardChip({ code, lfLimit, style, onInspect, onZoom, onContextMenu, onDragStart, onDrop, onCopy, filter, defaultOT }: {
   code: number;
-  count?: number;
+  filter: number;
+  defaultOT: number;
   lfLimit?: number;
   style?: React.CSSProperties;
   onInspect?: (info: any) => void;
-  onRemove?: () => void;
   onZoom?: (code: number) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   onDragStart?: (e: React.DragEvent) => void;
   onDrop?: (e: React.DragEvent) => void;
+  onCopy?: () => void;
 }) {
   const [info, setInfo] = useState<any>(null);
   const [pic, setPic] = useState<string | null>(null);
@@ -117,7 +121,7 @@ function CardChip({ code, count, lfLimit, style, onInspect, onRemove, onZoom, on
       onDrop={onDrop}
       onContextMenu={onContextMenu}
       onMouseEnter={() => info && onInspect && onInspect(info)}
-      onClick={() => onRemove && onRemove()}
+      onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); onCopy?.(); } }}
       onDoubleClick={() => onZoom && onZoom(code)}
       title={info ? info.name : String(code)}
     >
@@ -127,12 +131,10 @@ function CardChip({ code, count, lfLimit, style, onInspect, onRemove, onZoom, on
             style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
         : <img src="textures/unknown.jpg" alt={info ? info.name : String(code)} draggable={false}
             style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />}
-      {count && count > 1
-        ? <span className="deck-count-badge">{`×${count}`}</span>
-        : null}
       {lfLimit !== undefined && lfLimit < 3
-        ? <span className={`deck-limit-badge deck-limit-${lfLimit}`}>{LIMIT_BADGE_LABELS[lfLimit]}</span>
+        ? <span aria-label={LIMIT_BADGE_LABELS[lfLimit]} className={`deck-limit-badge deck-limit-${lfLimit}`} />
         : null}
+      {info?.ot!==undefined&&<CardAvailabilityBadge ot={info.ot} filter={filter} defaultOT={defaultOT}/>}
     </div>
   );
 }
@@ -182,13 +184,14 @@ export const parseDeckYdk = (text: string): { main: number[]; extra: number[]; s
 // 搜索结果行：纵向列表的一行（原版 DrawDeckBd 搜索区 drawing.cpp:1296-1360），
 // 左缩略图 + 右侧卡名/种类/属性/种族/星级/攻守文本；点击加入卡组，悬停进左侧
 // 预览，双击看大图。
-function SearchResultChip({ card, lfLimit, onInspect, onAdd, onAddSide, onZoom }: {
+function SearchResultChip({ card, lfLimit, onInspect, onAdd, onZoom, onDragStart, filter, defaultOT }: {
   card: any;
+  filter:number;
+  defaultOT:number;
   lfLimit?: number;
   onInspect: (info: any) => void;
   onAdd: () => void;
-  /** 右键加入副卡组 */
-  onAddSide: () => void;
+  onDragStart: (e: React.DragEvent) => void;
   onZoom: (code: number) => void;
 }) {
   const [pic, setPic] = useState<string | null>(null);
@@ -209,8 +212,10 @@ function SearchResultChip({ card, lfLimit, onInspect, onAdd, onAddSide, onZoom }
       className="deck-card-chip deck-result-row"
       style={{ cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
       onMouseEnter={() => onInspect(card)}
-      onClick={onAdd}
-      onContextMenu={(e) => { e.preventDefault(); onAddSide(); }}
+      draggable
+      onDragStart={onDragStart}
+      onContextMenu={(e) => { e.preventDefault(); onAdd(); }}
+      onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); onAdd(); } }}
       onDoubleClick={() => onZoom(card.code)}
       title={card.name}
     >
@@ -222,45 +227,21 @@ function SearchResultChip({ card, lfLimit, onInspect, onAdd, onAddSide, onZoom }
         <div className="deck-result-name">{card.name}</div>
         <div className="deck-result-sub">
           {isMonster
-            ? `${attrName}/${raceName} ${(t & TYPE_LINK) ? `LINK-${card.level}` : `★${card.level}`}`
+            ? `${attrName}/${raceName} ${(t & TYPE_LINK) ? `LINK-${card.level}` : `${t&TYPE_XYZ?'☆':'★'}${card.level}`}`
             : kind}
         </div>
         {isMonster ? (
           <div className="deck-result-stats">
-            {fmtStat(card.attack)}/{fmtStat(card.defense)}
+            {fmtStat(card.attack)}/{t&TYPE_LINK?'-':fmtStat(card.defense)}
+            {t&TYPE_PENDULUM?` ${card.lscale||0}/${card.rscale||0}`:''}
+            {(card.ot&3)===1?' [OCG]':(card.ot&3)===2?' [TCG]':card.ot&8?' [Custom]':''}
           </div>
         ) : null}
         {lfLimit !== undefined && lfLimit < 3
-          ? <span className={`deck-limit-badge deck-limit-${lfLimit}`}>{LIMIT_BADGE_LABELS[lfLimit]}</span>
+          ? <span aria-label={LIMIT_BADGE_LABELS[lfLimit]} className={`deck-limit-badge deck-limit-${lfLimit}`} />
           : null}
       </div>
-    </div>
-  );
-}
-
-// 双击大图遮罩（原版双击卡片看全尺寸卡图）
-function ZoomOverlay({ code, onClose }: { code: number; onClose: () => void }) {
-  const [pic, setPic] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    WailsBridge.getCardImage(code).then((p) => { if (alive && p) setPic(p.url); });
-    return () => { alive = false; };
-  }, [code]);
-  return (
-    <div
-      id="deck-zoom-overlay"
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 2000, cursor: 'zoom-out',
-      }}
-      title="点击关闭"
-    >
-      {pic
-        ? <img src={pic} alt={String(code)} draggable={false}
-            style={{ width: 370, height: 540, objectFit: 'contain', borderRadius: 8, border: '2px solid var(--primary)' }} />
-        : <div style={{ color: '#38bdf8', fontSize: 14 }}>加载卡图……</div>}
+      {card.ot!==undefined&&<CardAvailabilityBadge ot={card.ot} filter={filter} defaultOT={defaultOT}/>}
     </div>
   );
 }
@@ -270,6 +251,7 @@ type SectionCounts = Record<DeckSection, Record<number, number>>;
 
 export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: string) => void }) {
   const [deckList, setDeckList] = useState<string[]>([]);
+  const [categoryList,setCategoryList]=useState<string[]>([]);
   const [currentDeck, setCurrentDeck] = useState<DeckList>({ name: '新卡组', main: [], extra: [], side: [] });
   const [deckName, setDeckName] = useState('新卡组');
   // gframe cbDBCategory：未分类 + ./deck/ 子目录（'' = 未分类卡组）；
@@ -325,8 +307,9 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
     setLinkMarks(linkMarksPendingRef.current);
     setShowLinkMarks(false);
   };
-  const [addTarget, setAddTarget] = useState<'main' | 'side'>('main');
+  const [sortMode, setSortMode] = useState<DeckSortMode>('level');
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const searchVersion=useRef(0);
   const [inspected, setInspected] = useState<any>(null);
   const [inspectedPic, setInspectedPic] = useState<string | null>(null);
   const [zoomCode, setZoomCode] = useState(0);
@@ -335,9 +318,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   const [editLog, setEditLog] = useState<string[]>([]);
   const logEdit = (msg: string) => setEditLog((prev) => [...prev.slice(-99), msg]);
   // 拖拽源（dragstart 存 ref，dragover/drop 读回，不动 state 免得整页重渲染）
-  const draggedRef = React.useRef<{ section: DeckSection; index: number } | null>(null);
-  // 右键上下文菜单状态（卡组卡片：移到主/额外/副卡组 + 移出）
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; section: DeckSection; index: number } | null>(null);
+  const draggedRef = React.useRef<{ section?: DeckSection; index?: number; card: any } | null>(null);
   // 卡组码导入导出 / wDeckManage 管理窗口
   const [exportText, setExportText] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
@@ -346,7 +327,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   const settingsSnap = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
 
   // 分类清单 = 卡组名的首段（有 '/' 的才属于分类；gframe TraversalDir isdir）
-  const categories = Array.from(new Set(deckList.filter((n) => n.includes('/')).map((n) => n.split('/')[0])));
+  const categories = Array.from(new Set([...categoryList,...deckList.filter((n) => n.includes('/')).map((n) => n.split('/')[0])]));
   // 当前分类下的卡组（未分类 = 根目录无 '/' 的名字）
   const decksInCategory = deckList.filter((n) => (category === '' ? !n.includes('/') : n.startsWith(category + '/')));
 
@@ -354,9 +335,12 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
     (async () => {
       const list = await WailsBridge.listDecks();
       setDeckList(list || []);
+      setCategoryList(await WailsBridge.listDeckCategories());
       if (list && list.length > 0) {
-        const deck = await WailsBridge.loadDeck(list[0]);
-        if (deck) { setCurrentDeck(deck); setDeckName(deck.name || list[0]); buildCounts(deck).then(setCounts); }
+        await settingsStore.load();
+        const s = settingsStore.getSnapshot();
+        const remembered = s.lastcategory ? `${s.lastcategory}/${s.lastdeck}` : String(s.lastdeck || '');
+        await loadDeck(list.includes(remembered) ? remembered : list[0]);
       }
     })();
   }, []);
@@ -445,14 +429,15 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   };
 
   const saveDeck = async (): Promise<void> => {
-    const base = deckName.trim() || '未命名卡组';
+    const base = deckName.trim();
+    if (!base) return;
     // 分类下拉非「未分类」时，存到 ./deck/<分类>/<名>.ydk（gframe GetCategoryPath）
     const name = category ? `${category}/${base}` : base;
     const deck = { ...currentDeck, name };
+    try { await WailsBridge.saveDeck(deck); } catch (e) { alert(`保存失败：${String(e)}`); return; }
     applyDeck(deck, { modified: false });
     setDeckName(base);
     setLoadedDeck(name);
-    await WailsBridge.saveDeck(deck);
     alert(`卡组「${name}」保存成功！`);
     const list = await WailsBridge.listDecks();
     setDeckList(list);
@@ -463,23 +448,17 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   const saveDeckOverwrite = async (): Promise<void> => {
     if (!loadedDeck) { await saveDeck(); return; }
     const deck = { ...currentDeck, name: loadedDeck };
+    try { await WailsBridge.saveDeck(deck); } catch (e) { alert(`保存失败：${String(e)}`); return; }
     applyDeck(deck, { modified: false });
     setDeckName(loadedDeck.split('/').pop() || loadedDeck);
-    await WailsBridge.saveDeck(deck);
     alert(`卡组「${loadedDeck}」保存成功！`);
     const list = await WailsBridge.listDecks();
     setDeckList(list);
   };
 
-  const newDeck = (): void => {
-    applyDeck({ name: '新卡组', main: [], extra: [], side: [] }, { modified: false });
-    setDeckName('新卡组');
-    setLoadedDeck('');
-  };
-
   const deleteDeck = async (): Promise<void> => {
     // 删除目标 = 分类 + 当前名（分类未选时退化为本名）
-    const base = deckName.trim();
+    const base = loadedDeck.split('/').pop() || '';
     if (!base) { alert('请先选择要删除的卡组。'); return; }
     const name = category ? `${category}/${base}` : base;
     if (!window.confirm(`确定删除卡组「${name}」？此操作不可撤销。`)) return;
@@ -499,6 +478,8 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   // btnClearFilter（deck_con.cpp ClearSearch：种类/副种类/禁限/种族/属性/
   // 运算符输入/效果/箭头全部复位，弹窗一并收起）
   const clearFilters = (): void => {
+    searchVersion.current++;
+    setSearchResults([]);
     setSearchKeyword('');
     setTypeFilter('0');
     setType2Filter('0');
@@ -555,6 +536,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   // 位是互不重叠的 2 的幂，用加法合并避免 1<<31 的 int32 溢出
   const effectMask = [...effectBits].reduce((acc, b) => acc + b, 0);
   const performSearch = async (): Promise<void> => {
+    const version=++searchVersion.current;
     // 种类/副种类 → type 参数（deck_con.cpp:1486-1530 的语义）：
     // 怪兽 = 子集掩码（(type & mask) == mask，Go 侧现有语义）；
     // 魔陷选了副种类 = 精确相等（type == mask，前端后置过滤）。
@@ -567,7 +549,6 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
     else if (t1 === 3) { if (t2) typeExact = t2; else type = TYPE_TRAP; }
     // 禁限过滤在前端后置（lfContent 已同步到本机），此时放宽服务端
     // 条数上限，避免先截断后过滤导致漏卡
-    const lmActive = limitFilter !== '0';
     let results = await WailsBridge.searchCards({
       keyword: searchKeyword.trim(),
       multiKeywords: Number(settingsStore.get('search_multiple_keywords')) || 0,
@@ -580,11 +561,17 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
       scaleFilter: isMonsterKind ? scaleFilter.trim() : '',
       effect: effectMask,
       linkMarks,
-      limit: lmActive || typeExact ? 500 : 60,
+      allResults: true,
     });
     results = results || [];
+    if(version!==searchVersion.current)return;
     if (typeExact) results = results.filter((c: any) => c.type === typeExact);
     setSearchResults(applyLimitFilter(results));
+    if (!settingsStore.get('separate_clear_button')) {
+      setRaceFilter('0');setAttrFilter('0');setLimitFilter('0');
+      setStarFilter('');setAtkFilter('');setDefFilter('');setScaleFilter('');
+      setEffectBits(new Set());setLinkMarks(0);
+    }
   };
 
   // auto_search_limit >= 0：输入满 N 字自动搜索（deck_con.cpp InstantSearch，
@@ -594,46 +581,34 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   performSearchRef.current = performSearch;
   useEffect(() => {
     if (autoSearchLimit < 0) return undefined;
+    if (showEffectPanel || showLinkMarks) return undefined;
     if (searchKeyword.trim().length < autoSearchLimit) return undefined;
     const t = setTimeout(() => { performSearchRef.current(); }, 300);
     return () => clearTimeout(t);
-  }, [searchKeyword, autoSearchLimit]);
+  }, [searchKeyword, autoSearchLimit, typeFilter, type2Filter, limitFilter, raceFilter, attrFilter, effectMask, linkMarks, showEffectPanel, showLinkMarks]);
 
-  // 结果排序：主卡组怪兽 → 额外区怪兽 → 魔法 → 陷阱，同区按攻↓、卡名
-  const typeOrderOf = (t: number): number =>
-    (t & TYPE_MONSTER) ? ((t & EXTRA_TYPES) ? 1 : 0) : (t & TYPE_SPELL) ? 2 : 3;
   const sortedResults = [...searchResults].sort((a, b) =>
-    typeOrderOf(a.type || 0) - typeOrderOf(b.type || 0)
-    || ((b.attack || 0) - (a.attack || 0))
-    || (a.name < b.name ? -1 : 1));
+    Number(b.name === searchKeyword) - Number(a.name === searchKeyword)
+    || compareDeckCards(a, b, sortMode));
 
-  const addCardToDeck = (card: any, target?: 'main' | 'side'): void => {
-    // 右键固定加副卡组；左键按「点击加入」下拉（addTarget）
-    const dest = target || addTarget;
+  const addCardToDeck = (card: any, target?: DeckSection, index?: number): boolean => {
     // check_limit：同名卡（alias 归并）达禁限表上限则拒加（原版
     // deck_con.cpp:1834——limit 默认 3，命中 lflist 取 0/1/2）
     const group = card.alias || groupOf(card.code);
     const limit = limitOf(group);
     if (countInDeck(currentDeck, group) >= limit) {
-      alert(limit === 0 ? '此卡在当前禁限卡表中被禁止，不能加入卡组。'
-        : limit < 3 ? `同名卡在「${lfName || '禁限卡表'}」中最多 ${limit} 张。`
-        : '同名卡已达 3 张上限。');
-      return;
+      return false;
     }
     const isExtra = (card.type & EXTRA_TYPES) !== 0;
     const deck = { ...currentDeck, main: [...currentDeck.main], extra: [...currentDeck.extra], side: [...currentDeck.side] };
-    if (isExtra) {
-      if (deck.extra.length >= 15) { alert('额外卡组已满（最多 15 张）。'); return; }
-      deck.extra.push(card.code);
-    } else if (dest === 'side') {
-      if (deck.side.length >= 15) { alert('副卡组已满（最多 15 张）。'); return; }
-      deck.side.push(card.code);
-    } else {
-      if (deck.main.length >= 60) { alert('主卡组已满（最多 60 张）。'); return; }
-      deck.main.push(card.code);
-    }
-    logEdit(`加入 ${card.name || card.code} → ${isExtra ? '额外卡组' : dest === 'side' ? '副卡组' : '主卡组'}`);
+    const destinations: DeckSection[] = target ? [target] : isExtra ? ['extra', 'side'] : ['main', 'side'];
+    const dest = destinations.find((s) => deck[s].length < (s === 'main' ? 60 : 15)
+      && (s === 'side' || (s === 'extra') === isExtra));
+    if (!dest) return false;
+    deck[dest].splice(index === undefined ? deck[dest].length : Math.max(0, Math.min(index, deck[dest].length)), 0, card.code);
+    logEdit(`加入 ${card.name || card.code} → ${{main:'主卡组',extra:'额外卡组',side:'副卡组'}[dest]}`);
     applyDeck(deck);
+    return true;
   };
 
   const removeCardFromDeck = (section: DeckSection, index: number): void => {
@@ -660,17 +635,26 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
       if (deck[to].length >= max) { alert(to === 'main' ? '主卡组已满（最多 60 张）。' : '该卡组已满（最多 15 张）。'); return; }
     }
     deck[from].splice(fromIndex, 1);
-    const insertAt = Math.min(Math.max(toIndex, 0), deck[to].length);
+    const insertAt = Math.min(Math.max(toIndex - (from === to && fromIndex < toIndex ? 1 : 0), 0), deck[to].length);
     deck[to].splice(insertAt, 0, code);
     applyDeck(deck);
   };
 
-  const simulateSampleHand = async (): Promise<void> => {
-    if (currentDeck.main.length < 5) { alert('主卡组至少需要 5 张卡才能测试起手。'); return; }
-    const shuffled = [...currentDeck.main].sort(() => 0.5 - Math.random());
-    const names = await Promise.all(shuffled.slice(0, 5)
-      .map((c) => WailsBridge.getCard(c).then((i) => (i && i.name) ? i.name : String(c))));
-    alert('模拟起手 5 张：\n' + names.join('\n'));
+  const dropCard = (section: DeckSection, index: number): void => {
+    const drag = draggedRef.current;
+    draggedRef.current = null;
+    if (!drag) return;
+    if (drag.section !== undefined && drag.index !== undefined) moveCard(drag.section, drag.index, section, index);
+    else addCardToDeck(drag.card, section, index);
+  };
+
+  const copyCard = (section: DeckSection, code: number): void => {
+    const card = WailsBridge._cardCache.get(code);
+    if (!card) return;
+    if (!addCardToDeck(card, section)) {
+      if (section === 'side') addCardToDeck(card);
+      else addCardToDeck(card, 'side');
+    }
   };
 
   // ---- 编辑器三键（deck_con.cpp:172-191）----
@@ -681,39 +665,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
     applyDeck({ ...currentDeck, main: [], extra: [], side: [] });
   };
 
-  // deck_sort_lv（data_manager.cpp:535）：type&0x7 升序分堆（1=怪兽/2=魔法/4=陷阱）；
-  // 怪兽：带特殊位(0x48020c0=融合|仪式|同调|超量|链接)的按 type&0x48020c1、
-  // 其余按 type&0x31 升序 → level↓ → atk↓ → def↓ → code↑；
-  // 非怪兽：type&0xfffffff8 升序 → code↑。卡信息从 _cardCache 读
-  // （buildCounts 已把整副卡组拉齐），缺信息的退化按卡号排。
-  const deckSortKey = (a: number, b: number): number => {
-    const ca = WailsBridge._cardCache.get(a);
-    const cb = WailsBridge._cardCache.get(b);
-    const ta = ca?.type ?? 0;
-    const tb = cb?.type ?? 0;
-    if ((ta & 0x7) !== (tb & 0x7)) return (ta & 0x7) - (tb & 0x7);
-    if (ta & TYPE_MONSTER) {
-      const typeOf = (t: number): number =>
-        (t & 0x48020c0) ? (t & 0x48020c1) : (t & 0x31);
-      const sa = typeOf(ta);
-      const sb = typeOf(tb);
-      if (sa !== sb) return sa - sb;
-      const la = ca?.level ?? 0;
-      const lb = cb?.level ?? 0;
-      if (la !== lb) return lb - la;
-      const aa = ca?.attack ?? 0;
-      const ab = cb?.attack ?? 0;
-      if (aa !== ab) return ab - aa;
-      const da = ca?.defense ?? 0;
-      const db = cb?.defense ?? 0;
-      if (da !== db) return db - da;
-      return a - b;
-    }
-    const sa = ta & ~0x7;
-    const sb = tb & ~0x7;
-    if (sa !== sb) return sa - sb;
-    return a - b;
-  };
+  const deckSortKey=(a:number,b:number)=>compareDeckCards(WailsBridge._cardCache.get(a)||{code:a,type:0},WailsBridge._cardCache.get(b)||{code:b,type:0});
 
   const sortDeck = (): void => {
     applyDeck({
@@ -736,8 +688,8 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
     applyDeck({
       ...currentDeck,
       main: shuffled(currentDeck.main),
-      extra: shuffled(currentDeck.extra),
-      side: shuffled(currentDeck.side),
+      extra: currentDeck.extra,
+      side: currentDeck.side,
     });
   };
 
@@ -779,6 +731,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   // （编辑内容保留，退化为未保存状态，与原版 prev_deck 失效语义一致）
   const onManageRefresh = (list: string[]): void => {
     setDeckList(list);
+    WailsBridge.listDeckCategories().then(setCategoryList);
     if (loadedDeck && !list.includes(loadedDeck)) setLoadedDeck('');
   };
 
@@ -803,22 +756,31 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
       <CardChip
         key={`${code}-${idx}`}
         code={code}
-        count={counts[section][(WailsBridge._cardCache.get(code)?.alias) || code]}
+        filter={Number(limitFilter)} defaultOT={Number(settingsSnap.default_ot)||1}
         lfLimit={limitOf(groupOf(code))}
         style={{ marginLeft: col > 0 ? step - 44 : 0 }}
         onInspect={setInspected}
-        onRemove={() => removeCardFromDeck(section, idx)}
+        onCopy={() => copyCard(section, code)}
         onZoom={setZoomCode}
-        onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, section, index: idx }); }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          const drag = draggedRef.current;
+          if (drag) {
+            const to = drag.section === 'side' ? ((drag.card.type & EXTRA_TYPES) ? 'extra' : 'main') : 'side';
+            dropCard(to, currentDeck[to].length);
+          } else removeCardFromDeck(section, idx);
+        }}
         onDragStart={(e) => {
-          draggedRef.current = { section, index: idx };
+          const card=WailsBridge._cardCache.get(code);
+          if(!card){e.preventDefault();return;}
+          draggedRef.current = { section, index: idx, card };
           e.dataTransfer.effectAllowed = 'move';
           e.dataTransfer.setData('text/plain', String(code));
         }}
         onDrop={(e) => {
           e.preventDefault();
-          const d = draggedRef.current;
-          if (d) moveCard(d.section, d.index, section, idx);
+          e.stopPropagation();
+          dropCard(section, idx);
         }}
       />
     );
@@ -837,8 +799,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();
-          const d = draggedRef.current;
-          if (d) moveCard(d.section, d.index, section, codes.length);
+          dropCard(section, codes.length);
         }}
       >
         {rows.map((row, r) => (
@@ -861,6 +822,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
       value={value}
       disabled={disabled}
       onChange={(e) => setter(e.target.value)}
+      onKeyDown={(e) => {if(e.key==='Enter')performSearch();}}
     />
   );
 
@@ -876,12 +838,8 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
         <div className="inspector-pic-box">
           {inspectedPic
             ? <img id="deck-inspector-pic" src={inspectedPic} alt={inspected.name} draggable={false}
-                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
-            : <div style={{
-                width: '100%', height: '100%', background: '#0f172a',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '11px', color: '#38bdf8',
-              }}>{inspected ? '卡图加载中……' : '卡牌详情'}</div>}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} onClick={() => setZoomCode(inspected.code)} />
+            : <img src="textures/cover.jpg" alt="" style={{width:'100%',height:'100%',objectFit:'contain'}}/>}
         </div>
         </div>
         <div className="inspector-infos">
@@ -907,7 +865,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
           </div>
         ) : (
         <div className="inspector-details">
-          <div className="inspector-name">{inspected ? `${inspected.name}[${inspected.code}]` : '卡牌详情'}</div>
+          <div className="inspector-name">{inspected ? `${inspected.name}[${String(inspected.code).padStart(8,'0')}]` : ''}</div>
           {inspected ? (
             <>
               <div className="inspector-meta inspector-type-line" id="deck-inspector-type">
@@ -932,7 +890,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
               <div className="inspector-desc">{inspected.desc || ''}</div>
             </>
           ) : (
-            <div className="inspector-desc">悬停任意卡牌查看详情，双击查看大图。</div>
+            <div className="inspector-desc" />
           )}
         </div>
         )}
@@ -941,9 +899,11 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
 
       {/* btnLeaveGame（game.cpp:949）：(205,5)-(295,80) 竖长退出按钮 */}
       <UiButton className="ds-leave-edit"
-        onClick={() => { if (!discardGuard()) onNavigate('menu'); }}>退出编辑</UiButton>
-      {/* 起手测试（扩展功能）：置 btnLeaveGame 下方空区 */}
-      <UiButton variant="gold" className="ds-test-hand" onClick={simulateSampleHand}>测试起手 5 张</UiButton>
+        onClick={() => { if (!discardGuard()) {
+          settingsStore.set('lastcategory', category);
+          settingsStore.set('lastdeck', loadedDeck.split('/').pop() || '');
+          onNavigate('menu');
+        } }}>退出编辑</UiButton>
 
       {/* wDeckEdit (309,5)-(605,130)（game.cpp:656-718）。内部按原版排布：
           左列 label(70) + 下拉/输入(140)，右列竖排按钮(65)：管理/保存/另存为/删除；
@@ -966,7 +926,11 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
                 value={category || '__root__'}
                 onValueChange={(v) => {
                   const cat = v === '__root__' ? '' : v;
-                  if (!discardGuard()) { setCategory(cat); }
+                  if (!discardGuard()) {
+                    const first=deckList.find(n=>cat?n.startsWith(cat+'/'):!n.includes('/'));
+                    if(first) loadDeck(first);
+                    else {setCategory(cat);setLoadedDeck('');applyDeck({name:'',main:[],extra:[],side:[]},{modified:false});setDeckName('');}
+                  }
                 }}
                 options={[
                   { value: '__root__', label: '未分类卡组' },
@@ -974,7 +938,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
                 ]}
               />
               {/* btnManageDeck (225,5)-(290,30) */}
-              <UiButton id="deck-manage-btn" className="dh-right" onClick={() => setShowManage(true)}>卡组管理</UiButton>
+              <UiButton id="deck-manage-btn" className="dh-right" onClick={() => {if(!discardGuard()) setShowManage(true);}}>卡组管理</UiButton>
             </div>
             <div className="deck-header-row">
               <label className="gfw-label dh-label">卡组</label>
@@ -1003,12 +967,6 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
               <UiButton id="deck-clear-btn" className="dh-trio" onClick={clearDeck}>清空</UiButton>
               {/* btnDeleteDeck (225,95)-(290,120) */}
               <UiButton variant="danger" className="dh-right" onClick={deleteDeck}>删除</UiButton>
-            </div>
-            <div className="deck-header-row">
-              {/* 扩展件（原版在 wDeckManage 内：btnNewDeck/btnExport/btnImport） */}
-              <UiButton onClick={() => { if (!discardGuard()) newDeck(); }}>新建卡组</UiButton>
-              <UiButton id="deck-export-code-btn" onClick={exportDeckCode}>导出卡组码</UiButton>
-              <UiButton id="deck-import-code-btn" onClick={() => { setImportText(''); setShowImport(true); }}>导入卡组码</UiButton>
             </div>
           </div>
 
@@ -1168,43 +1126,48 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
             标题短条 (309,136/439/536 起 102×22) + 网格区直接铺在背景上 */}
         <div className="deck-section-title ds-title-main">
           <span>主卡组：</span>
-          <span className="badge badge-attr">{currentDeck.main.length} / 60</span>
+          <span className="badge badge-attr">{currentDeck.main.length}</span>
         </div>
         {renderSection(currentDeck.main, 'main')}
         <div className="deck-section-title ds-title-extra">
           <span>额外卡组：</span>
-          <span className="badge badge-type">{currentDeck.extra.length} / 15</span>
+          <span className="badge badge-type">{currentDeck.extra.length}</span>
         </div>
         {renderSection(currentDeck.extra, 'extra')}
         <div className="deck-section-title ds-title-side">
           <span>副卡组：</span>
-          <span className="badge badge-attr">{currentDeck.side.length} / 15</span>
+          <span className="badge badge-attr">{currentDeck.side.length}</span>
         </div>
         {renderSection(currentDeck.side, 'side')}
 
         {/* 搜索结果区（DrawDeckBd drawing.cpp:1296-1360）：标题条 + 纵向列表 */}
         <div className="deck-results">
           <div id="deck-result-count" title="点击添加，右键加副卡组，双击看大图">
-            搜索结果（{sortedResults.length} 张）
+            搜索结果：{sortedResults.length}
           </div>
-          <div className="deck-add-target-row">
-            <label>点击加入：</label>
+          <div className="deck-sort-row">
             <GfwSelect
-              id="deck-add-target"
-              value={addTarget}
-              onValueChange={(v) => setAddTarget(v as 'main' | 'side')}
-              options={[{ value: 'main', label: '主卡组' }, { value: 'side', label: '副卡组' }]}
+              id="deck-result-sort"
+              value={sortMode}
+              onValueChange={(v) => setSortMode(v as DeckSortMode)}
+              options={[{value:'level',label:'等级'},{value:'attack',label:'攻击'},{value:'defense',label:'守备'},{value:'name',label:'名称'}]}
             />
           </div>
-          <div className="search-results-grid">
+          <div className="search-results-grid" onDragOver={(e) => e.preventDefault()} onDrop={(e) => {
+            e.preventDefault();
+            const d = draggedRef.current;
+            draggedRef.current = null;
+            if (d?.section !== undefined && d.index !== undefined) removeCardFromDeck(d.section, d.index);
+          }}>
             {sortedResults.map((card, i) => (
               <SearchResultChip
                 key={`${card.code}-${i}`}
                 card={card}
+                filter={Number(limitFilter)} defaultOT={Number(settingsSnap.default_ot)||1}
                 lfLimit={limitOf(card.alias || groupOf(card.code))}
                 onInspect={setInspected}
                 onAdd={() => addCardToDeck(card)}
-                onAddSide={() => addCardToDeck(card, 'side')}
+                onDragStart={(e) => { draggedRef.current = {card}; e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setData('text/plain',String(card.code)); }}
                 onZoom={setZoomCode}
               />
             ))}
@@ -1212,7 +1175,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
         </div>
       </DesignSpace>
 
-      {zoomCode ? <ZoomOverlay code={zoomCode} onClose={() => setZoomCode(0)} /> : null}
+      {zoomCode ? <BigCardPanel code={zoomCode} onClose={() => setZoomCode(0)} /> : null}
 
       {/* 导出卡组码的剪贴板回退：无剪贴板权限时给文本框手动复制 */}
       {exportText !== null ? (
@@ -1279,50 +1242,15 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
       {showManage ? (
         <DeckManageModal
           deckList={deckList}
+          categoryList={categories}
+          onSelectDeck={loadDeck}
           onClose={() => setShowManage(false)}
           onRefresh={onManageRefresh}
+          onImport={() => {setImportText('');setShowImport(true);}}
+          onExport={exportDeckCode}
         />
       ) : null}
 
-      {/* 右键上下文菜单（deck_con.cpp:1129-1195 的 pop_* / 移副语义） */}
-      {ctxMenu ? (
-        <>
-          <div
-            style={{ position: 'fixed', inset: 0, zIndex: 2099 }}
-            onClick={() => setCtxMenu(null)}
-            onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }}
-          />
-          <div id="deck-context-menu" style={{
-            position: 'fixed', left: ctxMenu.x, top: ctxMenu.y, zIndex: 2100,
-            background: '#1e293b', border: '1px solid var(--primary)', borderRadius: 6,
-            padding: '4px', minWidth: 132, boxShadow: '0 4px 12px rgba(0,0,0,0.6)',
-            display: 'flex', flexDirection: 'column', gap: '3px',
-          }}>
-            {ctxMenu.section !== 'main' && (
-              <UiButton style={{ textAlign: 'left' }}
-                onClick={() => { moveCard(ctxMenu.section, ctxMenu.index, 'main', currentDeck.main.length); setCtxMenu(null); }}>
-                移到主卡组
-              </UiButton>
-            )}
-            {ctxMenu.section !== 'extra' && (
-              <UiButton style={{ textAlign: 'left' }}
-                onClick={() => { moveCard(ctxMenu.section, ctxMenu.index, 'extra', currentDeck.extra.length); setCtxMenu(null); }}>
-                移到额外卡组
-              </UiButton>
-            )}
-            {ctxMenu.section !== 'side' && (
-              <UiButton style={{ textAlign: 'left' }}
-                onClick={() => { moveCard(ctxMenu.section, ctxMenu.index, 'side', currentDeck.side.length); setCtxMenu(null); }}>
-                移到副卡组
-              </UiButton>
-            )}
-            <UiButton variant="danger" style={{ textAlign: 'left' }}
-              onClick={() => { removeCardFromDeck(ctxMenu.section, ctxMenu.index); setCtxMenu(null); }}>
-              移出卡组
-            </UiButton>
-          </div>
-        </>
-      ) : null}
     </div>
   );
 }

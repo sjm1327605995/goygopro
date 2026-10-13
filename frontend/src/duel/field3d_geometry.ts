@@ -38,9 +38,9 @@ export const ZONE_COORDS: Record<number, Record<string, any>> = {
       { x: 2.1,  y: 0.02, z: 5.2 },
       { x: 4.3,  y: 0.02, z: 5.2 },
       // seq 5 = 场地魔法区；seq 6/7 = 两侧灵摆区（vFieldSzone[0][5..7]）
-      { x: -6.8, y: 0.02, z: 1.4 },
       { x: -6.8, y: 0.02, z: 4.0 },
-      { x: 6.6,  y: 0.02, z: 4.0 }
+      { x: -6.8, y: 0.02, z: 1.4 },
+      { x: 8.6,  y: 0.02, z: 1.4 }
     ],
     field:     { x: -6.8, y: 0.02, z: 4.0 },
     // MR2020（rule>=4）布局：墓地与场地魔法同列相邻（vFieldGrave[0][1]），
@@ -73,8 +73,8 @@ export const ZONE_COORDS: Record<number, Record<string, any>> = {
       // seq 5 = 场地魔法区（MR4: vFieldSzone[1][5][1]）；
       // seq 6/7 = 两侧灵摆区（与场地/墓地共用四边形，原版即重叠）
       { x: 6.6,  y: 0.02, z: -4.0 },
-      { x: 6.6,  y: 0.02, z: -4.0 },
-      { x: -6.8, y: 0.02, z: -4.0 }
+      { x: 6.6,  y: 0.02, z: -1.4 },
+      { x: -8.8, y: 0.02, z: -1.4 }
     ],
     field:     { x: 6.6,  y: 0.02, z: -4.0 },
     grave:     { x: -6.8, y: 0.02, z: -4.0 },

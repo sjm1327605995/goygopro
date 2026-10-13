@@ -85,7 +85,7 @@ const waitFor = (predicate, timeoutMs = 5000) => new Promise((resolve, reject) =
   const started = Date.now();
   const tick = () => {
     if (predicate()) return resolve();
-    if (Date.now() - started > timeoutMs) return reject(new Error('waitFor timeout'));
+    if (Date.now() - started > timeoutMs) return reject(new Error('waitFor timeout: '+String(predicate)));
     setTimeout(tick, 25);
   };
   tick();
@@ -197,8 +197,8 @@ window.__practiceSmoke = { field, manager, aiSimulator, store: duelStore, transc
   const beforeShuffle = state().hand.map((c) => c.code);
   const shuffled = [...beforeShuffle].reverse();
   eventBus.emit('duel:shuffle_hand', { player: manager.playerSlot, cards: shuffled });
-  await waitFor(() => document.getElementById('hand-cards-dock').className.includes('shuffling'));
-  checks.shuffleAnimatesDock = document.getElementById('hand-cards-dock').className.includes('shuffling');
+  await waitFor(() => field.handMeshes[manager.playerSlot].some((m) => m.userData.shuffling));
+  checks.shuffleAnimates3DHand = field.handMeshes[manager.playerSlot].some((m) => m.userData.shuffling);
   await waitFor(() => JSON.stringify(state().hand.map((c) => c.code)) === JSON.stringify(shuffled));
   checks.shuffleReordersHand = JSON.stringify(state().hand.map((c) => c.code)) === JSON.stringify(shuffled);
 

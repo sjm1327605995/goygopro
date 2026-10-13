@@ -1,0 +1,14 @@
+import React from 'react';
+// DrawThumb's tOT atlas: unavailable OCG/TCG (rows 0/1), available exclusives (2/3).
+export default function CardAvailabilityBadge({ot,filter,defaultOT}:{ot:number;filter:number;defaultOT:number}) {
+  const masks:Record<number,number>={4:1,5:2,6:4,7:8,8:3};
+  const active=filter>=4;
+  const available=!active||(filter===8?(ot&3)===3:(ot&(masks[filter]||0))!==0);
+  let row=-1;
+  if(active&&available){if((ot&3)===1)row=2;else if((ot&3)===2)row=3;}
+  else if(!available||!(ot&defaultOT)){if(ot&1)row=0;else if(ot&2)row=1;}
+  if(row<0&&available)return null;
+  const banned=row<0;
+  return <span className="deck-availability-badge" aria-label={banned?'不可用':row>=2?'卡片发行范围':'超出卡片允许范围'}
+    style={{position:'absolute',left:7,top:50,width:30,height:15,backgroundImage:`url('textures/${banned?'lim':'ot'}.png')`,backgroundSize:banned?'60px 30px':'30px 60px',backgroundPosition:banned?'0 0':`0 ${-15*row}px`,pointerEvents:'none'}}/>;
+}

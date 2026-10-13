@@ -47,7 +47,7 @@ const HINT_CARD = 10;
 const CHINT_TURN = 1;
 
 // 出拳值（gframe f1/f2/f3 贴图语义）：1=剪刀 2=石头 3=布
-const RPS_HANDS: Record<number, string> = { 1: '✌️', 2: '✊', 3: '✋' };
+const RPS_HANDS: Record<number, string> = { 1: 'textures/f1.jpg', 2: 'textures/f2.jpg', 3: 'textures/f3.jpg' };
 
 interface RpsShow {
   top: string;
@@ -55,18 +55,12 @@ interface RpsShow {
   key: number;
 }
 
-interface TossShow {
-  kind: 'coin' | 'dice';
-  results: number[];
-  key: number;
-}
 
 export default function SpecOverlay() {
   const [spec, setSpec] = useState<Spec | null>(null);
   const [artUrl, setArtUrl] = useState<string | null>(null);
   const [acText, setAcText] = useState<string | null>(null);
   const [rps, setRps] = useState<RpsShow | null>(null);
-  const [toss, setToss] = useState<TossShow | null>(null);
   // 队列 + 播放锁；lastChainCode 供 chain_negated 复用卡图。
   const queue = useRef<Spec[]>([]);
   const playing = useRef(false);
@@ -158,8 +152,8 @@ export default function SpecOverlay() {
 
     // ---- showcard=100：猜拳双拳下落对碰 ----
     const onHandRes = (d: any) => {
-      const mine = RPS_HANDS[d.res & 3] || '✊';
-      const theirs = RPS_HANDS[(d.res >> 2) & 3] || '✊';
+      const mine = RPS_HANDS[d.res & 3] || RPS_HANDS[2];
+      const theirs = RPS_HANDS[(d.res >> 2) & 3] || RPS_HANDS[2];
       // 下拳=自己（低 2 位），上拳=对方（高 2 位）
       setRps({ bottom: mine, top: theirs, key: ++keySeq.current });
       later(() => setRps(null), 1700);
@@ -169,14 +163,10 @@ export default function SpecOverlay() {
     const onTossCoin = (d: any) => {
       const faces = (d.results || []).map((r: number) => (r ? sysString(60) : sysString(61)));
       showAc(`投掷硬币结果：[ ${faces.join(' ] [ ')} ]`);
-      setToss({ kind: 'coin', results: d.results || [], key: ++keySeq.current });
-      later(() => setToss(null), 1200);
     };
     const onTossDice = (d: any) => {
       const rolls = (d.results || []).join(' ] [ ');
       showAc(`投掷骰子结果：[ ${rolls} ]`);
-      setToss({ kind: 'dice', results: d.results || [], key: ++keySeq.current });
-      later(() => setToss(null), 1200);
     };
 
     eventBus.on('duel:summoning', onSummoning);
@@ -255,22 +245,8 @@ export default function SpecOverlay() {
       {/* showcard=100：猜拳双拳对碰 */}
       {rps && (
         <div key={rps.key} id="rps-arena" className="rps-arena">
-          <div className="rps-hand rps-hand-top">{rps.top}</div>
-          <div className="rps-hand rps-hand-bottom">{rps.bottom}</div>
-          <div className="rps-clash" />
-        </div>
-      )}
-
-      {/* 掷币/掷骰图标 */}
-      {toss && (
-        <div key={toss.key} id="toss-arena" className="toss-arena">
-          {toss.kind === 'coin'
-            ? toss.results.map((r, i) => (
-              <div key={i} className="toss-coin">{r ? '正' : '反'}</div>
-            ))
-            : toss.results.map((r, i) => (
-              <div key={i} className="toss-die">{r}</div>
-            ))}
+          <img className="rps-hand rps-hand-top" src={rps.top} alt="对方出拳" />
+          <img className="rps-hand rps-hand-bottom" src={rps.bottom} alt="我方出拳" />
         </div>
       )}
 

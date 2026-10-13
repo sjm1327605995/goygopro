@@ -1,0 +1,2 @@
+import { PHASE_DRAW, PHASE_STANDBY, PHASE_MAIN1, PHASE_BATTLE_START, PHASE_BATTLE, PHASE_MAIN2, PHASE_END } from './constants.ts';
+export const PHASE_ABBR: Record<number,string> = {[PHASE_DRAW]:'ＤＰ',[PHASE_STANDBY]:'ＳＰ',[PHASE_MAIN1]:'Ｍ１',[PHASE_BATTLE_START]:'ＢＰ',[PHASE_BATTLE]:'ＢＰ',[PHASE_MAIN2]:'Ｍ２',[PHASE_END]:'ＥＰ'};

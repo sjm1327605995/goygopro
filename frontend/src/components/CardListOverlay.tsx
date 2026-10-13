@@ -36,22 +36,19 @@ export default function CardListOverlay() {
   useEffect(() => {
     const onShow = (data: ShowPileEvent): void => {
       if (!data || !data.pile) return;
-      setOpen((cur) =>
-        cur && cur.pile === data.pile && cur.player === data.player ? null : data);
+      const st = duelStore.getState();
+      if (data.pile === 'grave' && st.cantCheckGrave) return;
+      const side = st.board[data.player];
+      if (!side || (data.pile === 'overlay' ? side.overlay.flat().length : side[data.pile].length) === 0) return;
+      setOpen((cur) => cur || data);
     };
     eventBus.on('ui:show_pile', onShow);
     return () => { eventBus.off('ui:show_pile', onShow); };
   }, []);
 
-  // 打开期间 ESC 关闭（原版 ESC 是最小化主窗口，浏览器译为关浮层）
   useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => { window.removeEventListener('keydown', onKey); };
-  }, [open]);
+    if (state.cantCheckGrave) setOpen((cur) => cur?.pile === 'grave' ? null : cur);
+  }, [state.cantCheckGrave]);
 
   // 列表内容（倒序同 gframe rbegin→rend）；overlay = 各 mzone 槽素材合集
   const cards = useMemo<number[]>(() => {

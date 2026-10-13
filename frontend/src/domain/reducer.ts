@@ -99,6 +99,7 @@ export interface CardInspection {
 }
 
 export interface PhasePrompt {
+  canShuffle?: boolean;
   /** 'idle' = MSG_SELECT_IDLECMD（BP/EP），'battle' = MSG_SELECT_BATTLECMD（M2/EP） */
   mode: 'idle' | 'battle';
   canBP: boolean;
@@ -134,6 +135,7 @@ export interface CardSelectState {
 }
 
 export interface DuelState {
+  duelRule: number;
   started: boolean;
   /** 本方在引擎里的 seat（0=先攻方）；所有 seat→显示换算的锚点 */
   playerSlot: number;
@@ -210,11 +212,13 @@ export interface PopupAction {
   action: string;
   code?: number;
   s?: number;
+  seq?: number;
 }
 
 export function initialDuelState(): DuelState {
   return {
     started: false,
+    duelRule: 5,
     playerSlot: 0,
     names: ['YugiMuto', 'SetoKaiba'],
     lp: [8000, 8000],
@@ -497,6 +501,7 @@ const lifecycleHandlers: Record<string, EventHandler> = {
     let next: DuelState = {
       ...state,
       started: true,
+      duelRule: ev.duelRule || 5,
       playerSlot,
       lp: [0, 0],
       turn: 0,
@@ -772,7 +777,7 @@ const counterHandlers: Record<string, EventHandler> = {
 const phaseHandlers: Record<string, EventHandler> = {
   'duel:select_idlecmd': (state, ev) => ({
     ...state,
-    phasePrompt: { mode: 'idle', canBP: !!ev.toBP, canM2: false, canEP: !!ev.toEP },
+    phasePrompt: { mode: 'idle', canBP: !!ev.toBP, canM2: false, canEP: !!ev.toEP, canShuffle: !!ev.shuffle },
   }),
 
   'duel:select_battlecmd': (state, ev) => ({
@@ -1064,7 +1069,7 @@ const selectHandlers: Record<string, EventHandler> = {
       c: c.c ?? 0,
       l: c.l ?? 0,
       s: c.s ?? 0,
-      onField: c.l === LOC_MZONE || c.l === LOC_SZONE,
+      onField: c.l === LOC_HAND || c.l === LOC_MZONE || c.l === LOC_SZONE,
     }));
     return {
       ...state,
@@ -1088,7 +1093,7 @@ const selectHandlers: Record<string, EventHandler> = {
       c: c.c ?? 0,
       l: c.l ?? 0,
       s: c.s ?? 0,
-      onField: c.l === LOC_MZONE || c.l === LOC_SZONE,
+      onField: c.l === LOC_HAND || c.l === LOC_MZONE || c.l === LOC_SZONE,
     });
     const first = (ev.cards || []).map(toEntry(0));
     const second = (ev.unselectList || []).map(toEntry(first.length));

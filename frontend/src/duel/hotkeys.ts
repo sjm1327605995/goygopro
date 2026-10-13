@@ -15,7 +15,7 @@
  *
  * 输入框焦点时全部跳过（聊天/改名输入不能被劫持）。
  */
-import { eventBus } from '../wails_bridge.ts';
+import { eventBus, WailsBridge } from '../wails_bridge.ts';
 import { settingsStore } from '../domain/settings.ts';
 import { duelStore } from './store.ts';
 import chainPrefs, { type ChainPrefMode } from './chain_prefs.ts';
@@ -54,6 +54,7 @@ export function installHotkeys(): () => void {
 
   const onKeyDown = (e: KeyboardEvent): void => {
     if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || inTextField()) return;
+    if (e.key === 'Escape') { WailsBridge.minimise(); return; }
     const mode = CHAIN_KEYS[e.key.toLowerCase()];
     if (mode) {
       // control_mode==0 才启用三键（原版 checkKeyManagement 前提）
@@ -70,7 +71,10 @@ export function installHotkeys(): () => void {
       chainPrefs.setMode(null);
     }
     const pile = PILE_HOTKEYS[e.key];
-    if (pile && inDuel()) {
+    const state = duelStore.getState();
+    if (pile && inDuel() && !state.isObserver && !inTextField()
+        && !document.getElementById('card-display-overlay')
+        && !(pile.pile === 'grave' && state.cantCheckGrave)) {
       eventBus.emit('ui:show_pile', pile);
     }
   };

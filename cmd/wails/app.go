@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/panjf2000/gnet/v2/pkg/logging"
 	"github.com/sjm1327605995/goygopro/core/duel"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/protocol"
-	"github.com/panjf2000/gnet/v2/pkg/logging"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -176,6 +176,30 @@ func (a *App) Quit() {
 	}
 }
 
+// Minimise matches gframe's Escape shortcut.
+func (a *App) Minimise() {
+	if app := application.Get(); app != nil {
+		for _, window := range app.Window.GetAll() {
+			window.Minimise()
+		}
+	}
+}
+
+// ListDeckCategories includes empty folders, just like gframe RefreshCategory.
+func (a *App) ListDeckCategories() []string {
+	entries, err := os.ReadDir(a.deckDir)
+	if err != nil {
+		return []string{}
+	}
+	names := []string{}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			names = append(names, entry.Name())
+		}
+	}
+	return names
+}
+
 // ListLFLists 列出已加载的禁限卡表（duelclient 建房窗 cbLFlist 的数据源）。
 // LoadLFList 会把「N/A」（哈希 0）追加在末尾；仓库目前没有 lflist.conf，
 // 因此通常只有 N/A，缺数据时下拉照常工作。
@@ -324,6 +348,23 @@ func (a *App) GetCard(code uint32) *CardInfo {
 // cross-origin fetch from the webview origin is always blocked) and cached
 // into <cwd>/pics/ so later calls hit the local branch. Returns "" only when
 // neither local art nor the CDN has the card.
+// GetFieldImage follows ImageManager::GetTextureField; missing field art does
+// not fall back to the card face or a network thumbnail.
+func (a *App) GetFieldImage(code uint32) string {
+	if code == 0 {
+		return ""
+	}
+	for _, dir := range []string{"expansions/pics/field", "pics/field"} {
+		for _, ext := range []string{"png", "jpg"} {
+			data, err := os.ReadFile(filepath.Join(dir, fmt.Sprintf("%d.%s", code, ext)))
+			if err == nil && len(data) > 0 {
+				return "data:" + http.DetectContentType(data) + ";base64," + base64.StdEncoding.EncodeToString(data)
+			}
+		}
+	}
+	return ""
+}
+
 func (a *App) GetCardImage(code uint32) string {
 	var roots []string
 	if dir := strings.TrimSpace(os.Getenv("YGOPRO_PICS_DIR")); dir != "" {
@@ -381,7 +422,7 @@ func (a *App) GetCardImage(code uint32) string {
 // Access-Control-Allow-Origin），所以必须走 Go 代拉。拉取成功后顺手落盘
 // 到 <cwd>/pics/<code>.jpg，下一次调用直接命中上面的本地分支。
 // cardArtEntry 是单卡号的单飞记录：第一个进入的调用负责下载，后续调用
-//（含并发）直接复用结果。只锁不缓存结果的话，并发调用会排队后重复下载。
+// （含并发）直接复用结果。只锁不缓存结果的话，并发调用会排队后重复下载。
 type cardArtEntry struct {
 	mu   sync.Mutex
 	done bool

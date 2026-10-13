@@ -390,3 +390,95 @@
   本仓库没有该目录结构，无可择优对象。
 - **ignore_deck_changes**：原版在卡组与上次提交不一致时弹提醒的提示类
   功能；联机准备流程已有服务端 LoadDeck 校验兜底，提醒屬纯装饰。
+
+## UI 全量对照修复批（2026-11，依据 tmp_dbg/ui-parity-audit.md 实机核验 + gframe 逐行对照）
+
+审计（2026-10-13）按优先顺序列出的 5 个操作问题与两组视觉/状态差异，
+本轮全部对照原版源码修复；收尾阶段删除了手牌 3D 化后的旧手背行死代码。
+
+- [x] **双击误删两张卡**：恢复 deck_con.cpp:1120 原版鼠标语义——左键拖动、
+  右键删除（pop_main/extra/side）、双击开 BigCardPanel（ShowBigCard），
+  单击不再删除；新增 `components/BigCardPanel.tsx`。
+- [x] **card-inspector 透明外壳挡「退出编辑」**：302×640 外壳
+  `pointer-events:auto` 覆盖退出按钮（原版两区域 x 不重叠，
+  game.cpp:335/:949）→ 外壳收缩/穿透，冒烟 `exit-click-not-obstructed` 用
+  elementFromPoint 断言。
+- [x] **拖拽插入位置被父网格冒泡覆盖**：卡片 drop 阻止向网格冒泡 +
+  同区移动索引修正（deck_con.cpp:1089 hovered_seq 语义），
+  `drag-inserts-at-target` 断言。
+- [x] **投降一次确认两次调用 + 立即退出画面**：RightControls 加
+  `surrenderSent` 守卫只发一次 CTOS_SURRENDER、留在对局等服务端
+  （event_handler.cpp:151），`surrender-sent-once/waits-for-server` 断言。
+- [x] **墓地禁查 F1 绕过**：`hotkeys.ts` 与 `CardListOverlay` 补
+  cantCheckGrave 守卫（event_handler.cpp:1787），三个入口同语义，
+  `grave-hotkey-respects-lock`/`all-grave-entrypoints-respect-lock` 断言。
+- [x] **卡组编辑器对齐 deck_con.cpp**：搜索排序下拉 = 原版
+  deck_sort_lv/atk/def/name（`domain/deck_sort.ts` 逐行移植
+  data_manager.cpp 比较器）；搜索结果全量返回（card_db.go `AllResults`
+  去 LIMIT，原版扫全库后排序）；中键复制按容量回退；搜索结果可拖入
+  指定区/拖出删除；打乱只洗主卡组（deck_con.cpp:187）；载入卡组时下拉
+  选中态关联 loadedDeck；禁限/发行范围徽标改用原版贴图图集
+  （lim.png/ot.png，`CardAvailabilityBadge` = DrawThumb 的 tLim/tOT 行
+  选取，drawing.cpp:1176-1198）。
+- [x] **战斗画面对齐 drawing.cpp/client_field.cpp/game.cpp**：
+  - 手牌改 3D 直排（GetCardLocation LOCATION_HAND →
+    `duel/original_geometry.ts handPose`：同旋转、≤6 张固定间距、更多
+    压缩、悬停抬升），`field3d.setHands` 双座渲染（零码 = 卡背）；
+    HandDock 退化为无障碍/键盘入口，手牌动作按**手牌序号**而非卡号
+    匹配（`duplicate-hand-card-keeps-sequence`）。
+  - 阶段条改原版 wPhase 形态：动态当前阶段钮（`domain/original_phases.ts`
+    PHASE_ABBR，ＤＰ/ＳＰ/Ｍ１/ＢＰ/Ｍ２/ＥＰ）+ BP/M2、EP 按可行动
+    状态出现（game.cpp:343-353）；横幅寿命 40 帧（WaitFrameSignal）。
+  - 相机改原版固定不对称视锥（game.cpp:994-998
+    BuildProjectionMatrix → `projectionMatrix.makePerspective(-1.8,0.9,
+    0.84,-0.84,2,200)`，位置 (0.4,15.6,16) 即原版 (4.2,8,7.8) 的世界
+    座标换算）。
+  - 旧规则场地：duelRule<4 时换 field2/field-transparent2 贴图与
+    旧区域坐标（original_geometry 的 modern 分支，materials.cpp），
+    `setDuelRule` 随 MSG_START 切换；灯光回归原版全亮环境光
+    （game.cpp:999，去方向光/接触阴影外的彩色光）。
+- [x] **Go/桥接补口**：`App.Minimise`（gframe Esc 最小化）、
+  `ListDeckCategories`（空分类也列出，对齐 RefreshCategory）、
+  `GetFieldImage`（ImageManager::GetTextureField：expansions/pics/field
+  → pics/field，缺失不回退卡图/网络）、`SearchCards.AllResults`。
+- [x] **工具与验证基建**：`tools/ui_parity_e2e.cjs`（真 Wails/WebView2
+  CDP 驱动真实卡库 + 真实引擎，21 项检查全过）；`tools/ui_smoke_suite.cjs`
+  把 14 个冒烟页套件化（本轮补 settings→__smokeResult、
+  netplay_lobby→__netplaySmoke 的键映射与就绪判定）。
+- [x] **收尾清理（本轮）**：手牌 3D 化后删除旧的远侧手背行死代码——
+  field3d 的 `opponentHandMeshes`/`setFarHandCount`/`layoutFarHandRow`
+  空桩与 duel_manager 的 `refreshFarHandRow`（收编进 `syncHands`）；
+  theater_smoke 的 `opp-hand-backs` 断言改查 `handMeshes`、
+  single_smoke 的 reload_field 桩改捕获 `setHands` 补零码数组。
+- 验证：`go build/vet/test ./...` 全绿；前端 `tsc --noEmit` + 双 vite
+  构建全绿；ui_smoke_suite 14 页 552 项检查全绿（deck 32、lobby 49、
+  menu 7、netplay_lobby 11、practice 27、prompts 133、replay 12、
+  settings 33、single 19、spec 23、stage 71、theater 47、ui_parity 34、
+  widgets 54）。
+- 未做（审计列为视觉设计差异，非行为缺陷）：Irrlicht 控件皮肤与
+  CSS/Mantine 的皮肤差异保持现状；相机投影尺寸逐像素一致未担保。
+
+## 悬停关系图标 SetShowMark（2026-11，对照 drawing.cpp:446-457 / client_field.cpp SetShowMark / client_card.cpp 关系表）
+
+- [x] **装备/对象/连锁对象图标替换自加的关系连线**：原版没有事件驱动的
+  关系连线——`is_showequip/is_showtarget/is_showchaintarget` 是
+  **悬停驱动**的（client_field.cpp:2444-2462 `SetShowMark`：悬停某卡时，
+  它的装备/对象/连锁对象**关联卡**上画 `equip.png`/`target.png`/
+  `chaintarget.png` 平铺图标，materials.cpp:19 vSymbol 0.7×0.7），同卡
+  else-if 优先级 equip > target > chaintarget > negated。
+  - field3d：删除 `relationLines`/`addRelationLine`/`removeRelationLine`
+    连线机制，新增 `setRelationMarks/clearRelationMarks`（0.7×0.7 平铺
+    图标、逐帧跟随卡 mesh、显示期间压住该卡 negated 徽章）与
+    `onHoverChange` 回调（handleHover 触发，SetShowMark 的触发点）。
+  - duel_manager：新增关系数据表——`equipPairs`（MSG_EQUIP 先解旧绑，
+    duelclient.cpp:3249-3254）、`targetPairs`、`chainTargets`
+    （MSG_CHAINING 登记链卡、MSG_BECOME_TARGET 追加到最后一条链、
+    chain_end 清除）；`refreshRelationMarks` 按悬停卡双向查表布图标
+    （Map 保序实现同卡优先级）；离场卡按 MSG_MOVE 清理关系
+    （duelclient.cpp:2645-2653 ClientCard 析构同款），duel:swap/duel:start/
+    整板重建（resync drift）全量清除。
+  - chaintarget 此前无任何可视化（become_target 只落日志），本次补齐。
+- 验证：prompts_smoke 原 equip/target 连线 4 断言改写为悬停图标 9 断言
+  （无悬停无图标、双向悬停互换、unhover 清除、unequip/cancel_target/
+  chain_end 解除、连锁对象反向悬停），139/139 全绿；ui_smoke_suite
+  14 页 558 项检查全绿；`tsc --noEmit` + 双 vite 构建 + `go build/vet` 全绿。

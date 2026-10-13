@@ -471,7 +471,7 @@ export default function PromptHost() {
           {cs.kind === 'card' && (
             <span id="card-select-bar-count">{`已选 ${cs.selected.length} / ${cs.max} 张`}</span>
           )}
-          {cs.kind === 'card' && cs.max > cs.min && !hideHintBtns && (
+          {cs.kind === 'card' && cs.max > cs.min && cs.selected.length >= cs.min && !hideHintBtns && (
             <button
               id="card-select-bar-finish"
               className={`btn btn-gold${cs.selected.length >= cs.min ? ' btn-flash-gold' : ''}`}
@@ -479,7 +479,7 @@ export default function PromptHost() {
               onClick={() => respondCardSelection()}
             >完成</button>
           )}
-          {cs.cancelable && !hideHintBtns && (
+          {cs.cancelable && (cs.kind !== 'card' || cs.selected.length < cs.min) && !hideHintBtns && (
             <button
               id="card-select-bar-cancel"
               className="btn btn-secondary"

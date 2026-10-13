@@ -35,7 +35,8 @@ export class DuelManager {
   /** 非交互模式（回放）不发送任何协议响应、不响应点击。 */
   interactive: boolean;
   playerSlot = 0;
-  /** 双座手牌数（引擎 seat 索引；驱动 field3D 的远侧手背行——显示座 1 一侧） */
+  /** 双座手牌数（引擎 seat 索引；syncHands 把 store 手牌补零码到此数，
+   *  驱动 field3D.setHands 的 3D 手牌直排——服务端抹零的对侧只知张数） */
   handCounts: [number, number] = [0, 0];
   idleCmd: any = null;
   battleCmd: any = null;
@@ -60,6 +61,15 @@ export class DuelManager {
    * 同样要改变状态浮签与牌堆计数（update_data 路径另有显式同步） */
   _lastBoard: any = null;
   _lastPiles: any = null;
+  /** 装备关系：装备卡 key → 目标卡 key（MSG_EQUIP/UNEQUIP 维护，
+   *  client_card.cpp 的 equipTarget/equipped） */
+  equipPairs: Map<string, string> = new Map();
+  /** 对象关系：卡对 "keyA|keyB"（MSG_CARD_TARGET/CANCEL_TARGET 维护，
+   *  client_card.cpp 的 cardTarget/ownerTarget） */
+  targetPairs: Set<string> = new Set();
+  /** 连锁对象：当前连锁段的链卡与其对象集（MSG_BECOME_TARGET 追加、
+   *  chain_end 清空，duelclient.cpp:3051-3052） */
+  chainTargets: { card: string; targets: Set<string> }[] = [];
 
   constructor(field3D: DuelField3D, { interactive = true }: { interactive?: boolean } = {}) {
     this.field3D = field3D;
@@ -72,21 +82,27 @@ export class DuelManager {
     this.field3D.onCardSelectPick = (idx) => this.onCardSelectPick(idx);
     this.field3D.onBoardRightClick = (x, y) => this.onBoardRightClick(x, y);
     this.field3D.onPileRightClick = (player, pile) => this.onPileRightClick(player, pile);
+    this.field3D.onHoverChange = () => this.refreshRelationMarks();
 
     this.initNetworkListeners();
 
-    // store 联动：视角交换 → 相机/手背行翻转（回放也生效）；cardSelect
+    // store 联动：视角交换 → 相机翻转（回放也生效）；cardSelect
     // 选择态 → 场上高亮刷新 + 选满自动应答（仅交互模式应答）。
     this._lastViewSwapped = duelStore.getState().viewSwapped;
     this._storeUnsub = duelStore.subscribe(() => this.onStoreChange());
+    const initial = duelStore.getState();
+    this.playerSlot = initial.playerSlot;
+    this.field3D.setBottomSeat?.(initial.playerSlot, true);
+    this.field3D.setDuelRule?.(initial.duelRule);
+    this.syncHands();
   }
 
   onStoreChange(): void {
     const st = duelStore.getState();
+    this.syncHands();
     if (st.viewSwapped !== this._lastViewSwapped) {
       this._lastViewSwapped = st.viewSwapped;
       this.field3D.setViewSwapped(st.viewSwapped);
-      this.refreshFarHandRow();
     }
     const cs = st.cardSelect;
     const key = cs ? `${cs.kind}:${cs.cards.length}:${cs.selected.join(',')}` : '';
@@ -110,11 +126,80 @@ export class DuelManager {
     }
   }
 
-  /** 远侧（显示座 1）手背行：视角交换后远侧换 seat，重新落数 */
-  refreshFarHandRow(): void {
+  syncHands(): void {
     const st = duelStore.getState();
-    const topSeat = 1 - bottomEngineSeat(st);
-    this.field3D.setFarHandCount(this.handCounts[topSeat as 0 | 1] || 0);
+    const bottom = bottomEngineSeat(st);
+    const codes: [number[], number[]] = [[],[]];
+    codes[bottom] = st.hand.map((c) => c?.code || 0);
+    codes[1-bottom] = st.oppHand.map((c) => c?.code || 0);
+    for (const seat of [0,1] as const) while (codes[seat].length < this.handCounts[seat]) codes[seat].push(0);
+    this.field3D.setHands?.(codes);
+  }
+
+  /** 关系条目的键 = 引擎座标 "c:l:s"（事件载荷的数值 loc） */
+  relKey(e: { c: number; l: number; s: number }): string {
+    return `${e.c}:${e.l}:${e.s}`;
+  }
+
+  /** 抹掉涉及某张卡的全部关系（ClientCard 析构 ClearTarget/equipTarget 同款） */
+  purgeRelations(key: string): void {
+    for (const [a, b] of this.equipPairs) {
+      if (a === key || b === key) this.equipPairs.delete(a);
+    }
+    for (const p of [...this.targetPairs]) {
+      if (p.split('|').includes(key)) this.targetPairs.delete(p);
+    }
+    this.chainTargets = this.chainTargets.filter((ch) => {
+      if (ch.card === key) return false;
+      ch.targets.delete(key);
+      return true;
+    });
+  }
+
+  /**
+   * SetShowMark 语义（client_field.cpp:2444-2462）：悬停卡的装备/对象/
+   * 连锁对象关联卡布关系图标；同卡优先级 equip > target > chaintarget
+   * （drawing.cpp:446-457 的 else-if 链）。无悬停或悬停卡已离场时清空。
+   */
+  refreshRelationMarks(): void {
+    if (typeof this.field3D.setRelationMarks !== 'function') return;
+    const mesh = this.field3D.hoveredCard;
+    const slot = mesh && mesh.userData.slot;
+    const locCode = slot ? ({ mzone: 0x04, szone: 0x08 } as Record<string, number>)[slot.loc] : undefined;
+    // 悬停引用可能已离场（mesh 退休时 hoveredCard 未清），以登记槽位为准
+    const zone = slot && this.field3D.cardsOnField
+      && this.field3D.cardsOnField[slot.player]
+      && this.field3D.cardsOnField[slot.player][slot.loc];
+    if (!mesh || !slot || locCode === undefined || !zone || zone[slot.seq] !== mesh) {
+      this.field3D.setRelationMarks([]);
+      return;
+    }
+    const hkey = `${slot.player}:${locCode}:${slot.seq}`;
+    const marks = new Map<string, 'equip' | 'target' | 'chaintarget'>();
+    const add = (key: string, kind: 'equip' | 'target' | 'chaintarget') => {
+      // Map 保序 + 先入优先 = equip > target > chaintarget
+      if (key !== hkey && !marks.has(key)) marks.set(key, kind);
+    };
+    for (const [a, b] of this.equipPairs) {
+      if (a === hkey) add(b, 'equip');
+      if (b === hkey) add(a, 'equip');
+    }
+    for (const p of this.targetPairs) {
+      const [a, b] = p.split('|');
+      if (a === hkey) add(b, 'target');
+      if (b === hkey) add(a, 'target');
+    }
+    for (const ch of this.chainTargets) {
+      if (ch.card === hkey) for (const t of ch.targets) add(t, 'chaintarget');
+      if (ch.targets.has(hkey)) add(ch.card, 'chaintarget');
+    }
+    const out: { mesh: any; kind: 'equip' | 'target' | 'chaintarget' }[] = [];
+    for (const [key, kind] of marks) {
+      const [c, l, s] = key.split(':').map(Number);
+      const m = this.field3D.meshAt(c, l, s);
+      if (m) out.push({ mesh: m, kind });
+    }
+    this.field3D.setRelationMarks(out);
   }
 
   /** select_card/unselect 的场上候选（mzone/szone）布/撤 3D 高亮 */
@@ -167,9 +252,13 @@ export class DuelManager {
     // off it; the store displays our seat as the "player" slot.
     sub('duel:start', (data) => {
       this.playerSlot = (data.playerType || 0) & 0x0f;
+      this.field3D.setBottomSeat?.(this.playerSlot,true);
+      this.field3D.setDuelRule?.(data.duelRule || 5);
       this.handCounts = [0, 0];
-      this.field3D.setFarHandCount(0);
       this.field3D.setCantCheckGrave(false);
+      this.equipPairs.clear();
+      this.targetPairs.clear();
+      this.chainTargets = [];
       // 新一局视角复位（reducer 已清 viewSwapped，这里同步 3D 相机）
       this._lastViewSwapped = false;
       this.field3D.setViewSwapped(false);
@@ -189,26 +278,31 @@ export class DuelManager {
         const p = data.players && data.players[seat];
         if (p) this.handCounts[seat] = p.hand || 0;
       }
-      this.refreshFarHandRow();
+      this.syncHands();
     });
 
     // MSG_TAG_SWAP（TAG 队友换手）：该座的手牌数直接以本消息为准（原版
     // duelclient.cpp:3782 用 hcount 重排 dField.hand）；本队手牌由 reducer 处理
     sub('duel:tag_swap', (data) => {
       this.handCounts[data.player as 0 | 1] = data.handCount || 0;
-      this.refreshFarHandRow();
+      this.syncHands();
     });
 
     sub('duel:draw', async (data) => {
-      // 手背行是持久表示，计数在 __instant（seek 重建）下也要同步
+      // 3D 手牌行是持久表示，计数在 __instant（seek 重建）下也要同步
       this.handCounts[data.player as 0 | 1] = (this.handCounts[data.player as 0 | 1] || 0) + data.count;
-      this.refreshFarHandRow();
+      this.syncHands();
       if (data.__instant) return; // 回放 seek 重建：跳过发牌动画
       for (let i = 0; i < data.count; i++) {
         const cardCode = (data.cards && data.cards[i]) ? data.cards[i] : 0;
         const cardInfo = cardCode ? await WailsBridge.getCard(cardCode) : null;
         this.field3D.animateDrawCard(data.player, cardCode, cardInfo);
       }
+    });
+
+    sub('duel:shuffle_hand', (data) => {
+      this.syncHands();
+      if (!data.__instant) this.field3D.shuffleHand?.(data.player);
     });
 
     sub('duel:summoning', async (data) => {
@@ -285,14 +379,21 @@ export class DuelManager {
       const fromLoc = LOC_NAMES[data.pl as number];
       const toLoc = LOC_NAMES[data.cl as number];
 
-      // 手牌数：离手 -1、回手 +1（手背行的持久表示同步）
+      // 手牌数：离手 -1、回手 +1（3D 手牌行的持久表示同步）
       if (fromLoc === 'hand') {
         this.handCounts[data.pc as 0 | 1] = Math.max(0, this.handCounts[data.pc as 0 | 1] - 1);
-        this.refreshFarHandRow();
+        this.syncHands();
       }
       if (toLoc === 'hand') {
         this.handCounts[data.cc as 0 | 1] += 1;
-        this.refreshFarHandRow();
+        this.syncHands();
+      }
+
+      // 离场卡的装备/对象/连锁对象关系清理（MSG_MOVE 里 ClientCard 析构的
+      // ClearTarget/equipTarget 抹除，duelclient.cpp:2645-2653/2704-2710）
+      if (fromLoc === 'mzone' || fromLoc === 'szone') {
+        this.purgeRelations(`${data.pc}:${data.pl}:${data.ps}`);
+        this.refreshRelationMarks();
       }
 
       const mesh = (fromLoc && data.pl !== LOC_HAND && data.pl !== LOC_DECK && data.pl !== LOC_EXTRA)
@@ -334,6 +435,9 @@ export class DuelManager {
 
     // Chain Events
     sub('duel:chaining', async (data) => {
+      // 连锁段的对象集登记（MSG_BECOME_TARGET 追加到最后一条链）——
+      // 必须先于 await，否则紧随的 become_target 会找不到链
+      this.chainTargets.push({ card: this.relKey({ c: data.cc, l: data.cl, s: data.cs }), targets: new Set() });
       const cardInfo = await WailsBridge.getCard(data.code);
       // Anchor the badge on the field only for cards that are ON the field;
       // hand/deck/grave activations (e.g. hand traps) have no slot to pin to.
@@ -365,6 +469,9 @@ export class DuelManager {
 
     sub('duel:chain_end', () => {
       this.field3D.chainVisualizer?.clearChain();
+      // 连锁段结束：链卡/对象的 chaintarget 图标关系一并清除
+      this.chainTargets = [];
+      this.refreshRelationMarks();
     });
 
     sub('duel:select_idlecmd', (data) => {
@@ -441,23 +548,44 @@ export class DuelManager {
       });
     });
 
-    // Go 载荷的位置条目是 {c,l,s}，field3d 的槽参数是 {player,loc,seq}
-    const toSlot = (e: any) => ({ player: e.c, loc: e.l, seq: e.s });
+    // ---- 悬停关系图标的数据源（client_card.cpp 的 equipTarget/cardTarget
+    // 关系表）：事件只维护关系，图标在悬停时经 refreshRelationMarks 按
+    // SetShowMark 语义布设（原版无事件驱动的关系连线） ----
 
     sub('duel:equip', (data) => {
-      this.field3D.addRelationLine(toSlot(data.card), toSlot(data.target), 'equip');
-    });
-
-    sub('duel:card_target', (data) => {
-      this.field3D.addRelationLine(toSlot(data.card), toSlot(data.target), 'target');
-    });
-
-    sub('duel:cancel_target', (data) => {
-      this.field3D.removeRelationLine(toSlot(data.card), toSlot(data.target), 'target');
+      // MSG_EQUIP：装备卡原有对象先解除（duelclient.cpp:3249-3254）
+      this.equipPairs.delete(this.relKey(data.card));
+      this.equipPairs.set(this.relKey(data.card), this.relKey(data.target));
+      this.refreshRelationMarks();
     });
 
     sub('duel:unequip', (data) => {
-      this.field3D.removeRelationLine(toSlot(data.card), undefined, 'equip');
+      this.equipPairs.delete(this.relKey(data.card));
+      this.refreshRelationMarks();
+    });
+
+    sub('duel:card_target', (data) => {
+      this.targetPairs.add(this.relKey(data.card) + '|' + this.relKey(data.target));
+      this.refreshRelationMarks();
+    });
+
+    sub('duel:cancel_target', (data) => {
+      this.targetPairs.delete(this.relKey(data.card) + '|' + this.relKey(data.target));
+      this.refreshRelationMarks();
+    });
+
+    // MSG_BECOME_TARGET：对象追加进当前（最后一条）连锁的对象集
+    sub('duel:become_target', (data) => {
+      const chain = this.chainTargets[this.chainTargets.length - 1];
+      if (!chain) return;
+      for (const t of data.targets || []) chain.targets.add(this.relKey(t));
+    });
+
+    // 控制权交换（MSG_SWAP）：涉及卡的关系清掉（原版重绑 equipTarget，
+    // 这里近似为清除——swap 后再由新事件重建）
+    sub('duel:swap', (data) => {
+      this.purgeRelations(`${data.cc1}:${data.cl1}:${data.cs1}`);
+      this.purgeRelations(`${data.cc2}:${data.cl2}:${data.cs2}`);
     });
 
     sub('duel:add_counter', (data) => {
@@ -491,7 +619,7 @@ export class DuelManager {
 
     sub('ui:hand_click', (data) => {
       if (!this.interactive) return;
-      const opts = this.getHandOptions(data.code);
+      const opts = this.getHandOptions(data.code,data.seq);
       if (opts.length) {
         duelStore.openActionPopup(data.x, data.y, opts);
       } else {
@@ -530,6 +658,7 @@ export class DuelManager {
       this._storeUnsub();
       this._storeUnsub = null;
     }
+    this.field3D.onHoverChange = null;
     if (!this._subs) return;
     this._subs.forEach(([event, fn]) => eventBus.off(event, fn));
     this._subs = [];
@@ -762,15 +891,15 @@ export class DuelManager {
 
   // Builds the action popup options for a hand card from the pending idle
   // command: only actions the engine actually offered are shown.
-  getHandOptions(code: number) {
+  getHandOptions(code: number, seq?: number) {
     if (!this.idleCmd) return [];
     const opts = [];
-    const has = (list: any) => list && list.some((c: any) => c.code === code);
-    if (has(this.idleCmd.summon)) opts.push({ label: '召唤', action: 'summon', code });
-    if (has(this.idleCmd.spsummon)) opts.push({ label: '特殊召唤', action: 'spsummon', code });
-    if (has(this.idleCmd.mset)) opts.push({ label: '盖放', action: 'mset', code });
-    if (has(this.idleCmd.sset)) opts.push({ label: '盖放', action: 'sset', code });
-    if (has(this.idleCmd.activate)) opts.push({ label: '发动', action: 'activate', code });
+    const has = (list: any) => list && list.some((c: any) => c.code === code && (seq === undefined || c.s === seq) && (c.l === undefined || c.l === LOC_HAND));
+    if (has(this.idleCmd.summon)) opts.push({ label: '召唤', action: 'summon', code,seq });
+    if (has(this.idleCmd.spsummon)) opts.push({ label: '特殊召唤', action: 'spsummon', code,seq });
+    if (has(this.idleCmd.mset)) opts.push({ label: '盖放', action: 'mset', code,seq });
+    if (has(this.idleCmd.sset)) opts.push({ label: '盖放', action: 'sset', code,seq });
+    if (has(this.idleCmd.activate)) opts.push({ label: '发动', action: 'activate', code,seq });
     return opts;
   }
 
@@ -780,6 +909,11 @@ export class DuelManager {
     if (!this.interactive) return;
     const slot = userData && userData.slot;
     if (!slot || slot.player !== this.playerSlot) return;
+    if (slot.loc === 'hand') {
+      const opts = this.getHandOptions(userData.cardCode,slot.seq);
+      if (opts.length) duelStore.openActionPopup(x,y,opts);
+      return;
+    }
     const opts = [];
     if (this.battleCmd && this.battleCmd.attack &&
         this.battleCmd.attack.some((a: any) => a.s === slot.seq)) {
@@ -801,7 +935,7 @@ export class DuelManager {
     // （responses.go RespondIdleCmd/RespondBattleCmd）。
     const respond = (list: any, cmdType: number, predicate?: (c: any) => boolean) => {
       if (!list) return;
-      const match = list.find((c: any) => (predicate ? predicate(c) : c.code === data.code));
+      const match = list.find((c: any) => (predicate ? predicate(c) : c.code === data.code && (data.seq === undefined || c.s === data.seq)));
       if (match) {
         if (this.battleCmd) WailsBridge.respondBattleCmd(match.idx, cmdType);
         else WailsBridge.respondIdleCmd(match.idx, cmdType);
@@ -943,6 +1077,10 @@ export class DuelManager {
     this._resyncing = true;
     try {
       this.field3D.clearBoard();
+      // 整板重建：旧的装备/对象关系随 mesh 一并作废
+      this.equipPairs.clear();
+      this.targetPairs.clear();
+      this.chainTargets = [];
       for (let disp = 0; disp < 2; disp++) {
         const seat = seatOf(disp);
         const sb = state.board[disp];
@@ -961,6 +1099,7 @@ export class DuelManager {
       }
       // 重建换了全部 mesh，徽章需按新 mesh 重挂
       this.syncNegatedBadges();
+      this.syncHands();
     } finally {
       this._resyncing = false;
     }
