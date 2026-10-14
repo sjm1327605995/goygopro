@@ -182,8 +182,7 @@ export function victoryString(type: number): string {
 }
 
 /**
- * 阶段码 → 中文名（原版 drawing.cpp DrawSpec case 101 的横幅文案，
- * 中文版为对应惯用译名；reducer 日志与 PhaseStrip 横幅共用此表）。
+ * 阶段码 → 中文日志名。DrawSpec 横幅使用 duel_banners 的原版英文文案。
  * 键必须是 ocgcore PHASE_*。
  */
 export const PHASE_LABELS: Record<number, string> = {
@@ -194,6 +193,7 @@ export const PHASE_LABELS: Record<number, string> = {
   0x10: '战斗步骤',
   0x20: '伤害步骤',
   0x40: '伤害计算',
-  0x80: '主要阶段 2',
-  0x100: '结束阶段',
+  0x80: '战斗阶段',
+  0x100: '主要阶段 2',
+  0x200: '结束阶段',
 };

@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { eventBus, WailsBridge } from '../wails_bridge.ts';
 import { settingsStore } from '../domain/settings.ts';
+import { duelStore } from '../duel/store.ts';
+import { WIN_BANNER_MS } from '../domain/duel_banners.ts';
 
 /**
  * 录像保存确认（gframe duelclient.cpp:727-774 wReplaySave 的翻译）：
@@ -17,6 +19,14 @@ export default function ReplaySavePrompt() {
   const autoSaveRef = useRefLatest(!!settingsSnap.auto_save_replay);
 
   useEffect(() => {
+    const pending = new Set<ReturnType<typeof setTimeout>>();
+    const afterResult = (callback: () => void): void => {
+      const win = duelStore.getState().win;
+      const remaining = win ? Math.max(0, win.announcedAt + WIN_BANNER_MS - Date.now()) : 0;
+      if (!remaining) { callback(); return; }
+      const timer = setTimeout(() => { pending.delete(timer); callback(); }, remaining);
+      pending.add(timer);
+    };
     const onReplay = (data: any): void => {
       setMode('net');
       const suggestedName = (data && data.name) || '';
@@ -44,11 +54,22 @@ export default function ReplaySavePrompt() {
       setStatus('');
       setSuggested(suggestedName);
     };
-    eventBus.on('stoc:replay', onReplay);
-    eventBus.on('single:replay', onSingleReplay);
+    const onNet = (data: any) => afterResult(() => onReplay(data));
+    const onSingle = (data: any) => afterResult(() => onSingleReplay(data));
+    const onStart = () => {
+      pending.forEach(clearTimeout);
+      pending.clear();
+      setSuggested(null);
+      setStatus('');
+    };
+    eventBus.on('stoc:replay', onNet);
+    eventBus.on('single:replay', onSingle);
+    eventBus.on('duel:start', onStart);
     return () => {
-      eventBus.off('stoc:replay', onReplay);
-      eventBus.off('single:replay', onSingleReplay);
+      pending.forEach(clearTimeout);
+      eventBus.off('stoc:replay', onNet);
+      eventBus.off('single:replay', onSingle);
+      eventBus.off('duel:start', onStart);
     };
   }, [autoSaveRef]);
 

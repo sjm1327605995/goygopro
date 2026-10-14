@@ -437,24 +437,64 @@
 }
 
 /* 48pt 阶段/胜负横幅（原版 showcard 大字动画） */
+.phase-banner-anchor, .victory-reason-anchor {
+  position: fixed;
+  left: 660px;
+  top: 290px;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.victory-reason-anchor { left: 665px; top: 330px; }
 .phase-banner {
   position: absolute;
-  right: 0;
-  bottom: 60px;
+  left: 0;
+  top: 0;
+  width: max-content;
   font-size: 48px;
-  font-weight: 900;
-  color: #ffe66a;
-  text-shadow: 2px 2px 4px #000, 0 0 18px rgba(255, 230, 106, 0.6);
+  font-weight: normal;
+  color: #fff;
+  text-shadow: 1px 1px #000;
   white-space: nowrap;
-  animation: banner-pop 1.4s ease-out forwards;
+  transform: translateX(-50%);
+  animation: original-phase-banner 666.667ms linear forwards;
   pointer-events: none;
 }
 
-@keyframes banner-pop {
-  0% { opacity: 0; transform: scale(1.6); }
-  20% { opacity: 1; transform: scale(1); }
-  75% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-14px); }
+.phase-banner.win-banner { animation: original-win-banner 2000ms linear forwards; }
+.victory-reason {
+  position: absolute;
+  left: 0;
+  top: 0;
+  min-width: 250px;
+  width: max-content;
+  height: 20px;
+  padding: 0 25px;
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.62745);
+  color: #fff;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+  text-shadow: 2px 1px #000;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: original-win-reason 2000ms steps(1, end) forwards;
+}
+@keyframes original-phase-banner {
+  0% { opacity: 0; transform: translateX(calc(-50% - var(--banner-enter, 360px))); }
+  25%, 75% { opacity: 1; transform: translateX(-50%); }
+  100% { opacity: 0; transform: translateX(calc(-50% + var(--banner-exit, 400px))); }
+}
+@keyframes original-win-banner {
+  0% { opacity: 0; transform: translateX(calc(-50% - var(--banner-enter, 360px))); }
+  8.333%, 91.667% { opacity: 1; transform: translateX(-50%); }
+  100% { opacity: 0; transform: translateX(calc(-50% + var(--banner-exit, 400px))); }
+}
+@keyframes original-win-reason {
+  0% { visibility: hidden; }
+  8.333% { visibility: visible; }
+  91.667%, 100% { visibility: hidden; }
 }
 
 /* ==================================================================
@@ -1552,6 +1592,38 @@
   align-items: center;
   padding-top: 6px;
   flex-shrink: 0;
+}
+/* 选卡弹窗标题栏 + 最小化（neos-ts NeosModal 的等价物：收起卡行看场面） */
+.wcs-titlebar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.wcs-titlebar > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wcs-min-btn {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  font-size: 13px;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid rgba(184, 154, 90, 0.45);
+  border-radius: 3px;
+}
+.wcs-min-btn:hover {
+  color: #fff;
+  border-color: var(--gold, #c9a227);
+}
+.wcs-window.wcs-minimized {
+  height: auto;
 }
 
 /* ---- wQuery 是/否窗（game.cpp:535-541）：(490,200)-(840,340) 350×140 ---- */

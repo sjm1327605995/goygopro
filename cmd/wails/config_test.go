@@ -71,6 +71,7 @@ func TestLoadConfigParsesOriginalKeys(t *testing.T) {
 		"hide_player_name = 1",
 		"draw_field_spell = 0",
 		"quick_animation = 1",
+		"animation_speed = 150",
 		"auto_save_replay = 1",
 		"enable_sound = false",
 		"sound_volume = 80",
@@ -94,6 +95,9 @@ func TestLoadConfigParsesOriginalKeys(t *testing.T) {
 	if cfg.DrawFieldSpell != 0 || cfg.QuickAnimation != 1 || cfg.AutoSaveReplay != 1 {
 		t.Fatalf("功能开关解析错误: %+v", cfg)
 	}
+	if cfg.AnimationSpeed != 150 {
+		t.Fatalf("animation_speed 解析错误: %d", cfg.AnimationSpeed)
+	}
 	if cfg.EnableSound {
 		t.Fatalf("enable_sound=false 应解析为关")
 	}
@@ -111,6 +115,22 @@ func TestLoadConfigLegacyDefaultOTKey(t *testing.T) {
 	app := NewApp()
 	if cfg := app.loadConfig(); cfg.DefaultOT != 4 {
 		t.Fatalf("defaultOT 兼容键应可读，DefaultOT=%d", cfg.DefaultOT)
+	}
+}
+
+// animation_speed：默认 100；0 视为未配置回默认；越界夹取到 10-200。
+func TestLoadConfigAnimationSpeedClamp(t *testing.T) {
+	withConfigDir(t, "")
+	if cfg := NewApp().loadConfig(); cfg.AnimationSpeed != 100 {
+		t.Fatalf("animation_speed 默认应为 100, got %d", cfg.AnimationSpeed)
+	}
+	withConfigDir(t, "animation_speed = 0\n")
+	if cfg := NewApp().loadConfig(); cfg.AnimationSpeed != 100 {
+		t.Fatalf("animation_speed=0 应回退默认 100, got %d", cfg.AnimationSpeed)
+	}
+	withConfigDir(t, "animation_speed = 500\n")
+	if cfg := NewApp().loadConfig(); cfg.AnimationSpeed != 200 {
+		t.Fatalf("animation_speed=500 应夹到 200, got %d", cfg.AnimationSpeed)
 	}
 }
 

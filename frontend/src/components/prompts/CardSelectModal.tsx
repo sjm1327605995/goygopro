@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { CardTile } from './CardTile.tsx';
 import type { SelectCard } from './CardTile.tsx';
 import { useCardSelection } from './useCardSelection.ts';
+import { duelStore } from '../../duel/store.ts';
 import { sysString } from '../../domain/sys_strings.ts';
 
 // 原版 wCardSelect/wCardDisplay（game.cpp:578-600）：窗口 (320,100)-(1000,400)
@@ -15,7 +17,7 @@ const zoneLabel = (loc: unknown): string => {
   return id ? (sysString(id) || '') : '';
 };
 
-export function CardSelectModal({ title, cards, min, max, cancelable, respond, external }: {
+export function CardSelectModal({ title, cards, min, max, cancelable, respond, external, hoverInspect = true, tribute: _tribute }: {
   title: string;
   cards: SelectCard[];
   min: number;
@@ -28,19 +30,46 @@ export function CardSelectModal({ title, cards, min, max, cancelable, respond, e
    * 不传则沿用本地 useCardSelection（option/chain 等单源弹窗）。
    */
   external?: { selected: number[]; toggle: (idx: number) => void };
+  /**
+   * 悬停卡图联动左侧详情面板（neos-ts 悬停预览语义）。select_option 的
+   * 卡图是选项占位（code 是选项序号，不是卡密码），调用方传 false。
+   */
+  hoverInspect?: boolean;
+  /** MSG_SELECT_TRIBUTE 的弹窗回退路径标记（场上点选由 field_selection 承担） */
+  tribute?: boolean;
 }) {
   const local = useCardSelection(min, max);
+  // 最小化（neos-ts NeosModal 的等价物）：收起卡行看场面，选择态保留
+  const [minimized, setMinimized] = useState(false);
   const selected = external ? external.selected : local.selected;
   const toggle = external ? external.toggle : local.toggle;
   const minMet = selected.length >= min;
   const done = (indices: number[] | null) => respond({ indices });
+  // 双击快选（neos-ts 同款）：单选询问（min=max=1）双击卡图直接应答
+  const quickPick = (idx: number) => { if (min === 1 && max === 1) done([idx]); };
 
   return (
-    <div className="modal-box wcs-window">
-      <div className="modal-title">{`${title}（选择 ${min}-${max} 张）`}</div>
+    <div className={`modal-box wcs-window${minimized ? ' wcs-minimized' : ''}`}>
+      <div className="modal-title wcs-titlebar">
+        <span>{`${title}（选择 ${min}-${max} 张）`}</span>
+        <button
+          id="wcs-min-btn"
+          type="button"
+          className="wcs-min-btn"
+          title={minimized ? '展开' : '最小化（查看场面）'}
+          onClick={() => setMinimized((m) => !m)}
+        >{minimized ? '□' : '—'}</button>
+      </div>
+      {!minimized && (
+      <>
       <div className="wcs-cardrow">
         {cards.map((c, idx) => (
-          <div className="wcs-cell" key={idx}>
+          <div
+            className="wcs-cell"
+            key={idx}
+            onMouseEnter={hoverInspect ? () => duelStore.inspect(c.code) : undefined}
+            onDoubleClick={() => quickPick(idx)}
+          >
             <div className="wcs-pos">{zoneLabel(c.l)}</div>
             <CardTile
               code={c.code}
@@ -68,6 +97,8 @@ export function CardSelectModal({ title, cards, min, max, cancelable, respond, e
           >确定</button>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

@@ -188,6 +188,37 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
     }
   };
 
+  // 快进到下一关键事件（neos-ts ReplayAdvanceFlag 的等价物）：中间过场
+  // 事件瞬时应用（不播 tween），关键事件本身正常 emit 让动画播放。
+  const FAST_FORWARD_TYPES = new Set([
+    'duel:new_turn', 'duel:draw',
+    'duel:summoning', 'duel:spsummoning', 'duel:flipsummoning', 'duel:set',
+    'duel:chaining', 'duel:attack',
+    'duel:damage', 'duel:recover', 'duel:pay_lpcost',
+    'duel:win',
+  ]);
+  const fastForward = () => {
+    const evs = eventsRef.current;
+    let target = -1;
+    for (let j = stepRef.current; j < evs.length; j++) {
+      if (FAST_FORWARD_TYPES.has(evs[j].type)) { target = j; break; }
+    }
+    pause();
+    if (target < 0) { // 之后没有关键事件 → 一路瞬时到终局
+      while (stepRef.current < evs.length) {
+        emitEvent(evs[stepRef.current], true);
+        setStep(stepRef.current + 1);
+      }
+      return;
+    }
+    while (stepRef.current < target) {
+      emitEvent(evs[stepRef.current], true);
+      setStep(stepRef.current + 1);
+    }
+    emitEvent(evs[target], false);
+    setStep(target + 1);
+  };
+
   const seek = (target: number): void => {
     const stage = stageRef.current;
     const t = Math.max(0, Math.min(target, eventsRef.current.length));
@@ -436,7 +467,16 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
+            {/* 快进到下一关键事件（召唤/连锁/攻击/LP 变动/回合/胜负）——
+                neos-ts 按消息类型步进的等价物 */}
+            <UiButton
+              id="replay-fastforward-btn"
+              style={{ width: '110px' }}
+              title="快进到下一关键事件"
+              onClick={fastForward}
+              disabled={!stageReady || currentStep >= events.length}
+            >快进 ⏩</UiButton>
             <GfwSelect
               aria-label="回放速度"
               width={90}

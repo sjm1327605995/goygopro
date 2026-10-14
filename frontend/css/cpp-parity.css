@@ -47,7 +47,7 @@
 :is(#app,#root) .duel-stage .phase-buttons { position:relative; width:375px; height:20px; display:block; }
 :is(#app,#root) .duel-stage .phase-btn { position:absolute; top:0; left:0; width:50px; height:20px; font-size:12px; padding:0; }
 :is(#app,#root) .duel-stage #phase-status { cursor:default; opacity:1; }
-:is(#app,#root) .duel-stage .phase-banner { left:660px; top:290px; transform:translate(-50%,-50%); color:#fff; font-size:48px; text-shadow:2px 2px #000; animation:none; }
+:is(#app,#root) .duel-stage .phase-banner { right:auto; bottom:auto; color:#fff; font-size:48px; }
 :is(#app,#root) .duel-stage .turn-block { position:fixed; left:632px; top:10px; width:56px; height:40px; transform:none; }
 :is(#app,#root) .duel-stage #player-panel { left:329px; top:10px; width:300px; }
 :is(#app,#root) .duel-stage #opponent-panel { left:691px; right:auto; top:10px; width:300px; }

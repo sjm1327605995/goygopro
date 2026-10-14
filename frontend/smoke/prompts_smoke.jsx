@@ -21,6 +21,7 @@ import HintBar from '../src/components/HintBar.tsx';
 import CardPreviewPanel from '../src/components/CardPreviewPanel.tsx';
 import RightControls from '../src/components/RightControls.tsx';
 import BattleOverlay from '../src/components/BattleOverlay.tsx';
+import ActionPopup from '../src/components/ActionPopup.tsx';
 // 弹窗原版样式（视觉断言需要真样式表）
 import '../css/style.css';
 import '../css/duel-original.css';
@@ -59,6 +60,7 @@ root.render(
     <CardPreviewPanel />
     <RightControls onLeaveObserver={() => observerLeaves.push(1)} />
     <BattleOverlay />
+    <ActionPopup />
   </React.Fragment>
   </UiRoot>
 );
@@ -574,6 +576,140 @@ const run = async () => {
   manager.handlePlayerAction('phase_change', 'EP');
   r = await waitResp();
   assert('battleToEP', r.kind === 'battle' && r.idx === 0 && r.cmdType === 3, JSON.stringify(r));
+
+  // ---- 连锁询问期右键 = 取消（原版 CancelOrFinish：非强制连锁右键等价
+  //    于点「否」/「取消」）----
+  eventBus.emit('duel:select_chain', { player: 0, forced: false, chains: [{ code: 89631139, c: 0, l: 0x8, s: 1, desc: 0 }] });
+  await waitForModal('#modal-btn-yes');
+  document.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  r = await waitResp();
+  await waitModalClosed();
+  assert('chainRightClickDeclinesSingle', r.kind === 'I' && r.v === -1, JSON.stringify(r));
+
+  // 多候选连锁弹窗：取消钮应答 -1（此前取消不发包，对局会干等）
+  eventBus.emit('duel:select_chain', { player: 0, forced: false, chains: [
+    { code: 89631139, c: 0, l: 0x8, s: 1, desc: 0 },
+    { code: 46986414, c: 0, l: 0x2, s: 0, desc: 0 },
+  ] });
+  await waitForModal('#modal-select-cancel');
+  overlay().querySelector('#modal-select-cancel').click();
+  r = await waitResp();
+  await waitModalClosed();
+  assert('chainModalCancelSendsDecline', r.kind === 'I' && r.v === -1, JSON.stringify(r));
+
+  // 多候选连锁弹窗：右键同样应答 -1
+  eventBus.emit('duel:select_chain', { player: 0, forced: false, chains: [
+    { code: 89631139, c: 0, l: 0x8, s: 1, desc: 0 },
+    { code: 46986414, c: 0, l: 0x2, s: 0, desc: 0 },
+  ] });
+  await waitForModal('#modal-select-cancel');
+  document.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  r = await waitResp();
+  await waitModalClosed();
+  assert('chainRightClickDeclinesMulti', r.kind === 'I' && r.v === -1, JSON.stringify(r));
+
+  // ---- 场上卡的「发动」菜单（原版 ShowMenu cmdFlag 的 ACTIVATE 位）：
+  //    idlecmd 的可发动条目按格匹配 → ActionPopup → idx 精确应答 ----
+  eventBus.emit('duel:select_idlecmd', {
+    player: 0, summon: [], spsummon: [], repos: [], mset: [], sset: [],
+    activate: [{ code: 89631139, c: 0, l: 0x4, s: 0, desc: 0, idx: 2 }],
+    toBP: 0, toEP: 1, shuffle: 0
+  });
+  await manager.onFieldCardClick(300, 300, { slot: { player: 0, loc: 'mzone', seq: 0 }, cardCode: 89631139 });
+  await waitFor(() => document.querySelectorAll('#action-popup .action-btn').length === 1);
+  assert('fieldActivateOffered', document.querySelector('#action-popup .action-btn').innerText === '发动',
+    document.querySelector('#action-popup .action-btn') && document.querySelector('#action-popup .action-btn').innerText);
+  document.querySelector('#action-popup .action-btn').click();
+  r = await waitResp();
+  assert('fieldActivateRespondsByIdx', r.kind === 'idle' && r.idx === 2 && r.cmdType === 5, JSON.stringify(r));
+
+  // 同卡多效果：按 desc 解析各列一项（原版 ShowSelectOption 的平铺）
+  WailsBridge.resolveDesc = async (id) => (id === 111 ? '效果甲' : id === 222 ? '效果乙' : '');
+  eventBus.emit('duel:select_idlecmd', {
+    player: 0, summon: [], spsummon: [], repos: [], mset: [], sset: [],
+    activate: [
+      { code: 89631139, c: 0, l: 0x4, s: 0, desc: 111, idx: 2 },
+      { code: 89631139, c: 0, l: 0x4, s: 0, desc: 222, idx: 3 },
+    ],
+    toBP: 0, toEP: 1, shuffle: 0
+  });
+  await manager.onFieldCardClick(300, 300, { slot: { player: 0, loc: 'mzone', seq: 0 }, cardCode: 89631139 });
+  await waitFor(() => document.querySelectorAll('#action-popup .action-btn').length === 2);
+  const actLabels = [...document.querySelectorAll('#action-popup .action-btn')].map((b) => b.innerText);
+  assert('multiEffectOptionsLabeled', actLabels.includes('发动：效果甲') && actLabels.includes('发动：效果乙'),
+    actLabels.join('|'));
+  [...document.querySelectorAll('#action-popup .action-btn')].find((b) => b.innerText.includes('效果乙')).click();
+  r = await waitResp();
+  assert('multiEffectRespondsPickedIdx', r.kind === 'idle' && r.idx === 3 && r.cmdType === 5, JSON.stringify(r));
+  WailsBridge.resolveDesc = async () => '';
+
+  // ---- 战阶手牌二速（battlecmd activate 的手牌条目 → 战阶应答 cmdType 0）----
+  eventBus.emit('duel:select_battlecmd', {
+    player: 0,
+    activate: [{ code: 23434538, c: 0, l: 0x2, s: 0, desc: 0, idx: 1 }],
+    attack: [], toM2: 1, toEP: 1
+  });
+  const handOpts = await manager.getHandOptions(23434538, 0);
+  assert('battleHandActivateOffered', handOpts.length === 1 && handOpts[0].label === '发动' && handOpts[0].idx === 1,
+    JSON.stringify(handOpts));
+  manager.handlePlayerAction('activate', { code: 23434538, seq: 0, idx: 1 });
+  r = await waitResp();
+  assert('battleHandActivateResponds', r.kind === 'battle' && r.idx === 1 && r.cmdType === 0, JSON.stringify(r));
+
+  // ---- 堆区条目的 spsummon idx 精确应答（CardListOverlay 点选路径）----
+  eventBus.emit('duel:select_idlecmd', {
+    player: 0, summon: [],
+    spsummon: [{ code: 89631139, c: 0, l: 0x10, s: 0, idx: 4 }],
+    repos: [], mset: [], sset: [], activate: [],
+    toBP: 0, toEP: 1, shuffle: 0
+  });
+  manager.handlePlayerAction('spsummon', { code: 89631139, idx: 4 });
+  r = await waitResp();
+  assert('pileSpsummonRespondsByIdx', r.kind === 'idle' && r.idx === 4 && r.cmdType === 1, JSON.stringify(r));
+
+  // ---- 选卡弹窗：悬停联动左侧详情（neos-ts 悬停预览语义）+ 最小化/还原
+  //    （neos-ts NeosModal：收起卡行看场面，选择态保留）----
+  eventBus.emit('duel:select_card', {
+    player: 0, cancelable: true, min: 1, max: 2,
+    cards: [
+      { code: 89631139, c: 0, l: 0x10, s: 0 },
+      { code: 46986414, c: 0, l: 0x10, s: 1 },
+    ],
+  });
+  await waitForModal('.card-tile');
+  overlay().querySelectorAll('.wcs-cell')[0].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  await waitFor(() => duelStore.getState().inspection && duelStore.getState().inspection.code === 89631139);
+  assert('selectHoverInspects', duelStore.getState().inspection && duelStore.getState().inspection.code === 89631139);
+  // 先选一张再收起：选择态保留、卡行消失
+  overlay().querySelectorAll('.card-tile')[0].click();
+  overlay().querySelector('#wcs-min-btn').click();
+  await waitFor(() => !overlay().querySelector('.wcs-cardrow'));
+  assert('selectMinimizes', !overlay().querySelector('.wcs-cardrow')
+    && !!overlay().querySelector('.wcs-window.wcs-minimized'));
+  overlay().querySelector('#wcs-min-btn').click();
+  await waitFor(() => overlay().querySelector('.wcs-cardrow'));
+  assert('selectRestoresKeepingSelection', overlay().querySelector('#select-count-text').textContent.includes('1 / 2'),
+    overlay().querySelector('#select-count-text') && overlay().querySelector('#select-count-text').textContent);
+  // 选满第 2 张自动应答收场（store cardSelect 路径）
+  overlay().querySelectorAll('.card-tile')[1].click();
+  r = await waitResp();
+  await waitModalClosed();
+  assert('minimizeFlowSelectResponse', r.kind === 'card' && JSON.stringify(r.indices) === '[0,1]', JSON.stringify(r));
+
+  // ---- 双击快选（neos-ts 同款）：min=max=1 的询问双击卡图直接应答；
+  //    select_option 的占位 code（选项序号）不进详情联动 ----
+  WailsBridge.resolveDesc = async (id) => (id === 101 ? '选项一' : id === 102 ? '选项二' : '');
+  eventBus.emit('duel:select_option', { player: 0, options: [101, 102] });
+  await waitForModal('.card-tile');
+  overlay().querySelectorAll('.wcs-cell')[1].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  await new Promise((res) => setTimeout(res, 50));
+  assert('optionHoverSkipsInspect', duelStore.getState().inspection && duelStore.getState().inspection.code === 89631139,
+    JSON.stringify(duelStore.getState().inspection));
+  overlay().querySelectorAll('.wcs-cell')[1].dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  r = await waitResp();
+  await waitModalClosed();
+  assert('optionDoubleClickQuickPick', r.kind === 'I' && r.v === 1, JSON.stringify(r));
+  WailsBridge.resolveDesc = async () => '';
 
   // ---- MSG_SELECT_PLACE 自动落点：automonsterpos=1 时怪兽区询问按原版
   // 优先级代答（duelclient.cpp:1856-1896：区内优先序 6,5,2,1,3,0,4）----

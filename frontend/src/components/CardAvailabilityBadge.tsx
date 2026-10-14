@@ -1,7 +1,8 @@
 import React from 'react';
+import {AVAIL_OCG,AVAIL_TCG,AVAIL_SC,AVAIL_CUSTOM,AVAIL_OCGTCG} from '../domain/constants.ts';
 // DrawThumb's tOT atlas: unavailable OCG/TCG (rows 0/1), available exclusives (2/3).
 export default function CardAvailabilityBadge({ot,filter,defaultOT}:{ot:number;filter:number;defaultOT:number}) {
-  const masks:Record<number,number>={4:1,5:2,6:4,7:8,8:3};
+  const masks:Record<number,number>={4:AVAIL_OCG,5:AVAIL_TCG,6:AVAIL_SC,7:AVAIL_CUSTOM,8:AVAIL_OCGTCG};
   const active=filter>=4;
   const available=!active||(filter===8?(ot&3)===3:(ot&(masks[filter]||0))!==0);
   let row=-1;

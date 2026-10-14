@@ -25,7 +25,7 @@ export function CounterModal({ title, cards, count, respond }: {
                 onClick={() => setCounts((cur) => cur.map((v, j) => (j === i && v > 0 ? v - 1 : v)))}>-</button>
               <span className="counter-val" data-idx={i} style={{ minWidth: '24px', textAlign: 'center', fontWeight: 900 }}>{counts[i]}</span>
               <button className="btn btn-secondary counter-inc" data-idx={i} style={{ padding: '2px 10px' }}
-                onClick={() => setCounts((cur) => cur.map((v, j) => (j === i && v < (c.cnt || 0) ? v + 1 : v)))}>+</button>
+                onClick={() => setCounts((cur) => cur.reduce((a,b)=>a+b,0)>=count?cur:cur.map((v, j) => (j === i && v < (c.cnt || 0) ? v + 1 : v)))}>+</button>
             </div>
           </div>
         ))}

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { createContext, useEffect, useRef, useState } from 'react';
 
 // 原版 GUI 坐标系：1024×640 设计分辨率，窗口缩放时按
 // Resize(x) = x * winW/1024、y * winH/640 非均匀整体拉伸
@@ -6,6 +6,8 @@ import React, { useEffect, useRef, useState } from 'react';
 // 子元素一律用设计像素 absolute 定位，画布随视口拉伸。
 export const DESIGN_W = 1024;
 export const DESIGN_H = 640;
+// ResizePhaseHint / ResizeWin scale their anchors, keeping text and window sizes.
+export const DesignScaleContext = createContext({ sx: 1, sy: 1 });
 
 export default function DesignSpace({ children }: { children: React.ReactNode }) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -30,7 +32,7 @@ export default function DesignSpace({ children }: { children: React.ReactNode })
         className="design-space"
         style={{ transform: `scale(${scale.sx}, ${scale.sy})` }}
       >
-        {children}
+        <DesignScaleContext.Provider value={scale}>{children}</DesignScaleContext.Provider>
       </div>
     </div>
   );

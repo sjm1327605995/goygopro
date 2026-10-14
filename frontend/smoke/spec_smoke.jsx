@@ -152,12 +152,26 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await waitFor(() => $('#ac-message').style.display === 'none', 3000);
     WailsBridge.resolveDesc = async () => '';
 
-    // --- stTip：悬停出现、移开消失、跟随坐标 ---
+    // --- stTip：悬停出现、移开消失、跟随坐标；多行信息（原版 stTip 的
+    // 攻守/星阶/种族属性行）---
+    const blueEyes = { name: '青眼白龙', type: 0x11, attack: 3000, defense: 2500, level: 8, race: 0x2000, attribute: 0x10 };
     const canvas = $('#duel-canvas-container');
-    canvas.dispatchEvent(new CustomEvent('ygo:cardhover', { detail: { code: 89631139, info: { name: '青眼白龙', type: 0x11 }, x: 400, y: 300 } }));
+    canvas.dispatchEvent(new CustomEvent('ygo:cardhover', { detail: { code: 89631139, info: blueEyes, x: 400, y: 300 } }));
     await waitFor(() => !!$('#st-tip'));
-    record('tooltip-shows-on-hover', $('#st-tip').textContent === '青眼白龙');
-    record('tooltip-monster-border', /248, 113/.test($('#st-tip').style.borderLeft));
+    record('tooltip-shows-on-hover', $('#st-tip').textContent.includes('青眼白龙'));
+    record('tooltip-original-white-block', $('#st-tip').style.background==='rgba(255, 255, 255, 0.75)'&&!$('#st-tip').style.borderLeft);
+    const tipRect=$('#st-tip').getBoundingClientRect();
+    record('tooltip-original-upper-left-position',Math.abs(tipRect.right-390)<1&&Math.abs(tipRect.bottom-290)<1);
+    record('tooltip-stat-lines', $('#st-tip').textContent.includes('3000/2500')
+      && $('#st-tip').textContent.includes('★8')
+      && $('#st-tip').textContent.includes('龙/光'));
+    // 实时值（live）优先于静态卡数据（同步后的攻守变化）
+    canvas.dispatchEvent(new CustomEvent('ygo:cardhoverend'));
+    await waitFor(() => !$('#st-tip'));
+    canvas.dispatchEvent(new CustomEvent('ygo:cardhover', { detail: { code: 89631139, info: blueEyes, live: { attack: 3800, level: 9 }, x: 400, y: 300 } }));
+    await waitFor(() => !!$('#st-tip'));
+    record('tooltip-live-stats-override', $('#st-tip').textContent.includes('3800/2500')
+      && $('#st-tip').textContent.includes('★9'));
     canvas.dispatchEvent(new CustomEvent('ygo:cardhoverend'));
     await waitFor(() => !$('#st-tip'));
     record('tooltip-hides-on-hover-end', true);
@@ -165,8 +179,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     // --- 选择进行中（store.selectHintText）：悬停 tip 首行附带选择提示 ---
     duelStore.armSelectHint('请选择要破坏的卡(1-2)');
     canvas.dispatchEvent(new CustomEvent('ygo:cardhover', { detail: { code: 89631139, info: { name: '青眼白龙', type: 0x11 }, x: 400, y: 300 } }));
-    await waitFor(() => !!$('#st-tip-select-hint'));
-    record('tooltip-shows-select-hint', $('#st-tip').textContent.includes('请选择要破坏的卡(1-2)')
+    await waitFor(() => !!$('#st-tip'));
+    record('tooltip-selection-hint-remains-separate',!$('#st-tip-select-hint')&&!$('#st-tip').textContent.includes('请选择要破坏的卡(1-2)')
       && $('#st-tip').textContent.includes('青眼白龙'));
     duelStore.disarmSelectHint();
     canvas.dispatchEvent(new CustomEvent('ygo:cardhoverend'));

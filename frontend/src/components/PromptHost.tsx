@@ -76,17 +76,38 @@ const takeSelectHintText = async (consume: boolean): Promise<string> => {
 
 export default function PromptHost() {
   const [prompt, setPrompt] = useState<Prompt | null>(null);
+  const [fieldControl,setFieldControl]=useState<{ready:boolean;cancelable:boolean;text:string}|null>(null);
+  useEffect(()=>{
+    const receive=(control:any)=>setFieldControl(control);
+    eventBus.on('ui:field_selection_control',receive);
+    return()=>eventBus.off('ui:field_selection_control',receive);
+  },[]);
+  const isFieldPrompt=(data:any,sum=false)=>!!document.getElementById('duel-canvas-container')&&[...(sum?data.select||[]:data.cards||[]),...(data.must||[])].every((c:any)=>[2,4,8].includes(c.l));
   const seqRef = useRef(0);
+  // 连锁询问的右键取消回调（原版 CancelOrFinish：非强制连锁右键 = 不连锁）
+  const chainCancelRef = useRef<(() => void) | null>(null);
   // 场上点选控制条与 cardSelect 弹窗都直接读 store 选择态
   const storeState = useSyncExternalStore(duelStore.subscribe, duelStore.getState);
   // hide_hint_button 设置变更时刷新场形态选择条
   useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
+
+  // 连锁询问进行中，右键任意处 = 取消连锁（等价于点「否」/「取消」）
+  useEffect(() => {
+    const onCtx = (e: MouseEvent) => {
+      if (!chainCancelRef.current) return;
+      e.preventDefault();
+      chainCancelRef.current();
+    };
+    document.addEventListener('contextmenu', onCtx);
+    return () => document.removeEventListener('contextmenu', onCtx);
+  }, []);
 
   useEffect(() => {
     let alive = true;
     const show = (body: React.ReactNode, kind?: string) => {
       if (!alive) return;
       seqRef.current += 1;
+      chainCancelRef.current = null; // 新弹窗顶掉旧弹窗，旧的右键取消一并作废
       setPrompt({ key: seqRef.current, body, kind });
     };
     // 应答即关弹窗（原版 hud 应答后销毁模态；下一个询问会再 show）
@@ -94,6 +115,7 @@ export default function PromptHost() {
       if (!alive) return;
       setPrompt(null);
       duelStore.disarmSelectHint();
+      chainCancelRef.current = null;
       respond(...args);
     };
     // 弹窗打开即从 store 清掉 stHintMsg（reducer 的 HINT_CLEARING 同步做；
@@ -152,6 +174,7 @@ export default function PromptHost() {
           min={1}
           max={1}
           cancelable={false}
+          hoverInspect={false}
           respond={answer(({ indices }) => { if (indices && indices.length) WailsBridge.sendResponseI(indices[0]); })}
         />,
       );
@@ -184,6 +207,8 @@ export default function PromptHost() {
             respond={answer((yes) => WailsBridge.sendResponseI(yes ? 0 : -1))}
           />,
         );
+        // 非强制单候选：右键 = 否（原版 CancelOrFinish）
+        if (!data.forced) chainCancelRef.current = answer(() => WailsBridge.sendResponseI(-1));
       } else {
         // 强制连锁没有取消按钮：发 -1 引擎只会再问一遍
         show(
@@ -193,9 +218,11 @@ export default function PromptHost() {
             min={1}
             max={1}
             cancelable={!data.forced}
-            respond={answer(({ indices }) => { if (indices && indices.length) WailsBridge.sendResponseI(indices[0]); })}
+            respond={answer(({ indices }) => { WailsBridge.sendResponseI(indices && indices.length ? indices[0] : -1); })}
           />,
         );
+        // 非强制多候选：右键 = 取消（与弹窗取消钮同语义，应答 -1）
+        if (!data.forced) chainCancelRef.current = answer(() => WailsBridge.sendResponseI(-1));
       }
     });
 
@@ -225,6 +252,7 @@ export default function PromptHost() {
       // （modal 自身会补「（选择 min-max 张）」后缀）
       const hint = await takeSelectHintText(true);
       if (hint) duelStore.armSelectHint(`${hint}(${data.min}-${data.max})`);
+      if(data.tribute&&isFieldPrompt(data))return;
       // reducer 已为非 tribute 的询问建好共享选择态：场上卡（mzone/szone）
       // 走 3D 高亮点选（duel_manager 布框），非场上卡走本弹窗；混合来源时
       // 两者并存、经 store.cardSelect.selected 同步。纯场上时不开弹窗，
@@ -232,7 +260,7 @@ export default function PromptHost() {
       // btnCancelOrFinish 的场形态）。
       const cs = duelStore.getState().cardSelect;
       if (cs && cs.kind === 'card') {
-        if (!cs.cards.some((c) => !c.onField)) return;
+        if (!cs.cards.some((c) => !c.onField)) {duelStore.setHint(hint?`${hint}(${data.min}-${data.max})`:`请选择(${data.min}-${data.max})`);return;}
         const named = await Promise.all(cs.cards.map((c) => withName({ code: c.code })));
         if (!alive) return;
         show(
@@ -249,10 +277,11 @@ export default function PromptHost() {
         return;
       }
       // tribute（MSG_SELECT_TRIBUTE）：保持原弹窗路径（不在场上点选范围）
-      const cards = await Promise.all((data.cards || []).map(withName));
+      const cards = await Promise.all((data.cards || []).map(async (c:any)=>({...c,...await withName(c)})));
       show(
         <CardSelectModal
           title={hint || '选择卡牌'}
+          tribute={!!data.tribute}
           cards={cards}
           min={data.min}
           max={data.max}
@@ -272,6 +301,7 @@ export default function PromptHost() {
 
     // MSG_SELECT_COUNTER: 每卡一个 uint16 LE（与卡片列表同序，合计 = count）
     reg('duel:select_counter', async (data) => {
+      if(isFieldPrompt(data))return;
       const cards = await Promise.all((data.cards || []).map(async (c: { code: number; cnt: number }) => ({
         ...c, name: (await withName(c)).name,
       })));
@@ -297,6 +327,7 @@ export default function PromptHost() {
       // 原版 ShowSelectSum：标题用 select_hint（client_field.cpp:1124）
       const hint = await takeSelectHintText(true);
       if (hint) duelStore.armSelectHint(hint);
+      if(isFieldPrompt(data,true))return;
       show(
         <SumSelectModal
           title={hint || '选择卡牌'}
@@ -461,6 +492,10 @@ export default function PromptHost() {
       <GameDialog open={!!prompt}>
         {prompt ? <div key={prompt.key}>{prompt.body}</div> : null}
       </GameDialog>
+      {fieldControl&&!hideHintBtns&&(fieldControl.ready||fieldControl.cancelable)&&<div id="card-select-bar" className="card-select-bar">
+        {fieldControl.ready?<button id="field-selection-finish" className="btn" onClick={()=>eventBus.emit('ui:field_selection_finish',{})}>完成</button>
+          :<button id="field-selection-cancel" className="btn" onClick={()=>eventBus.emit('ui:field_selection_cancel',{})}>取消</button>}
+      </div>}
       {/* 纯场上 select_card/unselect：不开弹窗——3D 高亮点选 + 本控制条
           （原版 stHintMsg 提示文本 + btnCancelOrFinish 的场形态） */}
       {cs && cs.cards.length > 0 && cs.cards.every((c) => c.onField) && (

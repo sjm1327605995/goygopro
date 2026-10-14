@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { WailsBridge } from '../wails_bridge.ts';
 import GfwSelect from './ui/GfwSelect.tsx';
 import UiButton from '../ui/UiButton.tsx';
@@ -25,6 +25,7 @@ export default function DeckManageModal({ deckList, onClose, onRefresh, onImport
   const [busy, setBusy] = useState(false);
   const [query,setQuery]=useState<{message:string;kind:'name'|'category'|'confirm'}|null>(null);
   const queryResolve=useRef<((value:string|null)=>void)|null>(null);
+  useEffect(()=>()=>{queryResolve.current?.(null);queryResolve.current=null;},[]);
   const ask=(message:string,kind:'name'|'category'|'confirm',initial=''):Promise<string|null>=>{
     setNameInput(initial);setTargetCategory(selCategory);setQuery({message,kind});
     return new Promise(resolve=>{queryResolve.current=resolve;});
@@ -129,9 +130,8 @@ export default function DeckManageModal({ deckList, onClose, onRefresh, onImport
     <div
       id="deck-manage-overlay"
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2200,
+        position: 'fixed', inset: 0, background: 'transparent', zIndex: 2200,
       }}
-      onClick={() => {if(!busy)onClose();}}
     >
       {/* 原版 wDeckManage（game.cpp:660-683）：(310,135)-(800,515) 490×380，
           lstCategories (10,30) 130×340 / lstDecks (150,30) 190×340 /
@@ -148,7 +148,7 @@ export default function DeckManageModal({ deckList, onClose, onRefresh, onImport
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-title">卡组管理<UiButton id="dm-close" style={{position:'absolute',right:4,top:2,width:20,height:20,padding:0}} onClick={onClose}>×</UiButton></div>
+        <div className="modal-title">卡组管理<UiButton id="dm-close" disabled={busy} style={{position:'absolute',right:4,top:2,width:20,height:20,padding:0}} onClick={onClose}>×</UiButton></div>
         <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
           {/* 左：分类列表（原版 lstCategories (10,30)-(140,370)） */}
           <div style={{ position: 'absolute', left: 0, top: '6px', width: '130px' }}>

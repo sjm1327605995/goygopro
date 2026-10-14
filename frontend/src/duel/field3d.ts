@@ -49,6 +49,7 @@ export class DuelField3D {
   };
   cardMeshes: any[] = [];
   handMeshes: [any[], any[]] = [[], []];
+  overlayMeshes: any[][][] = Array.from({length:2},()=>Array.from({length:7},()=>[]));
   duelRule = 5;
   localSeat = 0;
   hoveredCard: any = null;
@@ -123,6 +124,8 @@ export class DuelField3D {
   onCardSelectPick: ((idx: number) => void) | null = null;
   onBoardRightClick: ((x: number, y: number) => void) | null = null;
   onPileRightClick: ((player: number, pile: string) => void) | null = null;
+  /** 左键点堆区（含空堆）= 打开列表查看（原版 MSG_WAITING 点堆区的 COMMAND_LIST） */
+  onPileLeftClick: ((player: number, pile: string) => void) | null = null;
   matTexture: any = null;
   transparentMatTexture: any = null;
   matMesh: any = null;
@@ -879,12 +882,22 @@ export class DuelField3D {
   // picks up `new Tween(obj)` created without a group.
   makeTween(obj: any): any {
     const tween = new TWEEN.Tween(obj);
-    if (settingsStore.get('quick_animation')) {
-      // 快速动画（原版 chkQuickAnimation）：时长减半（TimeScale 包装更精确，
-      // 但 tween.js v25 的 group update 不支持逐组 timeScale，直接改 duration）
+    const quick = settingsStore.get('quick_animation');
+    const speed = Number(settingsStore.get('animation_speed')) || 100;
+    if (quick || speed !== 100) {
+      // 动画速度（neos-ts animation 设置，animation_speed 百分比）：按
+      // 100/speed 缩放时长；快速动画（原版 chkQuickAnimation）再封顶
+      // 200ms（TimeScale 包装更精确，但 tween.js v25 的 group update
+      // 不支持逐组 timeScale，直接改 duration）
       const origTo = tween.to.bind(tween);
-      tween.to = (props: any, duration?: number) =>
-        origTo(props, duration !== undefined ? Math.max(50, Math.round(duration / 2)) : duration);
+      tween.to = (props: any, duration?: number) => {
+        let d = duration;
+        if (d !== undefined) {
+          d = d * 100 / speed;
+          if (quick && d >= 200) d = 200;
+        }
+        return origTo(props, d);
+      };
     }
     this.tweenGroup.add(tween);
     return tween;
@@ -946,8 +959,8 @@ export class DuelField3D {
     runAttack(this, attackerPlayer, attackerSlot, targetPlayer, targetSlot, isDirect);
   }
 
-  animateDestroy(player: number, loc: string, slotIndex: number): void {
-    runDestroy(this, player, loc, slotIndex);
+  animateDestroy(mesh: any): void {
+    runDestroy(this, mesh);
   }
 
   // Removes a card mesh from its registered slot WITHOUT removing it from the
@@ -1077,6 +1090,7 @@ export class DuelField3D {
     });
     this.cardMeshes = [];
     this.handMeshes = [[], []];
+    this.overlayMeshes = Array.from({length:2},()=>Array.from({length:7},()=>[]));
     this.cardsOnField = {
       0: { mzone: [], szone: [], grave: [], banish: [], deck: [], extra: [] },
       1: { mzone: [], szone: [], grave: [], banish: [], deck: [], extra: [] }
@@ -1119,6 +1133,35 @@ export class DuelField3D {
         mesh.position.set(pose.x,pose.y,pose.z);
         mesh.rotation.set(seat===0?0.798056:-0.798056,0,0);
         if (!code) mesh.rotation.x += Math.PI;
+      });
+    }
+  }
+
+  syncOverlays(codes:number[][][]):void {
+    for(const seat of [0,1])for(let host=0;host<7;host++){
+      const meshes=this.overlayMeshes[seat][host],materials=codes[seat]?.[host]||[];
+      while(meshes.length>materials.length)this.retireMesh(meshes.pop(),true);
+      materials.forEach((code,index)=>{
+        let mesh=meshes[index];
+        if(!mesh||mesh.userData.cardCode!==code){
+          if(mesh)this.retireMesh(mesh,true);
+          mesh=this.createCardMesh(code);meshes[index]=mesh;this.scene.add(mesh);
+        }
+        mesh.userData.slot={player:seat,loc:'overlay',seq:host,material:index};
+      });
+    }
+    this.layoutOverlays();
+  }
+
+  layoutOverlays():void {
+    for(const seat of [0,1])for(let host=0;host<7;host++){
+      const parent=this.getCardMesh(seat,'mzone',host);
+      this.overlayMeshes[seat][host].forEach((mesh,index)=>{
+        mesh.visible=!!parent&&index<6;
+        if(!parent)return;
+        const position=this.getZonePosition(seat,'mzone',host),sign=seat===0?1:-1,layer=Math.min(index,5);
+        mesh.position.set(position.x+sign*(-.24+.12*layer),layer*.006,position.z+sign*.1);
+        mesh.rotation.set(0,seat===0?0:Math.PI,0);
       });
     }
   }
@@ -1654,6 +1697,11 @@ export class DuelField3D {
         // Screen coordinates let the caller position an action popup (e.g.
         // the battle-phase attack menu) right where the player clicked.
         this.onCardClick(e.clientX, e.clientY, this.hoveredCard.userData);
+      } else if (this.onPileLeftClick) {
+        // 左键点堆区（空堆或堆旁）：打开列表查看（原版 MSG_WAITING 点堆区
+        // ShowMenu(COMMAND_LIST)；堆顶卡的点击走上面 hoveredCard 分支）
+        const pile = this.pickPileZone();
+        if (pile) this.onPileLeftClick(pile.player, pile.pile);
       }
     };
     this._onContextMenu = (e: MouseEvent) => {
@@ -1739,37 +1787,36 @@ export class DuelField3D {
       if (this.hoveredCard !== mesh) {
         if (this.hoveredCard) {
           if (this.hoveredCard.userData.slot?.loc === 'hand') this.setHandHover(this.hoveredCard,false);
-          else this.makeTween(this.hoveredCard.position)
-            .to({ y: this.hoveredCard.userData.originalY || 0.05 }, 120)
-            .start();
         }
         this.hoveredCard = mesh;
         // 悬停关系图标重算（client_field.cpp SetShowMark 的触发点）
         this.onHoverChange?.(mesh);
         if (mesh.userData.slot?.loc === 'hand') this.setHandHover(mesh,true);
-        else this.makeTween(mesh.position)
-          .to({ y: (mesh.userData.originalY || 0.05) + 0.35 }, 120)
-          .start();
 
         if (this.onCardInspect && mesh.userData.cardCode) {
           this.onCardInspect(mesh.userData.cardCode, mesh.userData.cardInfo);
         }
-        // stTip 悬浮提示（原版 game.cpp:952 stTip）：由 CardTooltip 组件消费。
+        // 悬停连接怪 → 互连区域高亮。
+        this.updateLinkedZones();
+      }
+        // stTip tracks movement even while the same card remains hovered.
         this.container.dispatchEvent(new CustomEvent('ygo:cardhover', {
           detail: {
             code: mesh.userData.cardCode,
             info: mesh.userData.cardInfo,
+            // 场上实时数值（syncLinkData 写入，DrawStatus 同源）：tooltip 的
+            // 攻守/星阶优先用它；手牌/堆区等无实时值的区域为 undefined
+            live: {
+              attack: mesh.userData.attack, defense: mesh.userData.defense,
+              level: mesh.userData.level, rank: mesh.userData.rank,
+              link: mesh.userData.link,
+            },
             x: this._lastClientX, y: this._lastClientY,
+            location:mesh.userData.slot?.loc,
           },
         }));
-        // 悬停连接怪 → 互连区域高亮（原版 DrawBackGround 的 DrawLinkedZones 分支）
-        this.updateLinkedZones();
-      }
     } else if (this.hoveredCard) {
       if (this.hoveredCard.userData.slot?.loc === 'hand') this.setHandHover(this.hoveredCard,false);
-      else this.makeTween(this.hoveredCard.position)
-        .to({ y: this.hoveredCard.userData.originalY || 0.05 }, 120)
-        .start();
       this.hoveredCard = null;
       this.onHoverChange?.(null);
       this.container.dispatchEvent(new CustomEvent('ygo:cardhoverend'));
@@ -1799,6 +1846,7 @@ export class DuelField3D {
     if (this.disposed) return;
     requestAnimationFrame(() => this.animate());
     this.tweenGroup.update();
+    this.layoutOverlays();
     // 原版 attack.png 标记上下浮动（drawing.cpp atkdy 正弦）、
     // act.png 图标匀速自旋（原版 act_rot.Z 每帧 +0.02）
     const t = performance.now();

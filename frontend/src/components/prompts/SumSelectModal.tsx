@@ -1,6 +1,7 @@
 import { CardTile } from './CardTile.tsx';
 import type { SelectCard } from './CardTile.tsx';
 import { useCardSelection } from './useCardSelection.ts';
+import {fieldSelectionReady,canPickFieldCard,sumValues,type FieldSelection} from '../../duel/field_selection.ts';
 
 /** sum-limited selection（MSG_SELECT_SUM）。sumMode 0 = 恰好 acc（超量/链接），
  *  1 = 至少 acc（上级召唤/仪式）；must 卡已锁定只展示 */
@@ -14,17 +15,16 @@ export function SumSelectModal({ title, cards, must, acc, min, max, sumMode, res
   sumMode: number;
   respond: (selected: number[]) => void;
 }) {
-  const { selected, toggle, minMet } = useCardSelection(min, max);
+  const { selected, toggle } = useCardSelection(min, sumMode===0?max:cards.length);
+  const session:FieldSelection={kind:'sum',data:{must,acc,min,max,sumMode},cards,selected,counts:[]};
   const cardVal = (c: SelectCard): number => {
     // sum_param 打包两个备选值；一张卡按其中较小者计
-    const o1 = (Number(c.param) || 0) & 0xffff;
-    const o2 = (Number(c.param) || 0) >>> 16;
-    return o2 && o2 < o1 ? o2 : o1;
+    return Math.min(...sumValues(Number(c.param)||0));
   };
   const mustSum = must.reduce((s, c) => s + cardVal(c), 0);
   const sum = mustSum + selected.reduce((s, i) => s + cardVal(cards[i]), 0);
-  const countOk = minMet && selected.length <= max;
-  const sumOk = sumMode === 0 ? sum === acc : sum >= acc;
+  const sumOk = fieldSelectionReady(session);
+  const countOk = true;
 
   return (
     <div className="modal-box" style={{ minWidth: '560px' }}>
@@ -50,7 +50,7 @@ export function SumSelectModal({ title, cards, must, acc, min, max, sumMode, res
             name={c.name}
             className={`sum-card${selected.includes(idx) ? ' selected' : ''}`}
             dataAttrs={{ 'data-idx': idx }}
-            onPick={() => toggle(idx)}
+            onPick={() => {if(canPickFieldCard(session,idx))toggle(idx);}}
           >
             <span className="sum-param">{cardVal(c)}</span>
           </CardTile>

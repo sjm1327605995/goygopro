@@ -16,6 +16,8 @@ import RightControls from '../src/components/RightControls.tsx';
 import ChatOverlay from '../src/components/ChatOverlay.tsx';
 import SideDecking from '../src/components/SideDecking.tsx';
 import VictoryOverlay from '../src/components/VictoryOverlay.tsx';
+import ReplaySavePrompt from '../src/components/ReplaySavePrompt.tsx';
+import { registerCardName } from '../src/domain/card_names.ts';
 import CardListOverlay from '../src/components/CardListOverlay.tsx';
 import { installHotkeys } from '../src/duel/hotkeys.ts';
 import { settingsStore } from '../src/domain/settings.ts';
@@ -39,6 +41,7 @@ root.render(
     <SideDecking />
     {/* P5: victory modal on duel:win (replay theater would pass showVictory=false) */}
     <VictoryOverlay showVictory={true} />
+    <ReplaySavePrompt />
     {/* 波 F: F1-F8 卡片列表浮窗（A/S/D 热键全局监听在下方 installHotkeys） */}
     <CardListOverlay />
   </React.Fragment>
@@ -199,7 +202,7 @@ const run = async () => {
   await waitFor(() => $('preview-card-name').innerText === 'Decode Talker[01861629]');
   const statsEl = document.querySelector('.preview-stats');
   // textContent 保留多空格（innerText 会折叠），核对与格式串的空格一致
-  assert('previewLinkArrows', statsEl && statsEl.textContent === 'LINK-3  2300/-   [↑][↙][↘]',
+  assert('previewLinkArrows', statsEl && statsEl.textContent === '[LINK-3] 2300/-   [↑][↙][↘]',
     `got ${statsEl && statsEl.textContent}`);
   WailsBridge.getCard = origGetCard;
 
@@ -247,33 +250,36 @@ const run = async () => {
   // ---- phase banner pops on new_phase and again on win ----
   eventBus.emit('duel:new_phase', { phase: 0x04 });
   await waitFor(() => document.querySelector('.phase-banner'));
-  assert('phaseBanner', document.querySelector('.phase-banner').innerText === '主要阶段 1',
+  assert('phaseBanner', document.querySelector('.phase-banner').innerText === 'Main Phase 1',
     `got ${document.querySelector('.phase-banner').innerText}`);
   eventBus.emit('duel:win', { winner: 1, type: 1 });
-  await waitFor(() => document.querySelector('.phase-banner').innerText === '胜利！');
+  await waitFor(() => document.querySelector('.phase-banner')?.innerText === 'You Win!');
   assert('winBanner', true);
 
-  // ---- P5 VictoryOverlay: duel:win opens the victory modal (winner 1 is the
-  // local seat here → 胜利/🏆), and its exit button emits nav 'menu'. ----
-  // P3 补完：MSG_MATCH_KILL 击杀卡图 + 胜负原因（strings.conf !victory 子集）
+  // Original DrawSpec: transient title and losing player's reason, no modal.
+  await waitFor(() => $('victory-reason'));
+  assert('victoryReasonShown', $('victory-reason').innerText === '[HostPlayer] 基本分变成0');
+  assert('victoryHasNoModal', !$('victory-overlay') && !$('modal-duel-exit'));
+  registerCardName(89631139, '青眼白龙');
   eventBus.emit('duel:match_kill', { code: 89631139 });
   await waitFor(() => duelStore.getState().matchKill === 89631139);
   eventBus.emit('duel:win', { winner: 1, type: 1 });
-  await waitFor(() => $('victory-overlay'));
-  assert('victoryOverlayShown', $('victory-overlay').className.includes('active')
-    && $('victory-overlay').innerText.includes('胜利')
-    && $('victory-overlay').innerText.includes('🏆'),
-    $('victory-overlay').innerText.slice(0, 40));
-  assert('victoryReasonShown', $('victory-overlay').innerText.includes('原因：基本分变成0'),
-    $('victory-overlay').innerText.slice(0, 60));
-  await waitFor(() => !!document.querySelector('#match-kill-card img'));
-  const killImg = document.querySelector('#match-kill-card img');
-  assert('matchKillCardShown', killImg.src === FAKE_PIC, killImg.src.slice(0, 40));
-  const navEvents = [];
-  eventBus.on('nav', (dest) => navEvents.push(dest));
-  $('modal-duel-exit').click();
-  await waitFor(() => navEvents.includes('menu'));
-  assert('victoryExitNavigates', navEvents.includes('menu'));
+  await waitFor(() => $('victory-reason')?.innerText === '由于「青眼白龙」获得比赛胜利');
+  assert('matchKillTextShown', !$('match-kill-card'));
+  eventBus.emit('single:replay', { name: 'parity-replay' });
+  await new Promise(r => setTimeout(r, 700));
+  assert('winBannerLastsBeyondPhase', document.querySelector('.phase-banner')?.innerText === 'You Win!');
+  assert('replayWaitsForWinBanner', !$('replay-save-prompt'));
+  await waitFor(() => $('replay-save-prompt'));
+  assert('winBannerExpiresBeforeReplay', !document.querySelector('.phase-banner') && !$('victory-reason'));
+  $('replay-save-cancel').click();
+  eventBus.emit('duel:win', { winner: 2, type: 1 });
+  await waitFor(() => document.querySelector('.phase-banner')?.innerText === 'Draw Game');
+  assert('drawResultPreserved', duelStore.getState().win.winner === 2 && !$('victory-reason'));
+  duelStore.toggleViewSwap();
+  await waitFor(() => duelStore.getState().viewSwapped);
+  assert('drawSurvivesViewSwap', duelStore.getState().win.winner === 2);
+  duelStore.toggleViewSwap();
 
   // ---- P4 RightControls: chain mode buttons are single-select toggles
   // (same key again cancels — gframe isPushButton semantics, no packets). ----
@@ -318,17 +324,26 @@ const run = async () => {
   assert('sideDeckingHiddenAfterStart', !$('side-decking'));
 
   // ---- 波 F: A/S/D 按住连锁键（control_mode==0，按住生效、松开清空；
-  // 不发包只改本地 chain_prefs，与 gframe event_handler.cpp:1734 一致） ----
+  // 不发包只改本地 chain_prefs。原版 event_handler.cpp:1740-1765：
+  // A=always_chain / S=ignore_chain / D=chain_when_avail） ----
   const keydown = (k, init = {}) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, ...init }));
   const keyup = (k, init = {}) => window.dispatchEvent(new KeyboardEvent('keyup', { key: k, bubbles: true, ...init }));
   keydown('A');
-  await waitFor(() => chainPrefs.get() === 'ignore');
-  assert('hotkeyAHold', chainPrefs.get() === 'ignore'
-    && $('chain-btn-ignore').className.includes('pressed'),
+  await waitFor(() => chainPrefs.get() === 'always');
+  assert('hotkeyAHold', chainPrefs.get() === 'always'
+    && $('chain-btn-always').className.includes('pressed'),
     `mode=${chainPrefs.get()}`);
   keyup('A');
   await waitFor(() => chainPrefs.get() === null);
   assert('hotkeyARelease', chainPrefs.get() === null);
+
+  keydown('s');
+  await waitFor(() => chainPrefs.get() === 'ignore');
+  assert('hotkeySHold', chainPrefs.get() === 'ignore'
+    && $('chain-btn-ignore').className.includes('pressed'),
+    `mode=${chainPrefs.get()}`);
+  keyup('s');
+  await waitFor(() => chainPrefs.get() === null);
 
   keydown('d');
   await waitFor(() => chainPrefs.get() === 'whenAvail');
@@ -342,6 +357,29 @@ const run = async () => {
   await new Promise((r) => setTimeout(r, 30));
   assert('hotkeySRequiresKeyMouse', chainPrefs.get() === null, `mode=${chainPrefs.get()}`);
   keyup('s');
+
+  // ---- 鼠标模式（control_mode==1）：场地内按住左键=全部连锁、右键=忽略
+  // 连锁、松开即清（event_handler.cpp:1709-1730 EMIE_LMOUSE/RMOUSE_PRESSED_DOWN） ----
+  const duelCanvas = document.createElement('div');
+  duelCanvas.id = 'duel-canvas-container';
+  document.body.appendChild(duelCanvas);
+  duelCanvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+  await waitFor(() => chainPrefs.get() === 'always');
+  assert('mouseHoldLeftAlwaysChain', chainPrefs.get() === 'always', `mode=${chainPrefs.get()}`);
+  window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
+  await waitFor(() => chainPrefs.get() === null);
+  duelCanvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 2 }));
+  await waitFor(() => chainPrefs.get() === 'ignore');
+  assert('mouseHoldRightIgnoreChain', chainPrefs.get() === 'ignore', `mode=${chainPrefs.get()}`);
+  window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 2 }));
+  await waitFor(() => chainPrefs.get() === null);
+  // control_mode==0 时鼠标按住不影响连锁偏好（仅键盘三键）
+  settingsStore.set('control_mode', 0);
+  duelCanvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+  await new Promise((r) => setTimeout(r, 30));
+  assert('mouseHoldRequiresMouseMode', chainPrefs.get() === null, `mode=${chainPrefs.get()}`);
+  window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
+  duelCanvas.remove();
   settingsStore.set('control_mode', 0);
 
   // 输入框焦点时全部跳过（聊天输入不被劫持）
@@ -362,6 +400,26 @@ const run = async () => {
   assert('f1GraveList', $('card-display-title').innerText === '墓地(1)'
     && document.querySelectorAll('.card-display-item').length === 1,
     `title=${$('card-display-title') && $('card-display-title').innerText}`);
+
+  // 堆区可发动卡（cmdActions = 原版 ClientCard::cmdFlag 的 ACTIVATE 位）：
+  // 列表内该卡高亮可点，点击弹 ActionPopup 带精确 idx
+  // （本页 playerType=1：本方显示座 0 = 引擎 seat 1，条目的 c 域对引擎座标）
+  eventBus.emit('duel:select_idlecmd', {
+    player: 1, summon: [], spsummon: [], repos: [], mset: [], sset: [],
+    activate: [{ code: 89631139, c: 1, l: 0x10, s: 0, desc: 0, idx: 3 }],
+    toBP: 0, toEP: 1, shuffle: 0
+  });
+  await waitFor(() => document.querySelector('.card-display-item.card-display-actionable'));
+  assert('pileActionableHighlighted', !!document.querySelector('.card-display-item.card-display-actionable'));
+  document.querySelector('.card-display-item.card-display-actionable').click();
+  await waitFor(() => duelStore.getState().actionPopup);
+  const pileAct = duelStore.getState().actionPopup.actions[0];
+  assert('pileActivateOffered', pileAct.action === 'activate' && pileAct.idx === 3, JSON.stringify(pileAct));
+  duelStore.closeActionPopup();
+  // 新阶段清除 cmdActions → 高亮消失（原版 ClearCommandFlag 时机）
+  eventBus.emit('duel:new_phase', { player: 0, phase: 0x2 });
+  await waitFor(() => !document.querySelector('.card-display-actionable'));
+  assert('pileActionableClearedOnNewPhase', !document.querySelector('.card-display-actionable'));
 
   // 额外卡组：怪兽从 mzone 回到 extra（LOC_EXTRA=0x40 进堆区）
   eventBus.emit('duel:move', {

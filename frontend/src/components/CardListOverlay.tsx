@@ -12,6 +12,8 @@
 import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { eventBus, WailsBridge } from '../wails_bridge.ts';
 import { duelStore } from '../duel/store.ts';
+import { bottomEngineSeat } from '../domain/reducer.ts';
+import { LOC_GRAVE, LOC_BANISH, LOC_EXTRA } from '../domain/constants.ts';
 import { CardTile } from './prompts/CardTile.tsx';
 
 export type ShowPile = 'grave' | 'banish' | 'extra' | 'overlay';
@@ -27,6 +29,31 @@ const PILE_LABEL: Record<ShowPile, string> = {
   extra: '额外',
   overlay: '叠放',
 };
+
+// 堆区名 → ocgcore LOCATION 位（cmdActions 条目的 l 域匹配用）
+const PILE_LOC: Record<string, number> = {
+  grave: LOC_GRAVE,
+  banish: LOC_BANISH,
+  extra: LOC_EXTRA,
+};
+
+/**
+ * 堆区卡的可操作条目（原版 ClientCard::cmdFlag 的 ACTIVATE/SPSUMMON 位，
+ * event_handler.cpp:1269-1302 点堆区弹「发动/特殊召唤/查看」菜单的列表形态）：
+ * 指令询问进行中（store.cmdActions）且条目座标命中该堆区该序号时返回动作。
+ */
+function pileCardActions(cmdActions: any, engineSeat: number, pile: ShowPile, seq: number): any[] {
+  if (!cmdActions) return [];
+  const loc = PILE_LOC[pile];
+  if (!loc) return [];
+  const acts = (cmdActions.activate || [])
+    .filter((a: any) => a.c === engineSeat && a.l === loc && a.s === seq)
+    .map((a: any) => ({ kind: 'activate', entry: a }));
+  const sps = (cmdActions.spsummon || [])
+    .filter((a: any) => a.c === engineSeat && a.l === loc && a.s === seq)
+    .map((a: any) => ({ kind: 'spsummon', entry: a }));
+  return [...acts, ...sps];
+}
 
 export default function CardListOverlay() {
   const state = useSyncExternalStore(duelStore.subscribe, duelStore.getState);
@@ -90,6 +117,27 @@ export default function CardListOverlay() {
   if (!open) return null;
   const opponent = open.player === 1;
   const title = `${opponent ? '对方' : ''}${PILE_LABEL[open.pile]}(${cards.length})`;
+  // 显示座 → 引擎 seat（cmdActions 条目的 c 域是引擎座标）
+  const bottom = bottomEngineSeat(state);
+  const engineSeat = open.player === 0 ? bottom : 1 - bottom;
+
+  // 可动作卡的点击：构建 ActionPopup 选项（发动含多效果时解析 desc 文本）
+  const onCardAction = async (e: React.MouseEvent, actions: any[]) => {
+    const opts: any[] = [];
+    const acts = actions.filter((a) => a.kind === 'activate');
+    for (const a of acts) {
+      let label = '发动';
+      if (acts.length > 1 && a.entry.desc) {
+        const text = await WailsBridge.resolveDesc(a.entry.desc);
+        if (text) label = `发动：${text}`;
+      }
+      opts.push({ label, action: 'activate', code: a.entry.code, idx: a.entry.idx });
+    }
+    for (const a of actions.filter((x) => x.kind === 'spsummon')) {
+      opts.push({ label: '特殊召唤', action: 'spsummon', code: a.entry.code, idx: a.entry.idx });
+    }
+    if (opts.length) duelStore.openActionPopup(e.clientX, e.clientY, opts);
+  };
 
   // 原版 wCardDisplay（game.cpp:590-600）：窗口 (320,100)-(1000,400) 680×300，
   // 每卡一列 = 位置标签 120×20 + 卡图 120×170（列距 125），>5 张横向滚动，
@@ -100,17 +148,22 @@ export default function CardListOverlay() {
       <div id="card-display-list" className="wcs-cardrow">
         {cards.length === 0
           ? <div className="card-display-empty">（空）</div>
-          : cards.map((code, i) => (
+          : cards.map((code, i) => {
+            // 列表倒序展示（最新进的排最前）；条目匹配的 s 是堆内正序序号
+            const actions = pileCardActions(state.cmdActions, engineSeat, open.pile, cards.length - 1 - i);
+            return (
             <div className="wcs-cell" key={`${code}-${i}`}>
               <div className="wcs-pos"></div>
               <div
-                className="card-display-item"
+                className={`card-display-item${actions.length ? ' card-display-actionable' : ''}`}
                 onMouseEnter={() => duelStore.inspect(code)}
+                onClick={actions.length ? (e) => void onCardAction(e, actions) : undefined}
               >
                 <CardTile code={code} name={names[code] || `#${code}`} />
               </div>
             </div>
-          ))}
+            );
+          })}
       </div>
       <div className="wcs-footer">
         <span />

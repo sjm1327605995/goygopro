@@ -25,6 +25,9 @@ type AppConfig struct {
 	WaitChain       int `conf:"waitchain"`      // 有可连锁时等待
 	ShowChain       int `conf:"showchain"`      // 默认显示连锁
 	QuickAnimation  int `conf:"quick_animation"`
+	// 动画速度（neos-ts animation 设置的等价物；原版无此键，项目扩展）：
+	// 百分比 10-200，100=原速；前端按 100/value 缩放 tween 时长
+	AnimationSpeed  int `conf:"animation_speed"`
 	AutoSaveReplay  int `conf:"auto_save_replay"`
 	DrawSingleChain int `conf:"draw_single_chain"`
 
@@ -72,6 +75,7 @@ type AppConfig struct {
 func defaultConfig() AppConfig {
 	return AppConfig{
 		AutoSpellPos:           1,
+		AnimationSpeed:         100,
 		DrawFieldSpell:         1,
 		SeparateClearButton:    1,
 		ResizeSelectWindow:     1,
@@ -171,6 +175,17 @@ func buildConfigSetters() map[string]func(*AppConfig, string) {
 			fv.SetInt(int64(clampInt(int(fv.Int()), 0, 100)))
 		}
 	}
+	// animation_speed：百分比 10-200（0 视为未配置回默认 100）
+	{
+		inner := setters["animation_speed"]
+		setters["animation_speed"] = func(cfg *AppConfig, val string) {
+			inner(cfg, val)
+			if cfg.AnimationSpeed == 0 {
+				cfg.AnimationSpeed = 100
+			}
+			cfg.AnimationSpeed = clampInt(cfg.AnimationSpeed, 10, 200)
+		}
+	}
 	setters["defaultot"] = setters["default_ot"]
 	return setters
 }
@@ -230,6 +245,7 @@ func configToMap(cfg AppConfig) map[string]interface{} {
 		"waitchain":                cfg.WaitChain,
 		"showchain":                cfg.ShowChain,
 		"quick_animation":          cfg.QuickAnimation,
+		"animation_speed":          cfg.AnimationSpeed,
 		"auto_save_replay":         cfg.AutoSaveReplay,
 		"draw_single_chain":        cfg.DrawSingleChain,
 		"mute_opponent":            cfg.MuteOpponent,

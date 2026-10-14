@@ -7,43 +7,38 @@
  *   - battlecmd：M2 → RespondBattleCmd(0, 2)，EP → RespondBattleCmd(0, 3)
  * 横幅在 duel:new_phase / duel:win 时弹一次 48pt 大字（原版 showcard 动画）。
  */
-import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { duelStore } from '../duel/store.ts';
 import { WailsBridge } from '../wails_bridge.ts';
-import { PHASE_LABELS } from '../domain/sys_strings.ts';
+import { phaseBannerText, winBannerText, winReason, PHASE_BANNER_MS, WIN_BANNER_MS } from '../domain/duel_banners.ts';
+import { settingsStore } from '../domain/settings.ts';
+import { DesignScaleContext } from '../ui/DesignSpace.tsx';
 import { PHASE_ABBR } from '../domain/original_phases.ts';
-import {
-  PHASE_DRAW, PHASE_STANDBY, PHASE_MAIN1, PHASE_BATTLE_START,
-  PHASE_BATTLE, PHASE_MAIN2, PHASE_END,
-} from '../domain/constants.ts';
-
-function phaseName(phase: number): string {
-  if (phase & PHASE_BATTLE_START) return PHASE_LABELS[PHASE_BATTLE_START];
-  for (const bit of [PHASE_DRAW, PHASE_STANDBY, PHASE_MAIN1, PHASE_BATTLE_START, PHASE_MAIN2, PHASE_END]) {
-    if (phase & bit) return PHASE_LABELS[bit];
-  }
-  return '';
-}
+import { PHASE_BATTLE, PHASE_MAIN2, PHASE_END } from '../domain/constants.ts';
 
 export default function PhaseStrip({ bannerOnly = false }: { bannerOnly?: boolean } = {}) {
   const state = useSyncExternalStore(duelStore.subscribe, duelStore.getState);
+  const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
+  const scale = useContext(DesignScaleContext);
   const [banner, setBanner] = useState<{ key: number; text: string } | null>(null);
   const bannerSeq = useRef(0);
 
   const phase = state.phase;
   const win = state.win;
   useEffect(() => {
-    const text = win
-      ? (win.winner === 0 ? '胜利！' : '败北…')
-      : phaseName(phase);
-    if (!text) return undefined;
+    const text = win ? winBannerText(win.winner) : phaseBannerText(phase);
+    const duration = win ? Math.max(0, WIN_BANNER_MS - (Date.now() - win.announcedAt)) : PHASE_BANNER_MS;
+    if (!text || !duration) {
+      setBanner(null);
+      return undefined;
+    }
     bannerSeq.current += 1;
     const entry = { key: bannerSeq.current, text };
     setBanner(entry);
     const t = setTimeout(() => {
       // 只清理自己的横幅，避免快速连跳阶段时把新横幅吃掉
       setBanner((cur) => (cur === entry ? null : cur));
-    }, 40 * 1000 / 60);
+    }, duration);
     return () => clearTimeout(t);
   }, [phase, win]);
 
@@ -51,6 +46,17 @@ export default function PhaseStrip({ bannerOnly = false }: { bannerOnly?: boolea
   const canBP = !!prompt && prompt.mode === 'idle' && prompt.canBP;
   const canM2 = !!prompt && prompt.mode === 'battle' && prompt.canM2;
   const canEP = !!prompt && prompt.canEP;
+  const reason = win ? winReason(win.winner, win.type, state.names, state.matchKill, !!settings.hide_player_name) : '';
+  const bannerNode = banner ? (
+    <React.Fragment key={banner.key}>
+      <div className="phase-banner-anchor" style={{ transform: `scale(${1 / scale.sx}, ${1 / scale.sy})`, '--banner-enter': `${360 * scale.sx}px`, '--banner-exit': `${400 * scale.sx}px` } as React.CSSProperties}>
+        <div className={`phase-banner${win ? ' win-banner' : ''}`}>{banner.text}</div>
+      </div>
+      {win && reason && <div className="victory-reason-anchor" style={{ transform: `scale(${1 / scale.sx}, ${1 / scale.sy})` }}>
+        <div id="victory-reason" className="victory-reason">{reason}</div>
+      </div>}
+    </React.Fragment>
+  ) : null;
 
   // bannerOnly（回放剧场 compact）：原版回放也有中央大字阶段横幅
   // （DrawSpec 的 showcard 文本），但阶段条按钮/回合块不渲染——回放里
@@ -59,7 +65,7 @@ export default function PhaseStrip({ bannerOnly = false }: { bannerOnly?: boolea
   if (bannerOnly) {
     return banner ? (
       <div className="phase-strip" data-banner-only="1">
-        <div key={banner.key} className="phase-banner">{banner.text}</div>
+        {bannerNode}
       </div>
     ) : null;
   }
@@ -103,9 +109,7 @@ export default function PhaseStrip({ bannerOnly = false }: { bannerOnly?: boolea
           >ＥＰ</button>
         </div>
       )}
-      {banner ? (
-        <div key={banner.key} className="phase-banner">{banner.text}</div>
-      ) : null}
+      {bannerNode}
     </div>
   );
 }
