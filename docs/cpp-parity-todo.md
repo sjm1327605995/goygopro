@@ -482,3 +482,127 @@
   （无悬停无图标、双向悬停互换、unhover 清除、unequip/cancel_target/
   chain_end 解除、连锁对象反向悬停），139/139 全绿；ui_smoke_suite
   14 页 558 项检查全绿；`tsc --noEmit` + 双 vite 构建 + `go build/vet` 全绿。
+
+## 对局交互优化批（参考 DarkNeos/neos-ts 2D 前端的交互盘点，落到 three.js 3D 场）
+
+调研 neos-ts（React+antd 的 YGOPro Web 复刻）的可借鉴交互并对照 gframe
+原版后实施；下列各项均以原版 event_handler.cpp 语义为准，neos-ts 作为
+Web 化形态参考。
+
+- [x] **场上卡「发动」入口**（此前只有攻击/表示形式变更，act.png 角标照画
+  但点击无菜单）：`duel_manager.onFieldCardClick` 按格匹配
+  idleCmd/battleCmd 的 activate 条目（c/l/s）加入 ActionPopup；同一卡
+  多个可发动效果按 desc 解析效果文本各列一项（原版 ShowSelectOption
+  的平铺，event_handler.cpp:375-405），应答走 idx 精确路径
+  （`respondIdleCmd(idx,5)` / `respondBattleCmd(idx,0)`）。战阶询问中
+  手牌二速效果（速攻/手坑）同步补入 getHandOptions。
+- [x] **堆区可发动卡流程**（原版点墓地/除外/额外弹「发动/特殊召唤/查看」
+  菜单，event_handler.cpp:1269-1302 的 list_command 形态）：reducer 新增
+  `cmdActions`（select_idlecmd/select_battlecmd 发布、new_phase/new_turn/
+  waiting 清除——原版 ClearCommandFlag 时机）；CardListOverlay 据此把
+  墓地/除外/额外列表里的可操作卡高亮（`.card-display-actionable` 金框），
+  点击弹 ActionPopup（发动含多效果 desc 文本、特殊召唤），应答带精确
+  idx（`handlePlayerAction` 的 activate/spsummon 新增 idx 直答路径）。
+  左键点堆区（含空堆与堆顶卡）= 打开列表查看（原版 MSG_WAITING 点堆区
+  的 COMMAND_LIST），field3d 新增 `onPileLeftClick`。
+- [x] **连锁询问期右键 = 取消**（原版 CancelOrFinish）：PromptHost 在
+  非强制连锁弹窗期间挂 document contextmenu 监听，右键应答 -1；
+  顺带修复多候选连锁弹窗「取消」按钮此前不发包导致对局干等的缺陷
+  （现在取消同样应答 -1）。
+- [x] **悬停 tooltip 多行信息**（原版 stTip，event_handler.cpp:1592-1631）：
+  卡名 + 攻守（或 LINK-n）+ ★等级/☆阶级 + 种族/属性 + 灵摆刻度 + 魔陷
+  种类行；攻守/星阶优先用场上实时值（field3d 悬停事件新增 live 载荷，
+  syncLinkData 写入的 DrawStatus 同源数据），手牌/堆区回退静态卡数据。
+- [x] **破坏音效接线**：按 MSG_MOVE 的 `reason & REASON_DESTROY(0x1)`
+  播放破坏音效。2026-10-14 复查 `duelclient.cpp:2590` 后修正为原版
+  SOUND_DESTROYED 路径，去掉额外冲击波、火花和弹跳，保留 moveCard
+  的正常移动；除外音效优先于破坏音效。
+- 验证：prompts_smoke 新增 9 断言（连锁右键单/多候选、多候选取消钮
+  应答 -1、场上发动单/多效果、战阶手牌二速、堆区特召 idx）；widgets_smoke
+  新增 3 断言（堆区高亮/点击弹动作/新阶段清除）；spec_smoke tooltip
+  断言改写为多行内容 + live 覆盖。ui_smoke_suite 14 页 607 项检查全绿；
+  `tsc --noEmit` + 双 vite 构建 + `go build/vet/test ./...` 全绿。
+- 仍未做（与 neos-ts 差距的刻意保留项）：弹窗最小化、操作历史时间线
+  （本项目日志在左侧预览面板 Log 页签）、回放按消息类型掩码步进、
+  这些属于其他前端的扩展功能，不能作为 gframe 一致性的依据。
+
+## 源码行为补齐（2026-10-14）
+
+- [x] **阶段码**：按 `ocgcore/common.h:405-407` 修正 BATTLE=0x80、
+  MAIN2=0x100、END=0x200；统一阶段标签和模拟器，避免模拟数据掩盖
+  真实引擎中的主要阶段 2 / 结束阶段误识别。
+- [x] **战斗数值**：MSG_BATTLE 实时修改攻击方与目标的攻守，立即刷新
+  DrawStatus / 悬停提示；移动宿主保留其数值，状态快照保持不可变。
+- [x] **超量素材**：QUERY_OVERLAY_CARD / MSG_MOVE 驱动 3D 叠放，位置
+  来自 `client_field.cpp:1053`，最多绘制 6 层；支持真实引擎 0x84
+  位置编码、按 pp 下标取除同名素材和随宿主移动。
+- [x] **高级场上选择**：纯手牌/场上来源的 select_tribute、select_sum、
+  select_counter 走 3D 黄色选框与直接点选；混合/堆区来源保留列表。
+  祭品支持 1/双重贡献；合计支持双备选数值、完整 31 位参数及
+  CheckSelectSum 的非冗余选择判定；指示物按精确数量自动应答。
+- [x] **原版提示**：指示物名称读 strings.conf 的 !counter；卡片详情
+  按原版类型位顺序、原始卡号/名称、星/阶/LINK 与灵摆刻度格式显示。
+  stTip 在鼠标左上角显示 0xc0 白底，选择提示留在 stHintMsg；
+  非手牌悬停不抬升，手牌洗切、移动使用独立的原版时序。
+- [x] **查询与生命周期**：异步重建场地期间保留后续权威查询；新一局
+  清空旧场面、素材与动作菜单，避免残留上一局的数据。
+
+验证入口：`tools/ui_parity_e2e.cjs`（真实鼠标）、
+`frontend/ui_parity_smoke.html`（C++ 常量/几何/应答规则）、
+`tools/ui_smoke_suite.cjs`（全部冒烟页）。这些验证源码行为与当前客户端，
+不代表已经运行原版 C++ 可执行程序进行逐像素截图差分。
+
+## 选卡弹窗交互细节批（2026-11，neos-ts NeosModal/双击快选/悬停预览的 3D 化）
+
+- [x] **选卡弹窗最小化**（neos-ts NeosModal 的等价物）：CardSelectModal
+  标题栏新增「—/□」按钮，收起卡行后只剩标题条，方便参照场面做选择；
+  选择态（本地 useCardSelection 或 store.cardSelect 外置集）在收起/展开
+  间完整保留。覆盖 select_card/select_option/连锁多候选/StoreCardSelectModal
+  全部走该组件的弹窗。
+- [x] **双击快选**：单选询问（min=max=1，select_option/连锁单选等）双击
+  卡图直接应答，省去「点选 + 确定」两步（neos-ts 同款）。
+- [x] **悬停卡图联动左侧详情**（neos-ts 悬停预览语义）：选卡弹窗卡图
+  hover 即 `duelStore.inspect`；select_option 的占位 code（选项序号而非
+  卡密码）经 `hoverInspect={false}` 排除，避免详情面板加载假卡。
+- [x] **并行批次汇合修复**：PromptHost 传入的 `tribute` 标记补进
+  CardSelectModal 签名（tsc 兼容）；widgets_smoke 误用 `duel:swap {}`
+  （MSG_SWAP 控制权交换）驱动视角交换的断言改走公开 UI 动作
+  `duelStore.toggleViewSwap()`。
+- 验证：prompts_smoke 新增 6 断言（悬停详情/最小化/还原保选择态/流程
+  收场应答/option 假 code 不联动/双击快选）。ui_smoke_suite 14 页全绿
+  （prompts 155、widgets 61、spec 26、ui_parity 53 等）；`tsc --noEmit`
+  + 双 vite 构建 + `go build/vet/test ./...` 全绿。
+- 说明：超量素材 3D 叠放（field3d syncOverlays/layoutOverlays）与
+  select_tribute/select_sum/select_counter 场上点选（field_selection.ts）
+  由同工作区并行批次完成，本批验证其 smoke 覆盖（ui_parity 的
+  overlay-six-visible-layers 等）随套件全绿。BattleOverlay（MSG_BATTLE
+  现代化对撞浮层）维持不挂载——stage_smoke 的
+  battle-does-not-add-modern-overlay 断言即项目方向：不加原版没有的 UI。
+
+## 动画速度 / 回放快进 / 鼠标模式连锁批（2026-11，neos-ts 交互盘点的第二批落地）
+
+- [x] **动画速度全局设置**（neos-ts settingStore.animation 的等价物）：新增
+  配置键 `animation_speed`（百分比 10-200，默认 100=原速；Go AppConfig
+  反射注册 + 0 回退默认 + 越界夹取），SettingsPanel 辅助页滑块，
+  field3d.makeTween 统一按 100/speed 缩放 tween 时长（与原有
+  quick_animation 200ms 封顶叠加——先缩放再封顶）。
+- [x] **回放快进：跳到下一关键事件**（neos-ts ReplayAdvanceFlag 按消息
+  类型掩码步进的等价物）：ReplayTheater 扩展面板新增「快进 ⏩」——
+  关键类型（new_turn/draw/三种召唤/set/chaining/attack/damage/recover/
+  pay_lpcost/win）之前的过场事件瞬时应用，关键事件正常播放动画；
+  之后无关键事件时一路瞬时到终局。
+- [x] **鼠标模式按住连锁**（原版 control_mode==1，event_handler.cpp:
+  1709-1730 EMIE_LMOUSE/RMOUSE_PRESSED_DOWN）：场地内（原版
+  X>300*xScale 的等价物=#duel-canvas-container 内）按住左键=全部连锁、
+  按住右键=忽略连锁，松开即清；仅改本地 chain_prefs 不发包。
+  hotkeys.installHotkeys 增加 mousedown/mouseup 监听。
+- [x] **A/S 连锁键映射修正（parity bug）**：此前 A/S 与原版相反
+  （event_handler.cpp:1740-1765：A=always_chain、S=ignore_chain、
+  D=chain_when_avail），已翻转并同步 hotkeys 注释与 widgets_smoke 断言。
+- 验证：settings_smoke 新增 2 断言（滑块存在/写回 150%）；theater_smoke
+  新增 5 断言（连续快进停 draw→draw→new_turn、过场瞬时跳到终局、画面
+  与逐步播放一致）；widgets_smoke 新增 4 断言（A 翻转、S=ignore、鼠标
+  左/右按住连锁、模式 0 不响应鼠标）；config_test 新增
+  animation_speed 解析/夹取用例。ui_smoke_suite 14 页全绿（settings 35、
+  theater 53、widgets 65）；`tsc --noEmit` + 双 vite 构建 +
+  `go build/vet/test` 全绿。

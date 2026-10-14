@@ -15,20 +15,24 @@ import { duelStore } from './store.ts';
 export function respondCardSelection(): void {
   const cs = duelStore.getState().cardSelect;
   if (!cs) return;
+  if(cs.kind==='unselect'&&!cs.selected.length)return;
+  // Clear the selection before any other store mutation. Hint cleanup notifies
+  // DuelManager too and must not re-enter its automatic response condition.
+  duelStore.endCardSelect();
+  duelStore.disarmSelectHint();
+  duelStore.setHint('');
   if (cs.kind === 'card') {
     WailsBridge.respondSelectCard([...cs.selected]);
   } else {
-    if (!cs.selected.length) return;
     WailsBridge.respondSelectUnselect(cs.selected[0]);
   }
-  duelStore.disarmSelectHint();
-  duelStore.endCardSelect();
 }
 
 export function cancelCardSelection(): void {
   const cs = duelStore.getState().cardSelect;
   if (!cs) return;
-  WailsBridge.sendResponseI(-1);
-  duelStore.disarmSelectHint();
   duelStore.endCardSelect();
+  duelStore.disarmSelectHint();
+  duelStore.setHint('');
+  WailsBridge.sendResponseI(-1);
 }

@@ -45,6 +45,26 @@ function VolumeRow({ k, label }: { k: string; label: string }) {
   );
 }
 
+// 动画速度（neos-ts animation 设置的等价物）：10-200%，100=原速
+function SpeedRow({ k, label }: { k: string; label: string }) {
+  const s = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
+  return (
+    <label className="settings-row settings-row-slider">
+      <span className="settings-row-label">{label}</span>
+      <input
+        type="range"
+        data-setting={k}
+        min={10}
+        max={200}
+        step={10}
+        value={Number(s[k]) || 100}
+        onChange={(e) => settingsStore.set(k, Number(e.target.value))}
+      />
+      <span className="settings-row-value" data-value-for={k}>{`${s[k]}%`}</span>
+    </label>
+  );
+}
+
 export default function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [tab, setTab] = useState<'system' | 'helper'>('system');
 
@@ -88,6 +108,7 @@ export default function SettingsPanel({ open, onClose }: { open: boolean; onClos
               <CheckRow k="waitchain" label="没有可连锁的卡时延迟回应" />
               <CheckRow k="showchain" label="开局默认显示所有时点" />
               <CheckRow k="quick_animation" label="加快动画效果" />
+              <SpeedRow k="animation_speed" label="动画速度" />
               <CheckRow k="auto_save_replay" label="自动保存录像" />
               <CheckRow k="draw_single_chain" label="只有连锁1也显示连锁动画" />
             </div>

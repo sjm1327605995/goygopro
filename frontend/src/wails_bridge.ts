@@ -236,6 +236,10 @@ export const WailsBridge = {
   },
 
   minimise() { if (isWails) return callWails('Minimise'); },
+  async getCounterName(counter:number):Promise<string> {
+    if(isWails)return (await callWails('GetCounterName',counter))||'？？？';
+    return counter===1?'魔力指示物':'？？？';
+  },
 
   // ---- 单人模式（wSinglePlay，menu_handler.cpp:400-411）----
 

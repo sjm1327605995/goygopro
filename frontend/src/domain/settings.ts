@@ -23,6 +23,8 @@ export const SETTINGS_DEFAULTS: Record<string, any> = {
   waitchain: 0,
   showchain: 0,
   quick_animation: 0,
+  // 动画速度百分比（10-200，100=原速；项目扩展键，neos-ts animation 设置的等价物）
+  animation_speed: 100,
   auto_save_replay: 0,
   draw_single_chain: 0,
   // 系统设置

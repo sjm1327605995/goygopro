@@ -14,6 +14,7 @@ import {
   POS_FACEUP_ATTACK, POS_FACEUP_DEFENSE, POS_FACEDOWN_DEFENSE,
   TYPE_MONSTER, TYPE_SPELL, TYPE_TRAP,
   LOC_HAND, LOC_MZONE, LOC_SZONE, LOC_GRAVE,
+  PHASE_MAIN2, PHASE_END,
 } from '../domain/constants.ts';
 
 // 位置/类型常量的唯一来源见 domain/constants.ts
@@ -201,7 +202,7 @@ export class AISimulator {
           this.setPhase(0x08); // BP
           this.promptBattle();
         } else if (data === 'M2' && this.currentPhase === 0x08) {
-          this.setPhase(0x10); // M2
+          this.setPhase(PHASE_MAIN2);
           this.promptIdle();
         } else if (data === 'EP') {
           this.endPlayerTurn();
@@ -374,7 +375,7 @@ export class AISimulator {
 
   endPlayerTurn(): void {
     if (!this.running) return;
-    this.setPhase(0x20); // EP
+    this.setPhase(PHASE_END);
     this.turn++;
     this.delay().then(() => this.startTurn(1));
   }
@@ -544,7 +545,7 @@ export class AISimulator {
       if (!this.running) return;
     }
 
-    this.setPhase(0x20); // EP
+    this.setPhase(PHASE_END);
     this.turn++;
     await this.delay();
     if (this.running) this.startTurn(0);

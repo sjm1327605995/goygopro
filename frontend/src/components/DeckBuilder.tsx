@@ -9,6 +9,7 @@ import DeckManageModal from './DeckManageModal.tsx';
 import BigCardPanel from './BigCardPanel.tsx';
 import CardAvailabilityBadge from './CardAvailabilityBadge.tsx';
 import { compareDeckCards, type DeckSortMode } from '../domain/deck_sort.ts';
+import {formatCardName,formatCardType,formatCardTypeLine,formatCardStats} from '../domain/card_information.ts';
 import {
   EXTRA_TYPES, TYPE_MONSTER, TYPE_SPELL, TYPE_TRAP,
   TYPE_NORMAL, TYPE_EFFECT, TYPE_FUSION, TYPE_RITUAL, TYPE_SYNCHRO, TYPE_XYZ,
@@ -19,18 +20,6 @@ import {
   RACES, ATTRS,
 } from '../domain/constants.ts';
 
-// 展示顺序即原版 Info 面板的种类拼接顺序（kind 在前，稀有子类在后）
-const SUBTYPE_LABELS: [number, string][] = [
-  [TYPE_NORMAL, '通常'], [TYPE_EFFECT, '效果'], [TYPE_FUSION, '融合'], [TYPE_RITUAL, '仪式'],
-  [TYPE_SYNCHRO, '同调'], [TYPE_XYZ, '超量'], [TYPE_PENDULUM, '灵摆'], [TYPE_LINK, '连接'],
-  [TYPE_QUICKPLAY, '速攻'], [TYPE_CONTINUOUS, '永续'], [TYPE_EQUIP, '装备'], [TYPE_FIELD, '场地'],
-  [TYPE_COUNTER, '反击'], [TYPE_TUNER, '调整'], [TYPE_FLIP, '反转'], [TYPE_SPIRIT, '灵魂'],
-  [TYPE_UNION, '同盟'], [TYPE_DUAL, '二重'], [TYPE_TOON, '卡通'],
-];
-const cardKind = (t: number): string =>
-  (t & TYPE_MONSTER) ? '怪兽' : (t & TYPE_SPELL) ? '魔法' : (t & TYPE_TRAP) ? '陷阱' : '';
-const cardSubtypes = (t: number): string[] =>
-  SUBTYPE_LABELS.filter(([mask]) => (t & mask) !== 0).map(([, label]) => label);
 // atk/def -2 是引擎的「?」占位
 const fmtStat = (v: any): string => (v < 0 ? '?' : String(v ?? 0));
 
@@ -205,7 +194,7 @@ function SearchResultChip({ card, lfLimit, onInspect, onAdd, onZoom, onDragStart
   const isMonster = (t & TYPE_MONSTER) !== 0;
   const raceName = (RACES.find((r) => r[0] === card.race) || [0, ''])[1] as string;
   const attrName = (ATTRS.find((a) => a[0] === card.attribute) || [0, ''])[1] as string;
-  const kind = [cardKind(t), ...cardSubtypes(t)].filter(Boolean).join('｜');
+  const kind = `[${formatCardType(t)}]`;
 
   return (
     <div
@@ -234,7 +223,7 @@ function SearchResultChip({ card, lfLimit, onInspect, onAdd, onZoom, onDragStart
           <div className="deck-result-stats">
             {fmtStat(card.attack)}/{t&TYPE_LINK?'-':fmtStat(card.defense)}
             {t&TYPE_PENDULUM?` ${card.lscale||0}/${card.rscale||0}`:''}
-            {(card.ot&3)===1?' [OCG]':(card.ot&3)===2?' [TCG]':card.ot&8?' [Custom]':''}
+            {(card.ot&3)===1?' [OCG]':(card.ot&3)===2?' [TCG]':card.ot&AVAIL_CUSTOM?' [Custom]':''}
           </div>
         ) : null}
         {lfLimit !== undefined && lfLimit < 3
@@ -311,6 +300,15 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const searchVersion=useRef(0);
   const [inspected, setInspected] = useState<any>(null);
+  const inspectVersion=useRef(0);
+  const inspectCard=async (info:any):Promise<void>=>{
+    const version=++inspectVersion.current;
+    setInspected(info);
+    if(info.alias){
+      const original=await WailsBridge.getCard(info.alias);
+      if(original&&version===inspectVersion.current)setInspected({...info,originalName:original.name});
+    }
+  };
   const [inspectedPic, setInspectedPic] = useState<string | null>(null);
   const [zoomCode, setZoomCode] = useState(0);
   // 原版 wInfos 的 Card info / Log 页签：Log 记录本次编辑的增删操作
@@ -759,7 +757,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
         filter={Number(limitFilter)} defaultOT={Number(settingsSnap.default_ot)||1}
         lfLimit={limitOf(groupOf(code))}
         style={{ marginLeft: col > 0 ? step - 44 : 0 }}
-        onInspect={setInspected}
+        onInspect={inspectCard}
         onCopy={() => copyCard(section, code)}
         onZoom={setZoomCode}
         onContextMenu={(e) => {
@@ -865,21 +863,15 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
           </div>
         ) : (
         <div className="inspector-details">
-          <div className="inspector-name">{inspected ? `${inspected.name}[${String(inspected.code).padStart(8,'0')}]` : ''}</div>
+          <div className="inspector-name">{inspected ? formatCardName(inspected) : ''}</div>
           {inspected ? (
             <>
               <div className="inspector-meta inspector-type-line" id="deck-inspector-type">
-                {`[${[cardKind(inspected.type || 0), ...cardSubtypes(inspected.type || 0)].filter(Boolean).join('/')}]`}
-                {(inspected.type & TYPE_MONSTER) !== 0
-                  ? ` ${(RACES.find((r) => r[0] === inspected.race) || [0, ''])[1] as string}/${(ATTRS.find((a) => a[0] === inspected.attribute) || [0, ''])[1] as string}`
-                  : ''}
+                {formatCardTypeLine(inspected)}
               </div>
               {(inspected.type & TYPE_MONSTER) !== 0 ? (
                 <div className="inspector-meta" id="deck-inspector-stats">
-                  {(inspected.type & TYPE_LINK)
-                    ? `LINK-${inspected.level}`
-                    : '★'.repeat(Math.min(inspected.level || 0, 13))}
-                  {' '}{fmtStat(inspected.attack)}/{fmtStat(inspected.defense)}
+                  {formatCardStats(inspected)}
                 </div>
               ) : null}
               {!settingsSnap.hide_setname && inspected.setNames && inspected.setNames.length > 0 ? (
@@ -1165,7 +1157,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
                 card={card}
                 filter={Number(limitFilter)} defaultOT={Number(settingsSnap.default_ot)||1}
                 lfLimit={limitOf(card.alias || groupOf(card.code))}
-                onInspect={setInspected}
+                onInspect={inspectCard}
                 onAdd={() => addCardToDeck(card)}
                 onDragStart={(e) => { draggedRef.current = {card}; e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setData('text/plain',String(card.code)); }}
                 onZoom={setZoomCode}

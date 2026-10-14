@@ -168,7 +168,7 @@ export interface DuelAttackEvent {
   target: LocEntry;
 }
 
-/** MSG_BATTLE 26 字节结算体（攻防对撞浮层消费；reducer 不落盘） */
+/** MSG_BATTLE 26 字节结算体：实时更新攻击方/目标的场上攻守值。 */
 export interface DuelBattleEvent {
   event: 'duel:battle';
   attacker: LocEntry;

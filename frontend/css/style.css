@@ -1354,6 +1354,11 @@ body, html {
   background: rgba(0, 210, 255, 0.08);
   border-color: var(--border-cyan);
 }
+/* 堆区列表里当前可发动/可特召的卡（cmdFlag ACTIVATE/SPSUMMON 等价高亮） */
+.card-display-actionable {
+  border-color: var(--gold, #c9a227);
+  box-shadow: 0 0 6px rgba(201, 162, 39, 0.55);
+}
 .card-display-pic {
   width: 44px;
   height: 64px;

@@ -10,44 +10,8 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { duelStore } from '../duel/store.ts';
 import { settingsStore } from '../domain/settings.ts';
 import { WailsBridge } from '../wails_bridge.ts';
-import {
-  TYPE_MONSTER, TYPE_SPELL, TYPE_TRAP, TYPE_NORMAL, TYPE_EFFECT,
-  TYPE_FUSION, TYPE_RITUAL, TYPE_SYNCHRO, TYPE_XYZ, TYPE_LINK,
-  TYPE_PENDULUM, TYPE_QUICKPLAY, TYPE_CONTINUOUS, TYPE_EQUIP, TYPE_FIELD,
-  TYPE_TUNER, TYPE_FLIP, TYPE_SPIRIT, TYPE_UNION, TYPE_DUAL,
-  TYPE_TOON, TYPE_COUNTER, TYPE_SPSUMMON,
-  RACES, ATTRS, formatLinkMarker,
-} from '../domain/constants.ts';
-
-const TYPE_SEGMENTS: [number, string][] = [
-  [TYPE_MONSTER, '怪兽'], [TYPE_SPELL, '魔法'], [TYPE_TRAP, '陷阱'],
-  [TYPE_NORMAL, '通常'], [TYPE_EFFECT, '效果'], [TYPE_FUSION, '融合'],
-  [TYPE_RITUAL, '仪式'], [TYPE_SYNCHRO, '同调'], [TYPE_XYZ, '超量'],
-  [TYPE_LINK, '链接'], [TYPE_PENDULUM, '灵摆'], [TYPE_QUICKPLAY, '速攻'],
-  [TYPE_CONTINUOUS, '永续'], [TYPE_EQUIP, '装备'], [TYPE_FIELD, '场地'],
-  [TYPE_TUNER, '调整'], [TYPE_FLIP, '反转'], [TYPE_SPIRIT, '灵魂'],
-  [TYPE_UNION, '同盟'], [TYPE_DUAL, '二重'],
-  [TYPE_TOON,'卡通'],[TYPE_COUNTER,'反击'],[TYPE_SPSUMMON,'特殊召唤'],
-];
-
-function typeLabel(type: number): string {
-  return TYPE_SEGMENTS
-    .filter(([bit]) => (type & bit) !== 0)
-    .map(([, label]) => label)
-    .join('/');
-}
-
-function attrRaceLine(type: number, info: Record<string, unknown>): string | null {
-  if (!(type & TYPE_MONSTER)) return null;
-  const attr = (ATTRS.find(([bit]) => bit === info.attribute) || [])[1];
-  const race = (RACES.find(([bit]) => bit === info.race) || [])[1];
-  const level = info.level;
-  const parts: string[] = [];
-  if (attr) parts.push(`${attr}属性`);
-  if (race) parts.push(`${race}族`);
-  if (level) parts.push(`${type & TYPE_XYZ ? '阶' : '星'} ${level}`);
-  return parts.length ? parts.join('　') : null;
-}
+import {formatCardName,formatCardTypeLine,formatCardStats} from '../domain/card_information.ts';
+import {TYPE_MONSTER} from '../domain/constants.ts';
 
 export default function CardPreviewPanel() {
   const state = useSyncExternalStore(duelStore.subscribe, duelStore.getState);
@@ -60,8 +24,9 @@ export default function CardPreviewPanel() {
   useEffect(() => {
     let alive = true;
     if (!code) { setImg(null); return undefined; }
-    WailsBridge.getCard(code).then((info) => {
-      if (alive) duelStore.resolveInspectInfo(code, info);
+    WailsBridge.getCard(code).then(async (info) => {
+      const original=info?.alias?await WailsBridge.getCard(info.alias):null;
+      if (alive) duelStore.resolveInspectInfo(code, original?{...info,originalName:original.name}:info);
     });
     WailsBridge.getCardImage(code).then((pic) => {
       if (alive) setImg(pic && pic.url ? pic.url : null);
@@ -100,20 +65,15 @@ export default function CardPreviewPanel() {
         {tab === 'info' ? (
           <Tabs.Content value="info" id="preview-info" className="preview-info">
             <div id="preview-card-name" className="preview-name">
-              {info ? `${info.name ?? ''}[${String(code).padStart(8,'0')}]` : ''}
+              {info ? formatCardName(info) : ''}
             </div>
-            {info && !settings.hide_setname && Array.isArray(info.setNames) && info.setNames.length ? <div className="preview-setnames">系列：{info.setNames.join(' / ')}</div> : null}
-            {info && type ? <div className="preview-type">{typeLabel(type)}</div> : null}
-            {info && attrRaceLine(type, info) ? (
-              <div className="preview-attr">{attrRaceLine(type, info)}</div>
-            ) : null}
+            {info && type ? <div className="preview-type">{formatCardTypeLine(info)}</div> : null}
             {info && isMonster ? (
               <div className="preview-stats">
-                {type & TYPE_LINK
-                  ? `LINK-${info.level != null ? String(info.level) : '?'}  ${info.attack != null ? String(info.attack) : '?'}/-   ${formatLinkMarker(Number(info.linkMarker || 0))}`
-                  : `ATK ${info.attack != null ? String(info.attack) : '?'} / DEF ${info.defense != null ? String(info.defense) : '?'}`}
+                {formatCardStats(info)}
               </div>
             ) : null}
+            {info && !settings.hide_setname && Array.isArray(info.setNames) && info.setNames.length ? <div className="preview-setnames">系列：{info.setNames.join(' / ')}</div> : null}
             <div id="preview-card-desc" className="preview-desc">
               {info ? String(info.desc ?? '') : ''}
             </div>

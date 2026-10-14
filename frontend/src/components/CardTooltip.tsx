@@ -1,47 +1,62 @@
 /**
- * stTip 等价物（原版 game.cpp:952）：跟随鼠标的悬浮卡名提示。
- *
- * 数据源：field3d.handleHover 在悬停/离开场上卡牌时向
- * #duel-canvas-container 派发 'ygo:cardhover' / 'ygo:cardhoverend'
- * CustomEvent。原版是白底 80% 不透明小块，文字居中；这里按卡种着色
- * 左边框（怪兽红/魔法绿/陷阱紫，同原版卡名颜色约定）。
- *
- * 选择进行中（store.selectHintText 非空）首行附带选择提示文本——原版
- * stHintMsg 的 `提示(min-max)` 在选择期间常驻（event_handler.cpp 悬停
- * 期间 stTip 与选择提示并存的语义）。
+ * gframe stTip: white 0xc0 block above/left of the pointer, with live card
+ * attack/defense and grade/race/attribute lines. Selection hints remain in
+ * stHintMsg. The event carries physical pointer coordinates outside DesignSpace.
  */
-import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { duelStore } from '../duel/store.ts';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {TYPE_MONSTER,TYPE_LINK,TYPE_XYZ,TYPE_PENDULUM,formatRace,formatAttribute} from '../domain/constants.ts';
 
 interface HoverDetail {
+  location?:string;
   code?: number;
   info?: any;
+  live?: {
+    attack?: number; defense?: number;
+    level?: number; rank?: number; link?: number;
+  };
   x?: number;
   y?: number;
 }
 
 interface TipState {
   text: string;
+  lines: string[];
   x: number;
   y: number;
-  kind: string;
 }
 
-function borderFor(info: any): string {
-  if (!info || typeof info.type !== 'number') return '#94a3b8';
-  if (info.type & 0x1) return '#f87171';       // 怪兽
-  if (info.type & 0x2) return '#4ade80';       // 魔法
-  if (info.type & 0x4) return '#c084fc';       // 陷阱
-  return '#94a3b8';
+function buildLines(info: any, live: HoverDetail['live'],location?:string): string[] {
+  if (!info || typeof info.type !== 'number') return [];
+  const lines: string[] = [];
+  if (info.type & TYPE_MONSTER) {
+    const fmt = (v: any) => (typeof v === 'number' && v >= 0 ? String(v) : '?');
+    const atk = live?.attack ?? info.attack;
+    const def = live?.defense ?? info.defense;
+    const race=formatRace(info.race||0),attr=formatAttribute(info.attribute||0);
+    if (info.type & TYPE_LINK) {
+      lines.push(`${fmt(atk)}/LINK-${live?.link ?? info.level ?? '?'}`);
+      lines.push(`LINK-${live?.link??info.level??'?'} ${race}/${attr}`);
+    } else {
+      lines.push(`${fmt(atk)}/${fmt(def)}`);
+      const lv = live?.level ?? info.level;
+      if (info.type & TYPE_XYZ) lines.push(`☆${live?.rank ?? lv ?? '?'} ${race}/${attr}`);
+      else lines.push(`★${lv ?? '?'} ${race}/${attr}`);
+    }
+    if (location==='hand'&&(info.type & TYPE_PENDULUM) && info.lscale !== undefined) {
+      lines.push(`${info.lscale}/${info.rscale}`);
+    }
+  } else {
+    if(location==='szone'&&(info.type&TYPE_PENDULUM))lines.push(`${info.lscale}/${info.rscale}`);
+  }
+  return lines;
 }
 
 export default function CardTooltip() {
   const [tip, setTip] = useState<TipState | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
-  const selectHintText = useSyncExternalStore(
-    duelStore.subscribe,
-    () => duelStore.getState().selectHintText,
-  );
+  useLayoutEffect(()=>{
+    const el=tipRef.current;if(el&&tip){el.style.left=`${tip.x-el.offsetWidth-10}px`;el.style.top=`${tip.y-el.offsetHeight-10}px`;}
+  },[tip]);
 
   useEffect(() => {
     const container = document.getElementById('duel-canvas-container');
@@ -50,8 +65,8 @@ export default function CardTooltip() {
     const onHover = (ev: Event) => {
       const d = (ev as CustomEvent<HoverDetail>).detail || {};
       const text = d.info && d.info.name ? d.info.name : (d.code ? String(d.code) : '');
-      if (!text) return;
-      setTip({ text, x: d.x || 0, y: d.y || 0, kind: borderFor(d.info) });
+      if (!text) {setTip(null);return;}
+      setTip({ text, lines: buildLines(d.info, d.live,d.location), x: d.x || 0, y: d.y || 0 });
     };
     const onHoverEnd = () => setTip(null);
 
@@ -65,11 +80,11 @@ export default function CardTooltip() {
 
   if (!tip) return null;
 
-  // 提示块跟随鼠标，右下偏移 14px；贴近屏幕右/下缘时翻到鼠标另一侧。
+  // event_handler.cpp:1659: measured tip ends 10px above/left of pointer.
   const w = tipRef.current ? tipRef.current.offsetWidth : 150;
   const h = tipRef.current ? tipRef.current.offsetHeight : 28;
-  const x = tip.x + 14 + w > window.innerWidth ? tip.x - w - 8 : tip.x + 14;
-  const y = tip.y + 14 + h > window.innerHeight ? tip.y - h - 8 : tip.y + 14;
+  const x = tip.x-w-10;
+  const y = tip.y-h-10;
 
   return (
     <div
@@ -77,24 +92,15 @@ export default function CardTooltip() {
       id="st-tip"
       style={{
         position: 'fixed', left: `${x}px`, top: `${y}px`, zIndex: 1200,
-        background: 'rgba(255,255,255,0.9)', color: '#1a1a1a',
-        borderLeft: `3px solid ${tip.kind}`,
-        padding: '3px 10px', fontSize: '12px', fontWeight: 700,
-        borderRadius: '3px', pointerEvents: 'none',
-        maxWidth: '220px', whiteSpace: 'nowrap',
-        overflow: 'hidden', textOverflow: 'ellipsis',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+        background: 'rgba(255,255,255,0.75)', color: '#000',
+        padding: '5px', fontSize: '12px', fontWeight: 400,
+        pointerEvents: 'none',whiteSpace:'pre',textAlign:'center',
       }}
     >
-      {selectHintText && (
-        <div
-          id="st-tip-select-hint"
-          style={{ color: '#b45309', borderBottom: '1px dashed #d4d4d4', marginBottom: '2px', paddingBottom: '2px' }}
-        >
-          {selectHintText}
-        </div>
-      )}
-      {tip.text}
+      <div>{tip.text}</div>
+      {tip.lines.map((line, i) => (
+        <div key={i} style={{ fontWeight: 400, color: '#525252' }}>{line}</div>
+      ))}
     </div>
   );
 }

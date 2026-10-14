@@ -47,6 +47,9 @@ export const LOC_LABELS = {
   [LOC_OVERLAY]: '超量素材',
 };
 
+// ---- 移动原因（ocgcore REASON_*，MSG_MOVE 的 reason 字段；ocgcore/common.go）----
+export const REASON_DESTROY = 0x1;
+
 // ---- 卡片类型（ocgcore TYPE_*）----
 export const TYPE_MONSTER = 0x1;
 export const TYPE_SPELL = 0x2;
@@ -154,7 +157,8 @@ export const PHASE_MAIN1 = 0x04;
 export const PHASE_BATTLE_START = 0x08;
 export const PHASE_BATTLE_STEP = 0x10;
 export const PHASE_DAMAGE = 0x20;
-export const PHASE_DAMAGE_GLY = 0x40;
-export const PHASE_BATTLE = 0x38; // START|STEP|DAMAGE|DAMAGE_GLY
-export const PHASE_MAIN2 = 0x80;
-export const PHASE_END = 0x100;
+export const PHASE_DAMAGE_CAL = 0x40;
+export const PHASE_DAMAGE_GLY = PHASE_DAMAGE_CAL;
+export const PHASE_BATTLE = 0x80;
+export const PHASE_MAIN2 = 0x100;
+export const PHASE_END = 0x200;

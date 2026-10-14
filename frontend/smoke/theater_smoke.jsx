@@ -207,7 +207,7 @@ const setInputVal = (el, v) => {
     // 手动推一个 new_phase，横幅应在 1.4s 自动消退前出现。
     eventBus.emit('duel:new_phase', { phase: 0x04 });
     await waitFor(() => !!document.querySelector('.phase-banner'), 'compact phase banner', 3000);
-    checks.compactPhaseBanner = document.querySelector('.phase-banner').textContent === '主要阶段 1';
+    checks.compactPhaseBanner = document.querySelector('.phase-banner').textContent === 'Main Phase 1';
     await waitFor(() => !document.querySelector('.phase-banner'), 'banner auto-dismiss', 5000);
     checks.compactPhaseBannerExpires = !document.querySelector('.phase-banner');
     // 自己的手牌：playerType=1 → 视角玩家是 seat1，开局抽 5 → 手牌坞 5 张
@@ -242,6 +242,34 @@ const setInputVal = (el, v) => {
     await waitFor(() => document.querySelector('.gfw-replay').offsetParent !== null
       && !document.getElementById('replay-control-panel'), 'list restored after exit');
     checks.exitRestoresList = true;
+
+    // ---- 快进（neos-ts 按消息类型步进的等价物）：从回合 1 重载，
+    // 连续快进 = 依次停在每个关键事件之后；最后一段中间过场事件瞬时应用 ----
+    setInputVal(turnInput, '1');
+    document.getElementById('replay-load-btn').click();
+    await waitFor(() => { const b = findPlayBtn(); return b && !b.disabled; }, 'reload for fastforward', 15000);
+    const ffBtn = () => document.getElementById('replay-fastforward-btn');
+    checks.fastForwardBtnShown = !!ffBtn() && !ffBtn().disabled;
+    ffBtn().click();   // 第 1 个关键事件 = 下标 3 的 duel:draw → 进度 4/11
+    await waitFor(() => /4\s*\/\s*11\s*步/.test(document.body.textContent), 'ff to draw');
+    checks.fastForwardStopsAtDraw = /4\s*\/\s*11\s*步/.test(document.body.textContent);
+    ffBtn().click();   // 下标 4 的对方 draw → 5/11
+    await waitFor(() => /5\s*\/\s*11\s*步/.test(document.body.textContent), 'ff to opp draw');
+    checks.fastForwardNextKeyEvent = /5\s*\/\s*11\s*步/.test(document.body.textContent);
+    ffBtn().click();   // 下标 5 的 new_turn → 6/11
+    await waitFor(() => /6\s*\/\s*11\s*步/.test(document.body.textContent), 'ff to new turn');
+    checks.fastForwardStopsAtNewTurn = /6\s*\/\s*11\s*步/.test(document.body.textContent);
+    ffBtn().click();   // 之后只剩下标 10 的 new_turn：中间过场（new_phase/move/lp_update）
+                       // 全部瞬时应用 → 直接到终局 11/11
+    await waitFor(() => /11\s*\/\s*11\s*步/.test(document.body.textContent), 'ff to end');
+    checks.fastForwardSkipsInterstitials = /11\s*\/\s*11\s*步/.test(document.body.textContent);
+    // 快进后画面与逐步播放一致：青眼已进墓
+    checks.fastForwardBoardConsistent = duelStore.getState().board[0].grave.length
+      + duelStore.getState().board[1].grave.length === 1;
+    // 退回列表态，不影响后续改名/删除流程
+    document.getElementById('replay-exit-btn').click();
+    await waitFor(() => document.querySelector('.gfw-replay').offsetParent !== null
+      && !document.getElementById('replay-control-panel'), 'list restored after ff exit');
 
     // ---------- 波 E：回放列表改名/删除 ----------
     const renameBtn = document.getElementById('replay-rename-btn');

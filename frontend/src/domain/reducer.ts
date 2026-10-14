@@ -107,6 +107,18 @@ export interface PhasePrompt {
   canEP: boolean;
 }
 
+/**
+ * 当前指令询问里堆区可操作的条目（原版 ClientCard::cmdFlag 的
+ * ACTIVATE/SPSUMMON 位）：select_idlecmd/select_battlecmd 到达时发布，
+ * CardListOverlay 据此让墓地/除外/额外的卡可点（发动/特殊召唤）。
+ * 新阶段/新回合/等待对方时清除（原版 ClearCommandFlag 时机）。
+ */
+export interface CmdActions {
+  mode: 'idle' | 'battle';
+  activate: { idx: number; code: number; c: number; l: number; s: number; desc: number }[];
+  spsummon: { idx: number; code: number; c: number; l: number; s: number }[];
+}
+
 /** select_card/select_unselect 的一个候选（idx = 应答下标，c/l/s 为引擎座标） */
 export interface CardSelectEntry {
   idx: number;
@@ -149,6 +161,8 @@ export interface DuelState {
   phase: number;
   /** 引擎当前的阶段按钮可用性（select_idlecmd/battlecmd 带来，新阶段清除） */
   phasePrompt: PhasePrompt | null;
+  /** 当前指令询问的堆区可操作条目（cmdFlag 等价物）；null = 无询问进行中 */
+  cmdActions: CmdActions | null;
   /** 本方手牌（显示座 0，屏幕下侧）；按序号索引 */
   hand: (HandCard | null)[];
   /**
@@ -175,7 +189,7 @@ export interface DuelState {
   viewSwapped: boolean;
   /** 墓地禁查（CARD_QUESTION 玩家提示，duelclient.cpp:3757-3768） */
   cantCheckGrave: boolean;
-  win: { winner: number; type: number } | null;
+  win: { winner: number; type: number; announcedAt: number } | null;
   /** MSG_MATCH_KILL 展示卡（胜利画面用）；null = 无 */
   matchKill: number | null;
   /** MSG_FIELD_DISABLED 的禁用区位域（原样透传，field 渲染消费） */
@@ -213,6 +227,8 @@ export interface PopupAction {
   code?: number;
   s?: number;
   seq?: number;
+  /** idlecmd/battlecmd 列表内的精确下标（多效果条目/堆区列表点选用） */
+  idx?: number;
 }
 
 export function initialDuelState(): DuelState {
@@ -226,6 +242,7 @@ export function initialDuelState(): DuelState {
     turnPlayer: 0,
     phase: 0,
     phasePrompt: null,
+    cmdActions: null,
     hand: [],
     oppHand: [],
     piles: [
@@ -278,8 +295,7 @@ function withLog(state: DuelState, text: string, cls = 'log-action'): DuelState 
   return { ...state, log: [...state.log, entry].slice(-200) };
 }
 
-/** 阶段码 → 中文名：收编到 sys_strings.ts（原版 phase 横幅文案的中文版，
- *  reducer 日志与 PhaseStrip 横幅共用一张表）。 */
+/** 中文阶段日志来自 sys_strings.ts；DrawSpec 横幅使用原版英文。 */
 
 function setLP(state: DuelState, seat: number, lp: number): DuelState {
   const disp = localSeat(state, seat);
@@ -331,6 +347,10 @@ function syncHandOnMove(state: DuelState, ev: {
 function cloneBoard(state: DuelState): [BoardSide, BoardSide] {
   const deepSide = (side: BoardSide): BoardSide => ({
     ...side,
+    mzone: [...side.mzone],
+    szone: [...side.szone],
+    grave: [...side.grave],
+    banish: [...side.banish],
     extra: [...side.extra],
     overlay: side.overlay.map((mats) => [...mats]),
   });
@@ -364,7 +384,7 @@ function boardReposition(state: DuelState, seat: number, loc: number, seq: numbe
 
 /** move：源区拿掉、目的区放下（grave/banish/extra 追加；deck/hand 不落 board） */
 function boardMove(state: DuelState, ev: {
-  code: number; pc: number; pl: number; ps: number; cc: number; cl: number; cs: number; cp: number;
+  code: number; pc: number; pl: number; ps: number; pp?:number; cc: number; cl: number; cs: number; cp: number;
 }): DuelState {
   const board = cloneBoard(state);
   const dispOf = (seat: number) => localSeat(state, seat);
@@ -379,8 +399,11 @@ function boardMove(state: DuelState, ev: {
 
   const srcSide = board[dispOf(ev.pc)];
   const srcZone = zoneOf(srcSide, ev.pl);
+  const moved=srcZone?.[ev.ps]||stackOf(srcSide,ev.pl)?.[ev.ps];
+  const attached=ev.pl===LOC_MZONE&&ev.cl===LOC_MZONE?[...(srcSide.overlay[ev.ps]||[])]:null;
   if (srcZone) {
     if (ev.ps >= 0 && ev.ps < srcZone.length) srcZone[ev.ps] = null;
+    if(attached)srcSide.overlay[ev.ps]=[];
   } else {
     const srcStack = stackOf(srcSide, ev.pl);
     if (srcStack) {
@@ -392,11 +415,11 @@ function boardMove(state: DuelState, ev: {
         if (i > -1) srcStack.splice(i, 1);
         else if (srcStack.length) srcStack.splice(-1, 1);
       }
-    } else if (ev.pl === LOC_OVERLAY) {
+    } else if (ev.pl & LOC_OVERLAY) {
       // 超量素材离体：ps 是它吸附的 mzone 槽位
       const mats = srcSide.overlay[ev.ps];
       if (mats) {
-        const i = mats.indexOf(ev.code);
+        const i = ev.pp!==undefined&&ev.pp<mats.length?ev.pp:mats.indexOf(ev.code);
         if (i > -1) mats.splice(i, 1);
       }
     }
@@ -405,12 +428,13 @@ function boardMove(state: DuelState, ev: {
   const dstSide = board[dispOf(ev.cc)];
   const dstZone = zoneOf(dstSide, ev.cl);
   if (dstZone) {
-    if (ev.cs >= 0 && ev.cs < dstZone.length) dstZone[ev.cs] = { code: ev.code, pos: ev.cp };
+    if (ev.cs >= 0 && ev.cs < dstZone.length) dstZone[ev.cs] = { ...moved,code: ev.code||moved?.code||0, pos: ev.cp };
+    if(attached)dstSide.overlay[ev.cs]=attached;
   } else {
     const dstStack = stackOf(dstSide, ev.cl);
     if (dstStack) {
-      dstStack.push({ code: ev.code, pos: ev.cp });
-    } else if (ev.cl === LOC_OVERLAY) {
+      dstStack.push({ ...moved,code: ev.cl===LOC_EXTRA?ev.code:(ev.code||moved?.code||0), pos: ev.cp });
+    } else if (ev.cl & LOC_OVERLAY) {
       // 超量素材吸附：cs 是目标 mzone 槽位
       const mats = dstSide.overlay[ev.cs];
       if (mats) mats.push(ev.code);
@@ -449,7 +473,7 @@ export function applyViewSwap(state: DuelState): DuelState {
     timer: [state.timer[1], state.timer[0]],
     board: [state.board[1], state.board[0]],
     turnPlayer: (1 - state.turnPlayer) as 0 | 1,
-    win: state.win ? { ...state.win, winner: (1 - state.win.winner) as 0 | 1 } : state.win,
+    win: state.win ? { ...state.win, winner: state.win.winner === 2 ? 2 : 1 - state.win.winner } : state.win,
     hand: state.oppHand,
     oppHand: state.hand,
   };
@@ -508,8 +532,11 @@ const lifecycleHandlers: Record<string, EventHandler> = {
       turnPlayer: 0,
       phase: 0,
       phasePrompt: null,
+      cmdActions: null,
       hand: [],
       oppHand: [],
+      board:[emptyBoardSide(),emptyBoardSide()],
+      actionPopup:null,
       piles: [
         { deck: 0, grave: 0, banish: 0, extra: 0 },
         { deck: 0, grave: 0, banish: 0, extra: 0 },
@@ -586,8 +613,8 @@ const lifecycleHandlers: Record<string, EventHandler> = {
   },
 
   'duel:win': (state, ev) => withLog(
-    { ...state, win: { winner: localSeat(state, ev.winner), type: ev.type } },
-    ev.winner === state.playerSlot ? '你赢了！' : '对方获胜。',
+    { ...state, win: { winner: ev.winner === 2 ? 2 : localSeat(state, ev.winner), type: ev.type, announcedAt: Date.now() }, phasePrompt: null, cmdActions: null },
+    ev.winner === 2 ? '平局。' : ev.winner === state.playerSlot ? '你赢了！' : '对方获胜。',
     'log-damage',
   ),
 };
@@ -709,7 +736,12 @@ const boardHandlers: Record<string, EventHandler> = {
           zone[seq] = null;
           changed = true;
         }
+        if(ev.location===LOC_MZONE&&board[localSeat(state,ev.player)].overlay[seq].length){board[localSeat(state,ev.player)].overlay[seq]=[];changed=true;}
         return;
+      }
+      if(ev.location===LOC_MZONE&&q.overlays!==undefined){
+        const side=board[localSeat(state,ev.player)],before=side.overlay[seq];
+        if(before.length!==q.overlays.length||before.some((code,i)=>code!==q.overlays![i])){side.overlay[seq]=[...q.overlays];changed=true;}
       }
       const card: BoardCard = {
         code: q.code ?? cur?.code ?? 0,
@@ -743,6 +775,12 @@ const boardHandlers: Record<string, EventHandler> = {
     const zone = zoneOf(board[localSeat(state, ev.player)], ev.location);
     if (!zone || ev.sequence < 0 || ev.sequence >= zone.length) return state;
     const cur = zone[ev.sequence];
+    let overlayChanged=false;
+    if(ev.location===LOC_MZONE&&ev.overlays!==undefined){
+      const side=board[localSeat(state,ev.player)],before=side.overlay[ev.sequence];
+      overlayChanged=before.length!==ev.overlays.length||before.some((code,i)=>code!==ev.overlays[i]);
+      side.overlay[ev.sequence]=[...ev.overlays];
+    }
     const card: BoardCard = {
       code: ev.code ?? cur?.code ?? 0,
       pos: ev.position?.p ?? cur?.pos ?? 0,
@@ -761,7 +799,7 @@ const boardHandlers: Record<string, EventHandler> = {
       && (cur.type ?? 0) === card.type && (cur.linkMarker ?? 0) === card.linkMarker
       && cur.attack === card.attack && cur.defense === card.defense
       && cur.baseAttack === card.baseAttack && cur.baseDefense === card.baseDefense
-      && cur.level === card.level && cur.rank === card.rank) return state;
+      && cur.level === card.level && cur.rank === card.rank && !overlayChanged) return state;
     zone[ev.sequence] = card;
     return { ...state, board };
   },
@@ -778,11 +816,13 @@ const phaseHandlers: Record<string, EventHandler> = {
   'duel:select_idlecmd': (state, ev) => ({
     ...state,
     phasePrompt: { mode: 'idle', canBP: !!ev.toBP, canM2: false, canEP: !!ev.toEP, canShuffle: !!ev.shuffle },
+    cmdActions: { mode: 'idle', activate: ev.activate || [], spsummon: ev.spsummon || [] },
   }),
 
   'duel:select_battlecmd': (state, ev) => ({
     ...state,
     phasePrompt: { mode: 'battle', canBP: false, canM2: !!ev.toM2, canEP: !!ev.toEP },
+    cmdActions: { mode: 'battle', activate: ev.activate || [], spsummon: [] },
   }),
 
   'duel:new_turn': (state, ev) => withLog({
@@ -791,10 +831,11 @@ const phaseHandlers: Record<string, EventHandler> = {
     turnPlayer: localSeat(state, ev.player),
     // 新回合意味着上一条阶段按钮提示已作废
     phasePrompt: null,
+    cmdActions: null,
   }, `—— 玩家 ${localSeat(state, ev.player) === 0 ? '你' : '对方'} 的回合 ——`, 'log-action'),
 
   'duel:new_phase': (state, ev) => withLog(
-    { ...state, phase: ev.phase, phasePrompt: null },
+    { ...state, phase: ev.phase, phasePrompt: null, cmdActions: null },
     `进入${PHASE_LABELS[ev.phase] || '未知阶段'}`,
     'log-action',
   ),
@@ -829,7 +870,7 @@ const singleModeHandlers: Record<string, EventHandler> = {
   },
 
   // 原版 SysString 1390（MSG_WAITING → stHintMsg）
-  'duel:waiting': (state) => ({ ...state, hint: sysString(1390) || '等待行动中...' }),
+  'duel:waiting': (state) => ({ ...state, hint: sysString(1390) || '等待行动中...', cmdActions: null }),
 
   'duel:player_hint': (state, ev) => {
     // MSG_PLAYER_HINT（duelclient.cpp:3757-3768）：CARD_QUESTION 加/删到
@@ -963,7 +1004,17 @@ const logHandlers: Record<string, EventHandler> = {
   ),
 
   // 26 字节结算体由 BattleOverlay（攻防对撞浮层）直接消费，reducer 不落盘
-  'duel:battle': noop,
+  // MSG_BATTLE changes displayed ATK/DEF immediately, without a later query.
+  'duel:battle': (state, ev) => {
+    const board=cloneBoard(state);
+    for (const [slot,attack,defense] of [[ev.attacker,ev.attackerATK,ev.attackerDEF],[ev.target,ev.targetATK,ev.targetDEF]] as const) {
+      if(!slot?.l)continue;
+      const zone=zoneOf(board[localSeat(state,slot.c)],slot.l);
+      const card=zone?.[slot.s];
+      if(zone&&card)zone[slot.s]={...card,attack,defense};
+    }
+    return {...state,board};
+  },
 };
 
 // ---- MSG_HINT（duel:hint）----

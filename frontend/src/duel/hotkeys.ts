@@ -6,7 +6,12 @@
  *  - A/S/D：仅 control_mode==0（键鼠模式）生效，**按住**生效——
  *    KeyPress 置位、KeyRelease 清零（React 的 keyup/keydown 对应）；
  *    三者互斥；只改本地连锁判定（chain_prefs），不发送任何包。
- *    A=ignore_chain / S=always_chain / D=chain_when_avail。
+ *    A=always_chain / S=ignore_chain / D=chain_when_avail
+ *    （event_handler.cpp:1740-1765 KEY_KEY_A/S/D 分支）。
+ *  - 鼠标模式（control_mode==1）：在场地内**按住左键**=always_chain、
+ *    **按住右键**=ignore_chain（event_handler.cpp:1709-1730
+ *    EMIE_LMOUSE/RMOUSE_PRESSED_DOWN，isLeftPressed/isRightPressed 随
+ *    按住状态更新、松开即清）。
  *  - F1-F8：**松开时**触发（原版 PressedDown 即处理即 break，等效于
  *    一次触发）。F1-F4=自己 墓地/除外/额外/超量素材，
  *    F5-F8=对方同序。仅在决斗进行中且非回放时可用。
@@ -33,9 +38,15 @@ export const PILE_HOTKEYS: Record<string, { player: number; pile: string }> = {
 };
 
 const CHAIN_KEYS: Record<string, ChainPrefMode> = {
-  a: 'ignore',
-  s: 'always',
+  a: 'always',
+  s: 'ignore',
   d: 'whenAvail',
+};
+
+/** 鼠标模式（control_mode==1）的按住连锁：左键=全部连锁，右键=忽略连锁 */
+const CHAIN_MOUSE_BUTTONS: Record<number, ChainPrefMode> = {
+  0: 'always',
+  2: 'ignore',
 };
 
 function inTextField(): boolean {
@@ -51,6 +62,7 @@ export function installHotkeys(): () => void {
   const inDuel = (): boolean => duelStore.getState().started;
 
   const heldMode: { key: string | null } = { key: null };
+  const heldMouse: { button: number | null } = { button: null };
 
   const onKeyDown = (e: KeyboardEvent): void => {
     if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || inTextField()) return;
@@ -79,10 +91,33 @@ export function installHotkeys(): () => void {
     }
   };
 
+  // 原版场地判定 X > 300*xScale（左侧信息面板除外）→ 等价于事件落在
+  // 3D 画布容器内（HUD 面板上的点击不算场地按住）
+  const onDuelCanvas = (e: MouseEvent): boolean =>
+    !!(e.target as Element | null)?.closest?.('#duel-canvas-container');
+
+  const onMouseDown = (e: MouseEvent): void => {
+    if (Number(settingsStore.get('control_mode')) !== 1 || !inDuel()) return;
+    const mode = CHAIN_MOUSE_BUTTONS[e.button];
+    if (!mode || !onDuelCanvas(e)) return;
+    heldMouse.button = e.button;
+    chainPrefs.setMode(mode);
+  };
+
+  const onMouseUp = (e: MouseEvent): void => {
+    if (heldMouse.button === null || e.button !== heldMouse.button) return;
+    heldMouse.button = null;
+    chainPrefs.setMode(null);
+  };
+
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('mousedown', onMouseDown);
+  window.addEventListener('mouseup', onMouseUp);
   return () => {
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
+    window.removeEventListener('mousedown', onMouseDown);
+    window.removeEventListener('mouseup', onMouseUp);
   };
 }

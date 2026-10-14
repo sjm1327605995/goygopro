@@ -254,6 +254,31 @@ class SoundManager {
   }
 
   /**
+   * Card Destroyed — sharp shatter over a low thud（原版 destroy.wav 的合成等价）
+   */
+  playDestroy() {
+    if (this.muted) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(520, t);
+    osc.frequency.exponentialRampToValueAtTime(60, t + 0.28);
+
+    gain.gain.setValueAtTime(0.3 * this.sfxVolume, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.31);
+  }
+
+  /**
    * LP Tick Counter
    */
   playLPTick() {

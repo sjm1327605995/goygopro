@@ -129,6 +129,17 @@ document.querySelector('[data-tab="helper"]').click();
 await waitFor(() => document.querySelector('[data-page="helper"]'), 3000, 'helper tab');
 check('autochain-backfilled', document.querySelector('[data-setting="autochain"]').checked === true);
 
+// 动画速度滑条（neos-ts animation 设置的等价物）：默认 100%，改动写回
+const speedInput = document.querySelector('[data-setting="animation_speed"]');
+check('animation-speed-row-exists', !!speedInput && speedInput.value === '100'
+  && document.querySelector('[data-value-for="animation_speed"]').textContent === '100%');
+const speedSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+speedSetter.call(speedInput, '150');
+speedInput.dispatchEvent(new Event('input', { bubbles: true }));
+await waitFor(() => savePatches.some((p) => p.animation_speed === 150), 3000, 'speed save');
+check('animation-speed-writes-patch', document.querySelector('[data-value-for="animation_speed"]').textContent === '150%'
+  && settingsStore.get('animation_speed') === 150);
+
 // 回系统页做滑条/开关用例
 document.querySelector('[data-tab="system"]').click();
 await waitFor(() => document.querySelector('[data-page="system"]'), 3000, 'system tab');

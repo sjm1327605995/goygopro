@@ -19,10 +19,12 @@ import { duelStore } from './store.ts';
 import { settingsStore } from '../domain/settings.ts';
 import { seatToDisplay, bottomEngineSeat } from '../domain/reducer.ts';
 import { respondCardSelection } from './card_select.ts';
+import {fieldSelectionReady,canPickFieldCard,sumValues,type FieldSelection,type FieldSelectionKind} from './field_selection.ts';
 import {
   LOC_NAMES,
   LOC_DECK, LOC_HAND, LOC_EXTRA,
-  CARD_QUESTION, PHINT_DESC_ADD,
+  LOC_MZONE, LOC_SZONE, LOC_GRAVE, LOC_BANISH,
+  CARD_QUESTION, PHINT_DESC_ADD, REASON_DESTROY,
 } from '../domain/constants.ts';
 import type { DuelField3D } from './field3d.ts';
 import { sysString } from '../domain/sys_strings.ts';
@@ -40,6 +42,7 @@ export class DuelManager {
   handCounts: [number, number] = [0, 0];
   idleCmd: any = null;
   battleCmd: any = null;
+  fieldSelection:FieldSelection|null=null;
   /** MSG_SELECT_PLACE/DISFIELD 点选状态；null = 不在选位中 */
   placeSelect: {
     player: number;
@@ -82,6 +85,8 @@ export class DuelManager {
     this.field3D.onCardSelectPick = (idx) => this.onCardSelectPick(idx);
     this.field3D.onBoardRightClick = (x, y) => this.onBoardRightClick(x, y);
     this.field3D.onPileRightClick = (player, pile) => this.onPileRightClick(player, pile);
+    // 左键点堆区 = 查看列表（与右键/F 键同路；堆顶卡的点击在 onFieldCardClick 转发）
+    this.field3D.onPileLeftClick = (player, pile) => this.onPileRightClick(player, pile);
     this.field3D.onHoverChange = () => this.refreshRelationMarks();
 
     this.initNetworkListeners();
@@ -95,6 +100,8 @@ export class DuelManager {
     this.field3D.setBottomSeat?.(initial.playerSlot, true);
     this.field3D.setDuelRule?.(initial.duelRule);
     this.syncHands();
+    // Wails may deliver the initial snapshot before the stage mounts.
+    if(this.field3D.cardsOnField)void this.resyncFromStore().then(()=>this.syncLinkData());
   }
 
   onStoreChange(): void {
@@ -117,6 +124,7 @@ export class DuelManager {
       this._lastPiles = st.piles;
       this.syncLinkData();
     }
+    if(this.fieldSelection)this.refreshFieldSelection();
     if (!this.interactive || !cs || cs.kind !== 'card' || !cs.selected.length) return;
     // 选满自动应答（原版 event_handler.cpp:1389-1398：达到 select_max，
     // 或已达 select_min 且可选卡全部被选中时立即 SendResponse）
@@ -134,6 +142,69 @@ export class DuelManager {
     codes[1-bottom] = st.oppHand.map((c) => c?.code || 0);
     for (const seat of [0,1] as const) while (codes[seat].length < this.handCounts[seat]) codes[seat].push(0);
     this.field3D.setHands?.(codes);
+    for(const seat of [0,1] as const)this.field3D.handMeshes?.[seat].forEach((mesh:any)=>{
+      const code=mesh.userData.cardCode;if(!code)return;
+      const cached=WailsBridge._cardCache.get(code);
+      if(cached)mesh.userData.cardInfo=cached;
+      else WailsBridge.getCard(code).then(info=>{if(this.field3D.handMeshes[seat].includes(mesh))mesh.userData.cardInfo=info;});
+    });
+  }
+
+  beginFieldSelection(kind:FieldSelectionKind,data:any):void {
+    const cards=kind==='sum'?data.select||[]:data.cards||[];
+    if(!this.interactive||!document.getElementById('duel-canvas-container')||![...cards,...(data.must||[])].every(c=>[LOC_HAND,LOC_MZONE,LOC_SZONE].includes(c.l)))return;
+    this.fieldSelection={kind,data,cards,selected:[],counts:cards.map(()=>0)};
+    if(kind==='counter'){
+      const session=this.fieldSelection;
+      WailsBridge.getCounterName(data.countertype).then(name=>{if(this.fieldSelection===session){session.data={...session.data,counterName:name};this.refreshFieldSelection();}}).catch(()=>{});
+    }
+    if(fieldSelectionReady(this.fieldSelection)&&!cards.some((_:any,i:number)=>canPickFieldCard(this.fieldSelection!,i)))this.respondFieldSelection();
+    else this.refreshFieldSelection();
+  }
+
+  refreshFieldSelection():void {
+    const s=this.fieldSelection;if(!s)return;
+    const entries=s.cards.map((c,idx)=>({...c,idx})).filter((_,idx)=>canPickFieldCard(s,idx));
+    this.field3D.setCardSelectMarks(entries,new Set(s.kind==='counter'?s.counts.flatMap((n,i)=>n?[i]:[]):s.selected));
+    const ready=fieldSelectionReady(s),remaining=s.kind==='counter'?s.data.count-s.counts.reduce((a,b)=>a+b,0):undefined;
+    let text=duelStore.getState().selectHintText||'请选择卡牌';
+    if(s.kind==='counter')text=`请取除${remaining}个[${s.data.counterName||'？？？'}]`;
+    else if(s.kind==='sum'){
+      const all=[...(s.data.must||[]),...s.selected.map(i=>s.cards[i])];
+      const low=all.reduce((sum,c)=>sum+Math.min(...sumValues(c.param)),0),high=all.reduce((sum,c)=>sum+Math.max(...sumValues(c.param)),0);
+      text=`${text}(${low===high?low:`${low}-${high}`}/${s.data.acc}${s.data.sumMode?'+' : ''})`;
+    }else if(!text.endsWith(`(${s.data.min}-${s.data.max})`))text=`${text}(${s.data.min}-${s.data.max})`;
+    if(duelStore.getState().hint!==text)duelStore.setHint(text);
+    eventBus.emit('ui:field_selection_control',{ready,cancelable:s.kind==='tribute'&&!!s.data.cancelable&&s.selected.length===0,text});
+  }
+
+  pickFieldSelection(idx:number):void {
+    const s=this.fieldSelection;if(!s||!canPickFieldCard(s,idx))return;
+    if(s.kind==='counter')s.counts[idx]++;
+    else if(s.selected.includes(idx))s.selected=s.selected.filter(i=>i!==idx);
+    else s.selected.push(idx);
+    const ready=fieldSelectionReady(s),canExtend=s.cards.some((_,i)=>!s.selected.includes(i)&&canPickFieldCard(s,i));
+    if(ready&&(s.kind==='counter'||!canExtend))this.respondFieldSelection();else this.refreshFieldSelection();
+  }
+
+  respondFieldSelection():void {
+    const s=this.fieldSelection;if(!s||!fieldSelectionReady(s))return;
+    this.endFieldSelection();
+    if(s.kind==='counter')WailsBridge.respondCounter([...s.counts]);
+    else if(s.kind==='sum')WailsBridge.respondSelectSum((s.data.must||[]).length+s.selected.length,[...s.selected]);
+    else WailsBridge.respondSelectCard([...s.selected]);
+  }
+
+  cancelFieldSelection():void {
+    const s=this.fieldSelection;if(!s||s.kind!=='tribute'||!s.data.cancelable||s.selected.length)return;
+    this.endFieldSelection();WailsBridge.sendResponseI(-1);
+  }
+
+  endFieldSelection():void {
+    if(!this.fieldSelection)return;
+    this.fieldSelection=null;this.field3D.clearCardSelectMarks();
+    duelStore.disarmSelectHint();duelStore.setHint('');
+    eventBus.emit('ui:field_selection_control',null);
   }
 
   /** 关系条目的键 = 引擎座标 "c:l:s"（事件载荷的数值 loc） */
@@ -219,6 +290,7 @@ export class DuelManager {
    * 由 onStoreChange 统一触发，弹窗路径共享同一语义） */
   onCardSelectPick(idx: number): void {
     if (!this.interactive) return;
+    if(this.fieldSelection){this.pickFieldSelection(idx);return;}
     const cs = duelStore.getState().cardSelect;
     if (!cs) return;
     if (cs.kind === 'unselect') {
@@ -251,6 +323,8 @@ export class DuelManager {
     // numbering (0 = first player). Every perspective decision below keys
     // off it; the store displays our seat as the "player" slot.
     sub('duel:start', (data) => {
+      this.endFieldSelection();
+      this.field3D.clearBoard?.();
       this.playerSlot = (data.playerType || 0) & 0x0f;
       this.field3D.setBottomSeat?.(this.playerSlot,true);
       this.field3D.setDuelRule?.(data.duelRule || 5);
@@ -304,6 +378,12 @@ export class DuelManager {
       this.syncHands();
       if (!data.__instant) this.field3D.shuffleHand?.(data.player);
     });
+
+    sub('duel:select_card',data=>{if(data.tribute)this.beginFieldSelection('tribute',data);});
+    sub('duel:select_sum',data=>this.beginFieldSelection('sum',data));
+    sub('duel:select_counter',data=>this.beginFieldSelection('counter',data));
+    sub('ui:field_selection_finish',()=>this.respondFieldSelection());
+    sub('ui:field_selection_cancel',()=>this.cancelFieldSelection());
 
     sub('duel:summoning', async (data) => {
       const cardInfo = await WailsBridge.getCard(data.code);
@@ -402,6 +482,10 @@ export class DuelManager {
 
       if (mesh) {
         // Card was visibly on the board: animate it to its destination.
+        // duelclient.cpp MSG_MOVE: destroyed sound, unless banish takes priority.
+        if (!data.__instant && data.pl!==data.cl && !(data.cl&LOC_BANISH) && (Number(data.reason) & REASON_DESTROY)) {
+          this.field3D.animateDestroy?.(mesh);
+        }
         if (toLoc === 'hand') {
           this.field3D.retireMesh(mesh, !!data.__instant);
         } else {
@@ -617,9 +701,9 @@ export class DuelManager {
 
     // ---- 2D UI 动作接线（HandDock / ActionPopup 发出）----
 
-    sub('ui:hand_click', (data) => {
+    sub('ui:hand_click', async (data) => {
       if (!this.interactive) return;
-      const opts = this.getHandOptions(data.code,data.seq);
+      const opts = await this.getHandOptions(data.code,data.seq);
       if (opts.length) {
         duelStore.openActionPopup(data.x, data.y, opts);
       } else {
@@ -654,6 +738,7 @@ export class DuelManager {
   // Unsubscribes every eventBus listener registered in initNetworkListeners.
   // Called by the hosting React component on unmount.
   dispose() {
+    this.endFieldSelection();
     if (this._storeUnsub) {
       this._storeUnsub();
       this._storeUnsub = null;
@@ -854,6 +939,7 @@ export class DuelManager {
    * 这里按需求补"撤销最近一次"的 Web 习惯交互） */
   onBoardRightClick(_x: number, _y: number): void {
     if (!this.interactive) return;
+    if(this.fieldSelection){if(fieldSelectionReady(this.fieldSelection))this.respondFieldSelection();else this.cancelFieldSelection();return;}
     if (this.placeSelect) {
       const ps = this.placeSelect;
       if (ps.selected.length) {
@@ -890,37 +976,80 @@ export class DuelManager {
   }
 
   // Builds the action popup options for a hand card from the pending idle
-  // command: only actions the engine actually offered are shown.
-  getHandOptions(code: number, seq?: number) {
-    if (!this.idleCmd) return [];
+  // command: only actions the engine actually offered are shown. 战阶询问中
+  // 手牌只有可发动的二速效果（速攻魔法/手坑，原版 ShowMenu 手卡 cmdFlag
+  // 的 ACTIVATE 项）。
+  async getHandOptions(code: number, seq?: number) {
+    if (!this.idleCmd) {
+      const acts = (this.battleCmd && this.battleCmd.activate) || [];
+      return this.activateOptions(
+        acts.filter((a: any) => a.l === LOC_HAND && a.code === code && (seq === undefined || a.s === seq)),
+        { action: 'activate', code, seq },
+      );
+    }
     const opts = [];
     const has = (list: any) => list && list.some((c: any) => c.code === code && (seq === undefined || c.s === seq) && (c.l === undefined || c.l === LOC_HAND));
     if (has(this.idleCmd.summon)) opts.push({ label: '召唤', action: 'summon', code,seq });
     if (has(this.idleCmd.spsummon)) opts.push({ label: '特殊召唤', action: 'spsummon', code,seq });
     if (has(this.idleCmd.mset)) opts.push({ label: '盖放', action: 'mset', code,seq });
     if (has(this.idleCmd.sset)) opts.push({ label: '盖放', action: 'sset', code,seq });
-    if (has(this.idleCmd.activate)) opts.push({ label: '发动', action: 'activate', code,seq });
+    opts.push(...await this.activateOptions(
+      (this.idleCmd.activate || []).filter((a: any) => a.l === LOC_HAND && a.code === code && (seq === undefined || a.s === seq)),
+      { action: 'activate', code, seq },
+    ));
     return opts;
   }
 
-  // Click on a 3D board card: offer attack (battle phase) or reposition
-  // (idle phase) when the engine's command list includes that slot.
-  onFieldCardClick(x: number, y: number, userData: any) {
+  /**
+   * 同一卡的可发动效果条目 → 菜单项（带精确 idx 应答）。单条直接标「发动」；
+   * 多条按 desc 解析效果文本各列一项（原版 ShowSelectOption 的平铺：
+   * event_handler.cpp:375-405 一卡多效果时列效果文本供选择）。
+   */
+  async activateOptions(matches: any[], base: any): Promise<any[]> {
+    if (!matches.length) return [];
+    if (matches.length === 1) return [{ ...base, label: '发动', idx: matches[0].idx }];
+    return Promise.all(matches.map(async (m: any) => {
+      const text = m.desc ? await WailsBridge.resolveDesc(m.desc) : '';
+      return { ...base, label: text ? `发动：${text}` : '发动', idx: m.idx };
+    }));
+  }
+
+  // Click on a 3D board card: offer activate (idle/battle), attack (battle
+  // phase) or reposition (idle phase) when the engine's command list includes
+  // that slot. 点击墓地/除外/额外堆区的卡 = 打开该堆区列表（原版 MSG_WAITING
+  // 点堆区的 COMMAND_LIST 菜单，event_handler.cpp:1218-1237）。
+  async onFieldCardClick(x: number, y: number, userData: any) {
     if (!this.interactive) return;
     const slot = userData && userData.slot;
-    if (!slot || slot.player !== this.playerSlot) return;
+    if (!slot) return;
     if (slot.loc === 'hand') {
-      const opts = this.getHandOptions(userData.cardCode,slot.seq);
+      if (slot.player !== this.playerSlot) return;
+      const opts = await this.getHandOptions(userData.cardCode,slot.seq);
       if (opts.length) duelStore.openActionPopup(x,y,opts);
       return;
     }
-    const opts = [];
+    if (slot.loc === 'grave' || slot.loc === 'banish' || slot.loc === 'extra') {
+      this.onPileRightClick(slot.player, slot.loc);
+      return;
+    }
+    if (slot.player !== this.playerSlot) return;
+    const locCode = slot.loc === 'mzone' ? LOC_MZONE : LOC_SZONE;
+    const opts: any[] = [];
+    // 发动（原版 BUTTON_CMD_ACTIVATE）：idle/战阶询问的可发动表按格匹配
+    const actList = this.idleCmd ? this.idleCmd.activate
+      : this.battleCmd ? this.battleCmd.activate : null;
+    if (actList) {
+      opts.push(...await this.activateOptions(
+        actList.filter((a: any) => a.c === slot.player && a.l === locCode && a.s === slot.seq),
+        { action: 'activate', code: userData.cardCode },
+      ));
+    }
     if (this.battleCmd && this.battleCmd.attack &&
-        this.battleCmd.attack.some((a: any) => a.s === slot.seq)) {
+        this.battleCmd.attack.some((a: any) => a.c === slot.player && a.s === slot.seq)) {
       opts.push({ label: '攻击', action: 'attack', s: slot.seq });
     }
     if (this.idleCmd && this.idleCmd.repos &&
-        this.idleCmd.repos.some((r: any) => r.s === slot.seq)) {
+        this.idleCmd.repos.some((r: any) => r.c === slot.player && r.s === slot.seq)) {
       opts.push({ label: '表示形式变更', action: 'repos', s: slot.seq });
     }
     if (opts.length) duelStore.openActionPopup(x, y, opts);
@@ -955,7 +1084,9 @@ export class DuelManager {
     } else if (actionType === 'summon') {
       respond(this.idleCmd && this.idleCmd.summon, 0);
     } else if (actionType === 'spsummon') {
-      respond(this.idleCmd && this.idleCmd.spsummon, 1);
+      // 带 idx 的精确应答（堆区列表点选，原版 list_command 的 SPSUMMON 分支）
+      if (data && typeof data.idx === 'number') WailsBridge.respondIdleCmd(data.idx, 1);
+      else respond(this.idleCmd && this.idleCmd.spsummon, 1);
     } else if (actionType === 'repos') {
       // Field clicks carry only the slot (data.s), never a code — match by
       // slot like the attack branch, or the response is never sent.
@@ -965,7 +1096,14 @@ export class DuelManager {
     } else if (actionType === 'sset') {
       respond(this.idleCmd && this.idleCmd.sset, 4);
     } else if (actionType === 'activate') {
-      respond(this.idleCmd && this.idleCmd.activate, 5);
+      // 带 idx 的精确应答（场上多效果条目 / 堆区列表 / 战阶手牌二速）；
+      // 无 idx 的旧路径按 code+seq 匹配
+      if (data && typeof data.idx === 'number') {
+        if (this.battleCmd) WailsBridge.respondBattleCmd(data.idx, 0);
+        else WailsBridge.respondIdleCmd(data.idx, 5);
+      } else {
+        respond(this.idleCmd && this.idleCmd.activate, 5);
+      }
     } else if (actionType === 'attack') {
       // battlecmd 解码（playerop.cpp）：0=activate 1=attack 2=toM2 3=toEP
       respond(this.battleCmd && this.battleCmd.attack, 1, (a) => a.s === data.s);
@@ -1033,6 +1171,7 @@ export class DuelManager {
       : [state.piles[1], state.piles[0]];
     if (typeof this.field3D.syncPileCounts === 'function')
       this.field3D.syncPileCounts(pilesBySeat);
+    this.field3D.syncOverlays?.(bottom===0?[state.board[0].overlay,state.board[1].overlay]:[state.board[1].overlay,state.board[0].overlay]);
   }
 
   async resyncFromStore(): Promise<void> {
@@ -1100,8 +1239,12 @@ export class DuelManager {
       // 重建换了全部 mesh，徽章需按新 mesh 重挂
       this.syncNegatedBadges();
       this.syncHands();
+      this.syncLinkData();
     } finally {
       this._resyncing = false;
+      // A second query may arrive while card metadata is being loaded.
+      // Reconcile the latest board instead of dropping that authoritative update.
+      if(duelStore.getState().board!==state.board)await this.resyncFromStore();
     }
   }
 }

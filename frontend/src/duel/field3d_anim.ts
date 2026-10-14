@@ -1,6 +1,6 @@
 /**
- * Card animations + particle FX (P5-4): tween-driven draw/summon/set/attack/
- * destroy movements, shockwave & hit sparks, camera shake. Extracted from
+ * Card animations + particle FX (P5-4): tween-driven draw/summon/set/attack
+ * movements, destroy flourish, shockwave & hit sparks, camera shake. Extracted from
  * field3d.ts; each function takes the owning DuelField3D as `self` and only
  * does `import type` on it (plus ZONE_COORDS from the shared geometry module),
  * so there is no runtime import cycle back into field3d.ts.
@@ -8,7 +8,6 @@
 import * as THREE from '../../libs/three.module.js';
 import * as TWEEN from '../../libs/tween.esm.js';
 import { soundManager } from '../audio/sound_manager.ts';
-import { ZONE_COORDS } from './field3d_geometry.ts';
 import type { DuelField3D } from './field3d.ts';
 
 export function animateDrawCard(self: DuelField3D, player: number, cardCode: number, cardInfo: any = null, onComplete: (() => void) | null = null): void {
@@ -96,33 +95,13 @@ export function animateAttack(self: DuelField3D, attackerPlayer: number, attacke
   self.makeTween(progress).to({frame:40},40*1000/60).onUpdate(draw).onComplete(()=>{self.scene.remove(arrow);geo.dispose();mat.dispose();}).start();
 }
 
-export function animateDestroy(self: DuelField3D, player: number, loc: string, slotIndex: number): void {
-  soundManager.playDamage();
-  const cardMesh = self.cardsOnField[player][loc][slotIndex];
-  if (!cardMesh) return;
-
-  self.cardsOnField[player][loc][slotIndex] = null;
-  const graveCoord = ZONE_COORDS[player].grave;
-
-  self.makeTween(cardMesh.position)
-    .to({ y: 2.0 }, 150)
-    .chain(
-      self.makeTween(cardMesh.position)
-        .to({ x: graveCoord.x, y: 0.2, z: graveCoord.z }, 350)
-        .easing(TWEEN.Easing.Cubic.In)
-        .onComplete(() => {
-          self.scene.remove(cardMesh);
-          const idx = self.cardMeshes.indexOf(cardMesh);
-          if (idx > -1) self.cardMeshes.splice(idx, 1);
-        })
-    )
-    .start();
-
-  self.makeTween(cardMesh.rotation)
-    .to({ x: 0, y: 0, z: Math.PI }, 350)
-    .start();
-
-  self.refreshFieldSpell();
+/**
+ * MSG_MOVE's REASON_DESTROY only plays SOUND_DESTROYED in gframe.
+ * Movement remains owned by moveCard; no additional particles or scaling.
+ */
+export function animateDestroy(self: DuelField3D, mesh: any): void {
+  if (!mesh) return;
+  soundManager.playDestroy();
 }
 
 export function createShockwave(self: DuelField3D, x: number, z: number, colorHex = 0x00d2ff): void {
