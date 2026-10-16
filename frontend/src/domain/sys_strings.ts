@@ -152,6 +152,9 @@ const SYSTEM_STRINGS: Record<number, string> = {
   1607: '[%ls]反转召唤中',
   1608: '怪兽反转召唤成功',
   1622: '[%ls]错过时点',
+  // 指示物增减浮条（duelclient.cpp:3390-3430 的 stACMessage，SysString 1617/1618）
+  1617: '[%ls]放置了%d个[%ls]',
+  1618: '[%ls]取除了%d个[%ls]',
 };
 
 /** 原版 GetSysString：未收录返回空串，调用方兜底 */

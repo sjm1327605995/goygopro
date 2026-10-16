@@ -55,6 +55,7 @@ export class DuelField3D {
   hoveredCard: any = null;
   textureLoader: any = new (THREE as any).TextureLoader();
   cardBackTexture: any = null;
+  cardBackTexture2: any = null;
   cardTextureCache = new Map<number, any>();
   // Optional async (code) => Promise<dataURL|null> set by the host; when a
   // picture arrives the cached canvas texture is redrawn in place so every
@@ -184,6 +185,9 @@ export class DuelField3D {
 
     this.container.appendChild(this.renderer.domElement);
     this.cardBackTexture = this.textureLoader.load('textures/cover.jpg');
+    // 原版卡背按控制方区分（drawing.cpp:425 tCover[pcard->controler]）：
+    // 0 号位 cover.jpg、1 号位 cover2.jpg
+    this.cardBackTexture2 = this.textureLoader.load('textures/cover2.jpg');
     this.negatedTexture = this.textureLoader.load('textures/negated.png');
     // 原版卡片状态角标贴图（drawing.cpp）：
     // attack.png 可攻击标记 :464、act.png 可发动旋转图标 :483、
@@ -909,14 +913,15 @@ export class DuelField3D {
     return this.tweenGroup.getAll().some((t) => t.isPlaying());
   }
 
-  createCardMesh(cardCode: number, cardInfo: any = null): any {
+  createCardMesh(cardCode: number, cardInfo: any = null, player: number | null = null): any {
     const geo = new (THREE as any).BoxGeometry(CARD_WIDTH, CARD_DEPTH, CARD_HEIGHT);
     const borderMat = new (THREE as any).MeshBasicMaterial({ color: 0x000000 });
     const frontMat = new (THREE as any).MeshBasicMaterial({
       map: this.generateCardTexture(cardCode),
     });
+    // 里侧卡背按控制方取原版双色（drawing.cpp:425 tCover[controler]）
     const backMat = new (THREE as any).MeshBasicMaterial({
-      map: this.cardBackTexture,
+      map: player === 1 ? this.cardBackTexture2 : this.cardBackTexture,
     });
 
     const materials = [borderMat, borderMat, frontMat, backMat, borderMat, borderMat];
@@ -985,7 +990,7 @@ export class DuelField3D {
       // 防止 scene/cardMeshes 泄漏双份
       const existing = this.cardsOnField[player][locName][seq];
       if (existing) this.retireMesh(existing, true);
-      const mesh = this.createCardMesh(cardCode, cardInfo);
+      const mesh = this.createCardMesh(cardCode, cardInfo, player);
       mesh.position.set(coord.x, coord.y + 0.05, coord.z);
       mesh.rotation.set(0, 0, 0);
       const rot = this.cardRotationFor(player, position);
@@ -1000,7 +1005,7 @@ export class DuelField3D {
     if (locName === 'grave' || locName === 'banish') {
       const stack = this.cardsOnField[player][locName];
       const coord = this.getZonePosition(player, locName, 0);
-      const mesh = this.createCardMesh(cardCode, cardInfo);
+      const mesh = this.createCardMesh(cardCode, cardInfo, player);
       mesh.position.set(coord.x, coord.y + 0.05 + Math.min(stack.length, 20) * 0.02, coord.z);
       mesh.rotation.set(0, player === 1 ? Math.PI : 0, 0);
       mesh.userData.slot = { player, loc: locName, seq: stack.length };
@@ -1141,7 +1146,7 @@ export class DuelField3D {
         let mesh = meshes[seq];
         if (!mesh || mesh.userData.cardCode !== code) {
           if (mesh) this.retireMesh(mesh,true);
-          mesh = this.createCardMesh(code);
+          mesh = this.createCardMesh(code, null, seat);
           meshes[seq] = mesh;
           mesh.userData.slot = {player:seat,loc:'hand',seq};
           this.scene.add(mesh);
@@ -1471,10 +1476,13 @@ export class DuelField3D {
     return sprite;
   }
 
-  syncPileCounts(counts: ({ deck: number; grave: number; banish: number; extra: number })[]): void {
+  syncPileCounts(counts: ({ deck: number; grave: number; banish: number; extra: number; extraP?: number })[]): void {
     for (const seat of [0, 1]) {
       for (const pile of ['deck', 'extra', 'grave', 'banish'] as const) {
+        // 原版额外堆双数字（drawing.cpp:726-727,749-750）：总数 + 表侧数
         const n = (counts[seat] && counts[seat][pile]) || 0;
+        const text = pile === 'extra' && counts[seat] && counts[seat].extraP
+          ? `${n}(${counts[seat].extraP})` : String(n);
         const key = `${seat}:${pile}`;
         const existing = this.pileCountSprites[key];
         if (n <= 0) {
@@ -1484,9 +1492,9 @@ export class DuelField3D {
           }
           continue;
         }
-        if (existing && existing.userData.pileText === String(n)) continue;
+        if (existing && existing.userData.pileText === text) continue;
         if (existing) this.disposeTextSprite(existing);
-        const sprite = this.buildPileCountSprite(String(n));
+        const sprite = this.buildPileCountSprite(text);
         sprite.userData.pilePlayer = seat;
         sprite.userData.pile = pile;
         const c = this.getZonePosition(seat, pile, 0);
@@ -1799,22 +1807,15 @@ export class DuelField3D {
   handleHover(): void {
     this.scene.updateMatrixWorld(true);
     this.camera.updateMatrixWorld(true);
-    // 落点选择期间：悬停可选格给手型光标（原版悬停 zone 高亮由
-    // DrawSelectionLine 呼吸承担，光标反馈是 Web 习惯的补充）
+    // 原版 MOUSE_MOVED 与选择状态无关（event_handler.cpp:1507-1704）：落点/
+    // 选卡点选期间悬停照常更新卡片详情与 stTip，仅光标体现可选态
+    let selectCursor: string | null = null;
     if (this.placeSelectMarks.length) {
-      this.raycaster.setFromCamera(this.mouse, this.camera);
-      const hit = this.pickPlaceZone();
-      this.container.style.cursor = hit ? 'pointer' : 'default';
-      return;
+      selectCursor = this.pickPlaceZone() ? 'pointer' : 'default';
+    } else if (this.cardSelectMarks.length) {
+      selectCursor = this.pickCardSelect() ? 'pointer' : 'default';
     }
-    // select_card 点选期间：悬停可选卡给手型光标（选择模式点击已被拦截，
-    // 不再做抬升/查看的常规悬停）
-    if (this.cardSelectMarks.length) {
-      const hit = this.pickCardSelect();
-      this.container.style.cursor = hit ? 'pointer' : 'default';
-      return;
-    }
-    this.container.style.cursor = 'default';
+    this.container.style.cursor = selectCursor ?? 'default';
     this.raycaster.setFromCamera(this.mouse, this.camera);
     const intersects = this.raycaster.intersectObjects(this.cardMeshes);
 
@@ -1955,6 +1956,7 @@ export class DuelField3D {
     this.cardTextureCache.forEach((tex) => tex.dispose());
     this.cardTextureCache.clear();
     if (this.cardBackTexture) this.cardBackTexture.dispose();
+    if (this.cardBackTexture2) this.cardBackTexture2.dispose();
     for (const t of [this.equipTexture, this.targetTexture, this.chainTargetTexture]) {
       if (t) t.dispose();
     }

@@ -384,13 +384,18 @@ export class DuelManager {
       if (data.__instant) return;
       soundManager.playShuffle();
       this.field3D.shakeDeckPile?.(data.player as 0 | 1);
-    });
-    // MSG_SHUFFLE_EXTRA：原版同样播 SOUND_SHUFFLE（duelclient.cpp:2345-2372）；
+    });    // MSG_SHUFFLE_EXTRA：原版同样播 SOUND_SHUFFLE（duelclient.cpp:2345-2372）；
     // 额外堆无实体 mesh，不抖动
     sub('duel:shuffle_extra', (data) => {
       if (data.__instant) return;
       soundManager.playShuffle();
     });
+
+    // 原版 LP 三事件的事件级音效（duelclient.cpp:3182 SOUND_DAMAGE /
+    // :3211 SOUND_RECOVER / :3367 SOUND_DAMAGE）：数字滚动本身不再加 tick
+    sub('duel:damage', (data) => { if (!data.__instant) soundManager.playDamage(); });
+    sub('duel:recover', (data) => { if (!data.__instant) soundManager.playRecover?.(); });
+    sub('duel:pay_lpcost', (data) => { if (!data.__instant) soundManager.playDamage(); });
 
     sub('duel:select_card',data=>{if(data.tribute)this.beginFieldSelection('tribute',data);});
     sub('duel:select_sum',data=>this.beginFieldSelection('sum',data));
@@ -596,6 +601,12 @@ export class DuelManager {
       this.field3D.setActivatable(chains.map((c: any) => ({ c: c.c, l: c.l, s: c.s })));
     });
 
+    // 原版应答连锁即 ClearChainSelect（client_field.cpp:404-420）：角标不残留
+    // 到 chain_end/下一阶段，引擎接受应答进入 chaining 时即清除
+    sub('duel:chaining', () => {
+      this.field3D.clearActivatable();
+    });
+
     // 新阶段/指令结束：两类角标都清除；阶段横幅音效（原版 SOUND_PHASE，
     // 在 MSG_NEW_PHASE 时与 showcard=101 横幅一起触发）
     sub('duel:new_phase', () => {
@@ -687,10 +698,12 @@ export class DuelManager {
 
     sub('duel:add_counter', (data) => {
       this.field3D.applyCounterDelta(data.c, data.l, data.s, data.type, data.count);
+      if (!data.__instant) soundManager.playCounter(true);
     });
 
     sub('duel:remove_counter', (data) => {
       this.field3D.applyCounterDelta(data.c, data.l, data.s, data.type, -data.count);
+      if (!data.__instant) soundManager.playCounter(false);
     });
 
     sub('duel:confirm_cards', (data) => {
@@ -709,7 +722,11 @@ export class DuelManager {
       }
       if (data.type !== 1 && data.type !== 2) return;
       const text = await WailsBridge.resolveDesc(data.data);
-      if (text) duelStore.setHint(text);
+      if (text) {
+        duelStore.setHint(text);
+        // HINT_EVENT 存 store（原版 event_string）：询问弹窗文案以它开头
+        if (data.type === 1) duelStore.setHintEvent(text);
+      }
     });
 
     // ---- 2D UI 动作接线（HandDock / ActionPopup 发出）----
@@ -969,13 +986,15 @@ export class DuelManager {
       duelStore.toggleCardSelect(cs.selected[cs.selected.length - 1]);
       return;
     }
+    // 原版 CancelOrFinish：右键收起已开的堆区列表
+    eventBus.emit('ui:close_pile', {});
     duelStore.closeActionPopup();
   }
 
-  /** 右键点在墓地/除外/额外堆区：快速查看列表（F1-F8 同源的 wCardDisplay） */
+  /** 右键点在墓地/除外/额外堆区：快速查看列表（F1-F8 同源的 wCardDisplay）。
+   * 原版观战/回放同样可浏览堆区（event_handler.cpp:1113-1162），不限制 interactive */
   onPileRightClick(player: number, pile: string): void {
-    if (!this.interactive) return;
-    if (pile === 'deck') return; // 卡组无列表数据（原版 F 键同样不含卡组）
+    if (pile === 'deck') return; // 卡组内容本前端不落 board，无列表数据（原版 F 键同样不含卡组）
     if (pile === 'grave' && duelStore.getState().cantCheckGrave) return; // 原版 F1 禁查
     eventBus.emit('ui:show_pile', { player: seatToDisplay(duelStore.getState(), player), pile });
   }
@@ -1045,9 +1064,19 @@ export class DuelManager {
       this.onPileRightClick(slot.player, slot.loc);
       return;
     }
-    if (slot.player !== this.playerSlot) return;
     const locCode = slot.loc === 'mzone' ? LOC_MZONE : LOC_SZONE;
     const opts: any[] = [];
+    // 查看素材（原版点带素材的超量怪 → COMMAND_LIST，event_handler.cpp:1211-1216）：
+    // 双方场上的素材怪都可看，排在询问动作之前
+    const side = duelStore.getState().board[slot.player];
+    const mats = side && side.overlay ? side.overlay[slot.seq] : null;
+    if (mats && mats.length) {
+      opts.push({ label: '查看素材', action: 'view_overlay', player: slot.player, seq: slot.seq });
+    }
+    if (slot.player !== this.playerSlot) {
+      if (opts.length) duelStore.openActionPopup(x, y, opts);
+      return;
+    }
     // 发动（原版 BUTTON_CMD_ACTIVATE）：idle/战阶询问的可发动表按格匹配
     const actList = this.idleCmd ? this.idleCmd.activate
       : this.battleCmd ? this.battleCmd.activate : null;
@@ -1073,6 +1102,10 @@ export class DuelManager {
   // duel:player_action so the practice-mode AI simulator (which has no
   // engine to answer) can drive its own state machine.
   handlePlayerAction(actionType: string, data: any) {
+    if (actionType === 'view_overlay') {
+      eventBus.emit('ui:show_pile', { player: data.player, pile: 'overlay', seq: data.seq });
+      return;
+    }
     // idlecmd/battlecmd 的整型响应编码 ((idx<<16)|type) 已收回 Go
     // （responses.go RespondIdleCmd/RespondBattleCmd）。
     const respond = (list: any, cmdType: number, predicate?: (c: any) => boolean) => {

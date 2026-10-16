@@ -348,15 +348,25 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
     if (chatBoxRef.current) chatBoxRef.current.scrollTop = chatBoxRef.current.scrollHeight;
   }, [messages]);
 
-  // 禁限卡表下拉（gframe cbLFlist 数据源；仓库无 lflist.conf 时只有 N/A）
+  // 禁限卡表下拉（gframe cbLFlist 数据源；仓库无 lflist.conf 时只有 N/A）。
+  // 默认值对齐原版 game.cpp:236：use_lflist=1 时选中 default_lflist 索引
+  // 指定的表，否则选 N/A（无限制）。
   useEffect(() => {
     let alive = true;
-    WailsBridge.listLFLists().then((lists) => {
-      if (alive && lists && lists.length > 0) {
-        setLfLists(lists);
-        setLflist(lists[0].hash);
+    (async () => {
+      const lists = await WailsBridge.listLFLists();
+      if (!alive || !lists || !lists.length) return;
+      await settingsStore.load();
+      const snap = settingsStore.getSnapshot();
+      setLfLists(lists);
+      if (Number(snap.use_lflist ?? 1) === 1) {
+        const idx = Math.min(Math.max(Number(snap.default_lflist ?? 0) || 0, 0), lists.length - 1);
+        setLflist(lists[idx].hash);
+      } else {
+        const na = lists.find((l) => l.hash === 0);
+        setLflist(na ? na.hash : lists[lists.length - 1].hash);
       }
-    });
+    })();
     return () => { alive = false; };
   }, []);
 
@@ -398,10 +408,15 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
 
   // 连接并直接加入房间（原版 ygopro「加入游戏」一键语义：Connect +
   // CTOS_JOIN_GAME）。密码错误等失败由服务端 STOC_ERROR_MSG 弹窗呈现。
+  // 原版 menu_handler.cpp:94-98：连接中禁用加入/建房/取消按钮，防双击并发连接
+  const joiningRef = useRef(false);
   const connectServer = async (): Promise<void> => {
-    const addr = `${joinHost.trim() || '127.0.0.1'}:${joinPort.trim() || '7911'}`;
-    setJoinStatus(`正在连接 ${addr} …`);
-    const res = await WailsBridge.connectServer(addr, username.trim() || 'Duelist', password.trim());
+    if (joiningRef.current) return;
+    joiningRef.current = true;
+    try {
+      const addr = `${joinHost.trim() || '127.0.0.1'}:${joinPort.trim() || '7911'}`;
+      setJoinStatus(`正在连接 ${addr} …`);
+      const res = await WailsBridge.connectServer(addr, username.trim() || 'Duelist', password.trim());
     if (res.success) {
       setConnected(true);
       setSeats((prev) => {
@@ -425,6 +440,9 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
     } else {
       setJoinStatus('');
       setErrMsg(`连接失败：${res.error}`);
+    }
+    } finally {
+      joiningRef.current = false;
     }
   };
 
@@ -944,6 +962,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
                   // Radix Item 不允许空串 value：根分类 '' 用哨兵 '__root__' 表示
                   value={deckCategory || '__root__'}
                   onValueChange={(v) => onCategoryChange(v === '__root__' ? '' : v)}
+                  disabled={isReady}
                   options={deckCategories.map((c) => ({ value: c || '__root__', label: c || '未分类卡组' }))}
                 />
               </div>
@@ -951,6 +970,9 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
                 <GfwSelect
                   id="lobby-deck-select"
                   width={198}
+                  // 原版 menu_handler.cpp:178-185：READY 后锁定卡组下拉（改动静默
+                  // 无效易误导），NOTREADY 解锁
+                  disabled={isReady}
                   value={pickedDeck}
                   onValueChange={(v) => {
                     setPickedDeck(v);

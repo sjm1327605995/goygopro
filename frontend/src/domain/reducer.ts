@@ -85,6 +85,8 @@ export interface PileCounts {
   grave: number;
   banish: number;
   extra: number;
+  /** 表侧表示的额外卡数（灵摆等；原版额外堆双数字 drawing.cpp:726-727） */
+  extraP: number;
 }
 
 export interface LogEntry {
@@ -206,6 +208,9 @@ export interface DuelState {
   board: [BoardSide, BoardSide];
   /** stHintMsg 提示条文本（duel:waiting 设置，任何提示/新回合清除）；null = 隐藏 */
   hint: string | null;
+  /** HINT_EVENT 文本（原版 event_string）：select_effectyn/select_chain 弹窗文案
+   * 以它开头说明触发缘由（duelclient.cpp:1084-1086/1524/1813-1817） */
+  hintEvent: string | null;
   /**
    * HINT_SELECTMSG 带来的选择提示 id（原版 DuelClient::select_hint）：
    * 下一个 select 类询问的标题优先用它（经 sysString/ResolveDesc 解析），
@@ -251,8 +256,8 @@ export function initialDuelState(): DuelState {
     hand: [],
     oppHand: [],
     piles: [
-      { deck: 0, grave: 0, banish: 0, extra: 0 },
-      { deck: 0, grave: 0, banish: 0, extra: 0 },
+      { deck: 0, grave: 0, banish: 0, extra: 0, extraP: 0 },
+      { deck: 0, grave: 0, banish: 0, extra: 0, extraP: 0 },
     ],
     timer: [null, null],
     timeLimit: 0,
@@ -268,6 +273,7 @@ export function initialDuelState(): DuelState {
     log: [],
     board: [emptyBoardSide(), emptyBoardSide()],
     hint: null,
+    hintEvent: null,
     selectHint: null,
     selectHintText: null,
     actionPopup: null,
@@ -557,8 +563,8 @@ const lifecycleHandlers: Record<string, EventHandler> = {
       board:[emptyBoardSide(),emptyBoardSide()],
       actionPopup:null,
       piles: [
-        { deck: 0, grave: 0, banish: 0, extra: 0 },
-        { deck: 0, grave: 0, banish: 0, extra: 0 },
+        { deck: 0, grave: 0, banish: 0, extra: 0, extraP: 0 },
+        { deck: 0, grave: 0, banish: 0, extra: 0, extraP: 0 },
       ],
       timer: [null, null],
       timeLimit: 0,
@@ -570,6 +576,7 @@ const lifecycleHandlers: Record<string, EventHandler> = {
       fieldDisabled: 0,
       counters: {},
       hint: null,
+      hintEvent: null,
       selectHint: null,
       selectHintText: null,
       cardSelect: null,
@@ -718,7 +725,7 @@ const boardHandlers: Record<string, EventHandler> = {
     // 手牌由紧随其后的 update_data 整区刷新（服务端 RefreshMzone/Szone/Hand）
     const disp = localSeat(state, ev.player);
     const piles: [PileCounts, PileCounts] = [...state.piles];
-    piles[disp] = { ...piles[disp], deck: ev.deckCount || 0, extra: ev.extraCount || 0 };
+    piles[disp] = { ...piles[disp], deck: ev.deckCount || 0, extra: ev.extraCount || 0, extraP: ev.extraFaceUpCount || 0 };
     let next: DuelState = { ...state, piles };
     // 换手队显示座的手牌整表替换为本消息携带的码（非当前操作者
     // 已被服务端抹零 → 渲染为卡背/未知卡）
@@ -934,7 +941,7 @@ const singleModeHandlers: Record<string, EventHandler> = {
       next = setLP(next, seat, p.lp);
       const disp = localSeat(next, seat);
       const piles: [PileCounts, PileCounts] = [...next.piles];
-      piles[disp] = { ...piles[disp], deck: p.deck, grave: p.grave, banish: p.removed, extra: p.extra };
+      piles[disp] = { ...piles[disp], deck: p.deck, grave: p.grave, banish: p.removed, extra: p.extra, extraP: p.extraP || 0 };
       next = { ...next, piles };
     }
     return next;

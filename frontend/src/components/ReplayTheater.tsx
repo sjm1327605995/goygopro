@@ -8,6 +8,7 @@ import UiButton from '../ui/UiButton.tsx';
 import { UiInput } from '../ui/UiInput.tsx';
 import DesignSpace from '../ui/DesignSpace.tsx';
 import { presentationDelay } from '../net/presentation_queue.ts';
+import { sysString } from '../domain/sys_strings.ts';
 
 /**
  * Replay Theater: lists recorded .yrp duels, asks the Go backend to replay one
@@ -180,12 +181,22 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
     setStep(0);
   };
 
+  // 原版 replay_mode.cpp:223-251 EndReplay：播完提示「录像结束」。原版随后自动
+  // 回到录像窗；Web 形态保留事件流以便回退步/重看（差异记于 todo），仅提示。
+  const endReplay = (): void => {
+    pause();
+    duelStore.setHint(sysString(1501) || '录像结束。');
+  };
+
   const stepForward = () => {
+    // 原版 btnReplayStep/btnReplayUndo 仅暂停后可用（event_handler.cpp:68-71）：
+    // 播放中点击先暂停，避免与推进定时器并发双重推进
+    pause();
     if (stepRef.current < eventsRef.current.length) {
       emitEvent(eventsRef.current[stepRef.current], false);
       setStep(stepRef.current + 1);
     } else {
-      pause();
+      endReplay();
     }
   };
 
@@ -205,7 +216,7 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
       if (FAST_FORWARD_TYPES.has(evs[j].type)) { target = j; break; }
     }
     pause();
-    if (target < 0) { // 之后没有关键事件 → 一路瞬时到终局
+    if (target < 0) { // 之后没有关键事件 → 一路瞬时到终局（停在终局可回退重看）
       while (stepRef.current < evs.length) {
         emitEvent(evs[stepRef.current], true);
         setStep(stepRef.current + 1);
@@ -233,6 +244,8 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
   };
 
   const stepBack = () => {
+    // 与单步同理：播放中先暂停（原版撤销钮仅暂停后可见）
+    pause();
     if (stepRef.current === 0) return;
     seek(stepRef.current - 1);
   };
@@ -252,9 +265,8 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
   const advance = (): void => {
     if (!isPlayingRef.current) return;
     if (stepRef.current >= eventsRef.current.length) {
-      isPlayingRef.current = false;
-      setIsPlaying(false);
-      timerRef.current = null;
+      // 播完：原版 EndReplay 提示「录像结束」并返回录像窗
+      endReplay();
       return;
     }
     emitEvent(eventsRef.current[stepRef.current], false);

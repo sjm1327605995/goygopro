@@ -167,6 +167,25 @@ export default function SpecOverlay() {
     const onTossDice = (d: any) => {
       showAc(`投掷骰子结果：${(d.results || []).map((value: number) => `[${value}]`).join('')}`);
     };
+    // 指示物增减：原版 stACMessage 浮条（SysString 1617/1618）+ SOUND_COUNTER。
+    // 事件不带卡号，按位置从 store 盘面解析。
+    const onCounter = async (d: any, adding: boolean) => {
+      const current = generation.current;
+      const st = duelStore.getState();
+      const disp = seatToDisplay(st, d.c);
+      const zoneName = d.l === 0x04 ? 'mzone' : 'szone';
+      const card = st.board[disp] && st.board[disp][zoneName] ? st.board[disp][zoneName][d.s] : null;
+      const info = card && card.code ? await WailsBridge.getCard(card.code) : null;
+      const cname = await WailsBridge.getCounterName(d.type).catch(() => '');
+      if (current !== generation.current) return;
+      const tpl = sysString(adding ? 1617 : 1618);
+      if (!tpl) return;
+      const text = tpl.replace('%ls', (info && info.name) || '')
+        .replace('%d', String(d.count)).replace('%ls', cname || `#${d.type}`);
+      showAc(text);
+    };
+    const onAddCounter = (d: any) => { void onCounter(d, true); };
+    const onRemoveCounter = (d: any) => { void onCounter(d, false); };
     const reset = () => {
       generation.current++;
       timers.current.forEach(clearTimeout);
@@ -188,6 +207,8 @@ export default function SpecOverlay() {
     eventBus.on('duel:hand_res', onHandRes);
     eventBus.on('duel:toss_coin', onTossCoin);
     eventBus.on('duel:toss_dice', onTossDice);
+    eventBus.on('duel:add_counter', onAddCounter);
+    eventBus.on('duel:remove_counter', onRemoveCounter);
     eventBus.on('duel:start', reset);
     eventBus.on('duel:win', reset);
 
@@ -203,6 +224,8 @@ export default function SpecOverlay() {
       eventBus.off('duel:hand_res', onHandRes);
       eventBus.off('duel:toss_coin', onTossCoin);
       eventBus.off('duel:toss_dice', onTossDice);
+      eventBus.off('duel:add_counter', onAddCounter);
+      eventBus.off('duel:remove_counter', onRemoveCounter);
       eventBus.off('duel:start', reset);
       eventBus.off('duel:win', reset);
       generation.current++;

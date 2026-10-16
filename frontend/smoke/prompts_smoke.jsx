@@ -172,12 +172,12 @@ const run = async () => {
   });
   await waitForModal('.sort-card');
   const sortCards = overlay().querySelectorAll('.sort-card');
-  sortCards[2].click(); sortCards[0].click(); sortCards[1].click();
-  await waitFor(() => !overlay().querySelector('#sort-confirm').disabled);
-  overlay().querySelector('#sort-confirm').click();
+  sortCards[2].click(); sortCards[0].click();
+  // 原版 event_handler.cpp:784-791：最后一张指派序号后立即自动应答并关窗
+  sortCards[1].click();
   r = await waitResp();
   await waitModalClosed();
-  assert('sortResponse', r.kind === 'sort' && JSON.stringify(r.perm) === '[1,2,0]', JSON.stringify(r));
+  assert('sortAutoRespondsWhenComplete', r.kind === 'sort' && JSON.stringify(r.perm) === '[1,2,0]', JSON.stringify(r));
 
   // ---- MSG_SELECT_UNSELECT_CARD: [1, combinedIndex]; combined list is
   // select-list first, then the unselect list（非场上来源 → 纯弹窗路径）----
@@ -202,11 +202,11 @@ const run = async () => {
   const masks = overlay().querySelectorAll('.mask-opt');
   assert('raceOffersAvailableOnly', masks.length === 3, `got ${masks.length}`);
   masks[0].click(); masks[1].click();
-  await waitFor(() => !overlay().querySelector('#mask-confirm').disabled);
-  overlay().querySelector('#mask-confirm').click();
+  // 原版 event_handler.cpp:843-846：选满 announce_count 立即自动应答并关窗，
+  // 无需点「确定」
   r = await waitResp();
   await waitModalClosed();
-  assert('raceResponse', r.kind === 'I' && r.v === 0x3, JSON.stringify(r));
+  assert('raceAutoRespondsWhenFull', r.kind === 'I' && r.v === 0x3, JSON.stringify(r));
 
   // ---- MSG_ANNOUNCE_NUMBER: int32 option index ----
   eventBus.emit('duel:announce_number', { player: 0, options: [100, 200, 300] });
@@ -376,6 +376,13 @@ const run = async () => {
   await waitModalClosed();
   assert('posResponse', r.kind === 'I' && r.v === 0x8, JSON.stringify(r));
 
+  // 只有一个可选表示形式时原版 duelclient.cpp:1916-1919 直接应答不弹窗
+  eventBus.emit('duel:select_position', { player: 0, code: 89631139, positions: 0x4 });
+  r = await waitResp();
+  await waitModalClosed();
+  assert('posSingleAutoAnswers', r.kind === 'I' && r.v === 0x4, JSON.stringify(r));
+  assert('posSingleNoModal', !overlay().className.includes('active'), overlay().className);
+
   // ---- MSG_ANNOUNCE_NUMBER 分页：7 个选项一页 5 项，>>> 翻页后选第 7 项 ----
   eventBus.emit('duel:announce_number', { player: 0, options: [1, 2, 3, 4, 5, 6, 7] });
   await waitForModal('.num-opt');
@@ -459,6 +466,14 @@ const run = async () => {
   r = await waitResp();
   await waitModalClosed();
   assert('yesNoResponse', r.kind === 'I' && r.v === 0, JSON.stringify(r));
+
+  // 原版 CancelOrFinish（event_handler.cpp:2564-2571）：是/否询问右键 = 否
+  eventBus.emit('duel:select_yesno', { player: 0, desc: 0 });
+  await waitForModal('#modal-btn-yes');
+  document.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+  r = await waitResp();
+  await waitModalClosed();
+  assert('yesNoRightClickIsNo', r.kind === 'I' && r.v === 0, JSON.stringify(r));
 
   // ---- MSG_SELECT_YESNO + ResolveDesc：desc 可解析时消息用真实文本 ----
   WailsBridge.resolveDesc = async (id) => (id === 0x896311391 ? '把「青眼白龙」解放吗？' : '');

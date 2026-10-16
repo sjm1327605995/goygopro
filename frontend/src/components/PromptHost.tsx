@@ -22,7 +22,7 @@ import { eventBus, WailsBridge } from '../wails_bridge.ts';
 import chainPrefs from '../duel/chain_prefs.ts';
 import { duelStore } from '../duel/store.ts';
 import { respondCardSelection, cancelCardSelection } from '../duel/card_select.ts';
-import { RACES, ATTRS } from '../domain/constants.ts';
+import { RACES, ATTRS, POS_FACEUP_ATTACK, POS_FACEDOWN_ATTACK, POS_FACEUP_DEFENSE, POS_FACEDOWN_DEFENSE } from '../domain/constants.ts';
 import { sysString } from '../domain/sys_strings.ts';
 import { settingsStore } from '../domain/settings.ts';
 import GameDialog from './GameDialog.tsx';
@@ -146,13 +146,16 @@ export default function PromptHost() {
         const text = await WailsBridge.resolveDesc(data.desc);
         if (text) message = text;
       }
+      const respond = answer((yes: boolean) => WailsBridge.sendResponseI(yes ? 1 : 0));
       show(
         <YesNoModal
           title="请选择"
           message={message}
-          respond={answer((yes) => WailsBridge.sendResponseI(yes ? 1 : 0))}
+          respond={respond}
         />,
       );
+      // 原版 CancelOrFinish（event_handler.cpp:2564-2571）：是/否询问右键 = 否
+      chainCancelRef.current = () => respond(false);
     });
 
     reg('duel:select_option', async (data) => {
@@ -200,10 +203,15 @@ export default function PromptHost() {
         return;
       }
       if (cards.length === 1) {
+        // 原版 duelclient.cpp:1813-1817：连锁询问文案以 event_string 开头
+        const eventText = duelStore.getState().hintEvent;
+        const chainMsg = eventText
+          ? `${eventText}\n是否发动「${cards[0].name}」的连锁效果？`
+          : `是否发动「${cards[0].name}」的连锁效果？`;
         show(
           <YesNoModal
             title="连锁"
-            message={`是否发动「${cards[0].name}」的连锁效果？`}
+            message={chainMsg}
             respond={answer((yes) => WailsBridge.sendResponseI(yes ? 0 : -1))}
           />,
         );
@@ -238,13 +246,19 @@ export default function PromptHost() {
         const name = (info && info.name) || data.code;
         message = `是否发动「${name}」的效果？`;
       }
+      // 原版 duelclient.cpp:1524：event_string（HINT_EVENT）前缀说明触发缘由
+      const eventText = duelStore.getState().hintEvent;
+      if (eventText) message = `${eventText}\n${message}`;
+      const respond = answer((yes: boolean) => WailsBridge.sendResponseI(yes ? 1 : 0));
       show(
         <YesNoModal
           title="发动卡牌效果？"
           message={message}
-          respond={answer((yes) => WailsBridge.sendResponseI(yes ? 1 : 0))}
+          respond={respond}
         />,
       );
+      // 原版 CancelOrFinish（event_handler.cpp:2564-2571）：是/否询问右键 = 否
+      chainCancelRef.current = () => respond(false);
     });
 
     reg('duel:select_card', async (data) => {
@@ -296,6 +310,13 @@ export default function PromptHost() {
     });
 
     reg('duel:select_position', (data) => {
+      // 原版 duelclient.cpp:1916-1919：只有一个可选表示形式时直接应答，不弹窗
+      const options = [POS_FACEUP_ATTACK, POS_FACEDOWN_ATTACK, POS_FACEUP_DEFENSE, POS_FACEDOWN_DEFENSE]
+        .filter((p) => data.positions & p);
+      if (options.length === 1) {
+        answer(() => WailsBridge.sendResponseI(options[0]))();
+        return;
+      }
       show(<PositionModal positions={data.positions} code={data.code} respond={answer((pos) => WailsBridge.sendResponseI(pos))} />);
     });
 

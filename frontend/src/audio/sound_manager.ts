@@ -254,6 +254,58 @@ class SoundManager {
   }
 
   /**
+   * Counter Add/Remove — 原版 SOUND_COUNTER_ADD/REMOVE（duelclient.cpp:3390/3410）
+   * 的合成等价：放置 = 短促上跳双音；取除 = 下沉单音。
+   */
+  playCounter(adding: boolean) {
+    if (this.muted) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    const t = this.ctx.currentTime;
+    const notes = adding ? [660, 880] : [440, 330];
+    notes.forEach((freq, i) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      osc.type = 'triangle';
+      const start = t + i * 0.06;
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.2 * this.sfxVolume, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.16);
+      osc.connect(gain);
+      gain.connect(this.ctx!.destination);
+      osc.start(start);
+      osc.stop(start + 0.18);
+    });
+  }
+
+  /**
+   * LP Recover — 原版 SOUND_RECOVER（duelclient.cpp:3211）的合成等价：
+   * 上扬的明亮双音。
+   */
+  playRecover() {
+    if (this.muted) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    const t = this.ctx.currentTime;
+    [523.25, 783.99].forEach((freq, i) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t + i * 0.08);
+      gain.gain.setValueAtTime(0.0001, t + i * 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.25 * this.sfxVolume, t + i * 0.08 + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.3);
+      osc.connect(gain);
+      gain.connect(this.ctx!.destination);
+      osc.start(t + i * 0.08);
+      osc.stop(t + i * 0.08 + 0.32);
+    });
+  }
+
+  /**
    * Deck Shuffle — 原版 SOUND_SHUFFLE（duelclient.cpp:2263/2345 卡组/额外
    * 洗切）的合成等价：几段短促的噪声沙沙声模拟拨牌。
    */
