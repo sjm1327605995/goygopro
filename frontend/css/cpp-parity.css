@@ -47,11 +47,12 @@
 :is(#app,#root) .duel-stage .phase-buttons { position:relative; width:375px; height:20px; display:block; }
 :is(#app,#root) .duel-stage .phase-btn { position:absolute; top:0; left:0; width:50px; height:20px; font-size:12px; padding:0; }
 :is(#app,#root) .duel-stage #phase-status { cursor:default; opacity:1; }
-:is(#app,#root) .duel-stage .phase-banner { right:auto; bottom:auto; color:#fff; font-size:48px; }
+:is(#app,#root) .duel-stage .phase-banner { right:auto; bottom:auto; color:#fff; font-size:var(--banner-font-size,48px); line-height:1; }
 :is(#app,#root) .duel-stage .turn-block { position:fixed; left:632px; top:10px; width:56px; height:40px; transform:none; }
 :is(#app,#root) .duel-stage #player-panel { left:329px; top:10px; width:300px; }
 :is(#app,#root) .duel-stage #opponent-panel { left:691px; right:auto; top:10px; width:300px; }
 :is(#app,#root) .duel-stage .player-state-row, :is(#app,#root) .duel-stage .player-turn-chip { display:none; }
+:is(#app,#root) .native-card-image img { position:static; display:block; width:100%; height:100%; border:0; padding:0; border-radius:0; object-fit:contain; }
 :is(#app,#root) .duel-stage .hint-bar { left:500px; top:60px; width:320px; height:30px; transform:none; padding:0; line-height:30px; font-size:12px; border-radius:0; box-shadow:none; }
 :is(#app,#root) .duel-stage .right-controls { left:205px; top:5px; width:90px; }
 :is(#app,#root) .duel-stage .surrender-btn, :is(#app,#root) .duel-stage .leave-game-btn { height:75px; width:90px; font-size:12px; }

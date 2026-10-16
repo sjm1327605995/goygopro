@@ -3,25 +3,25 @@
  * 固定位置的 2D 特效卡图动画 + stACMessage 文本弹条 + 猜拳/掷币掷骰动画。
  *
  * 单卡特效队列（事件到达快于动画时排队依次播放；卡图走 WailsBridge.getCardImage）：
- *   duel:summoning / duel:flipsummoning → showcard=7  翻卡（rotateY 半周）
+ *   duel:summoning / duel:flipsummoning → showcard=7  沿纵向展开的梯形
  *   duel:spsummoning                    → showcard=5  中心放大淡入
  *   duel:chaining / duel:hint(EFFECT/CARD) → showcard=1+2 mask.png 揭示扫过
  *   duel:chain_negated                  → showcard=3  negated.png 收缩罩
- *   duel:confirm_cards（单卡）           → showcard=4  淡入揭示
  *   duel:card_hint（CHINT_TURN）         → showcard=6  回合数大字盖戳
  *
  * 独立轻量动画（不进队列，原版为独立 showcard 状态）：
  *   duel:hand_res    → showcard=100 双拳下落对碰
- *   duel:toss_coin   → 硬币翻转 + ACMessage 文本（duelclient.cpp:3538）
- *   duel:toss_dice   → 骰子弹跳 + ACMessage 文本（duelclient.cpp:3561）
+ *   duel:toss_coin / duel:toss_dice → ACMessage 文本
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { eventBus, WailsBridge } from '../wails_bridge.ts';
 import { duelStore } from '../duel/store.ts';
 import { sysString } from '../domain/sys_strings.ts';
 import { formatRace, formatAttribute } from '../domain/constants.ts';
-
-type SpecKind = 'flip' | 'zoom' | 'reveal' | 'negated' | 'fade' | 'number';
+import { seatToDisplay } from '../domain/reducer.ts';
+import { DesignScaleContext } from '../ui/DesignSpace.tsx';
+import { rpsOffset, type SpecKind } from '../duel/draw_spec.ts';
+import SpecCardAnimation from './SpecCardAnimation.tsx';
 
 interface Spec {
   kind: SpecKind;
@@ -30,10 +30,6 @@ interface Spec {
   num?: number;
   key: number;
 }
-
-const SPEC_MS: Record<SpecKind, number> = {
-  flip: 800, zoom: 500, reveal: 900, negated: 600, fade: 700, number: 900,
-};
 
 // ocgcore common.h HINT_*：MSG_HINT 的 type 字段
 const HINT_OPSELECTED = 4;
@@ -57,16 +53,21 @@ interface RpsShow {
 
 
 export default function SpecOverlay() {
+  const scale = useContext(DesignScaleContext);
   const [spec, setSpec] = useState<Spec | null>(null);
   const [artUrl, setArtUrl] = useState<string | null>(null);
   const [acText, setAcText] = useState<string | null>(null);
   const [rps, setRps] = useState<RpsShow | null>(null);
+  const [rpsFrame, setRpsFrame] = useState(0);
   // 队列 + 播放锁；lastChainCode 供 chain_negated 复用卡图。
   const queue = useRef<Spec[]>([]);
   const playing = useRef(false);
   const lastChainCode = useRef<number | undefined>(undefined);
   const keySeq = useRef(0);
   const timers = useRef<number[]>([]);
+  const generation = useRef(0);
+  const chainCodes = useRef<number[]>([]);
+  const acKey = useRef(0);
 
   useEffect(() => {
     const later = (fn: () => void, ms: number) => {
@@ -75,24 +76,27 @@ export default function SpecOverlay() {
     };
 
     const push = (kind: SpecKind, code?: number, num?: number) => {
-      if (queue.current.length > 4) return; // 防洪：积压时丢多余的特效
       queue.current.push({ kind, code, num, key: ++keySeq.current });
       drain();
     };
 
     const showAc = (text: string) => {
+      const key = ++keySeq.current;
+      acKey.current = key;
       setAcText(text);
-      later(() => setAcText(null), 1400);
+      later(() => { if (acKey.current === key) setAcText(null); }, 40 * 1000 / 60);
     };
 
     const onSummoning = (d: any) => push('flip', d.code);
     const onFlipSummoning = (d: any) => push('flip', d.code);
-    const onSpSummoning = (d: any) => push('zoom', d.code);
+    const onSpSummoning = (d: any) => { if (d.code) push('zoom', d.code); };
     const onChaining = (d: any) => {
       lastChainCode.current = d.code;
+      chainCodes.current.push(d.code);
       push('reveal', d.code);
     };
-    const onChainNegated = () => push('negated', lastChainCode.current);
+    const onChainNegated = (d: any) => push('negated', chainCodes.current[d.count - 1] || lastChainCode.current);
+    const onChainEnd = () => { chainCodes.current = []; lastChainCode.current = undefined; };
 
     // MSG_HINT：HINT_EFFECT/HINT_CARD 的 data 是卡号 → mask 揭示
     // （原版 duelclient.cpp:1113/1162 的 showcard=1；事件/消息文本走提示条）。
@@ -100,8 +104,9 @@ export default function SpecOverlay() {
     // （duelclient.cpp:1108-1145：SysString 1510「玩家选择了」/1511「宣言
     // 了」/1512 + 卡名/数字/种族属性名；日志由 reducer 同步落）。
     const fmt151x = (id: number, val: string) =>
-      (sysString(id) || '').replace('[%ls]', val).replace('[%d]', val);
+      (sysString(id) || '').replace('%ls', val).replace('%d', val);
     const onHint = async (d: any) => {
+      const current = generation.current;
       if ((d.type === HINT_EFFECT || d.type === HINT_CARD) && d.data > 0) {
         push('reveal', d.data);
         return;
@@ -109,7 +114,7 @@ export default function SpecOverlay() {
       switch (d.type) {
         case HINT_OPSELECTED: {
           const text = sysString(d.data) || (await WailsBridge.resolveDesc(d.data));
-          if (text) showAc(fmt151x(1510, text));
+          if (text && current === generation.current) showAc(fmt151x(1510, text));
           break;
         }
         case HINT_RACE: {
@@ -124,7 +129,7 @@ export default function SpecOverlay() {
         }
         case HINT_CODE: {
           const info = await WailsBridge.getCard(d.data);
-          showAc(fmt151x(1511, (info && info.name) || `#${d.data}`));
+          if (current === generation.current) showAc(fmt151x(1511, (info && info.name) || `#${d.data}`));
           break;
         }
         case HINT_NUMBER:
@@ -138,35 +143,38 @@ export default function SpecOverlay() {
     const onCardHint = (d: any) => {
       if (d.type !== CHINT_TURN || !d.data || !d.card) return;
       const st = duelStore.getState();
-      const disp = d.card.c === st.playerSlot ? 0 : 1;
+      const disp = seatToDisplay(st, d.card.c);
       const locName = d.card.l === 0x04 ? 'mzone' : d.card.l === 0x08 ? 'szone' : null;
       const code = locName ? (st.board[disp][locName][d.card.s] || {}).code : 0;
       push('number', code || undefined, d.data);
     };
 
-    // MSG_CONFIRM_CARDS：单卡确认 → 淡入揭示（多卡走 field3d 揭示序列+日志）
-    const onConfirmCards = (d: any) => {
-      const cards = d.cards || [];
-      if (cards.length === 1 && cards[0].code) push('fade', cards[0].code);
-    };
-
     // ---- showcard=100：猜拳双拳下落对碰 ----
     const onHandRes = (d: any) => {
-      const mine = RPS_HANDS[d.res & 3] || RPS_HANDS[2];
-      const theirs = RPS_HANDS[(d.res >> 2) & 3] || RPS_HANDS[2];
-      // 下拳=自己（低 2 位），上拳=对方（高 2 位）
+      const first = RPS_HANDS[d.res & 3] || RPS_HANDS[2];
+      const second = RPS_HANDS[(d.res >> 2) & 3] || RPS_HANDS[2];
+      const mine = seatToDisplay(duelStore.getState(), 0) === 0 ? first : second;
+      const theirs = mine === first ? second : first;
+      setRpsFrame(0);
       setRps({ bottom: mine, top: theirs, key: ++keySeq.current });
-      later(() => setRps(null), 1700);
     };
 
     // ---- 掷币/掷骰：图标动画 + ACMessage 文本 ----
     const onTossCoin = (d: any) => {
       const faces = (d.results || []).map((r: number) => (r ? sysString(60) : sysString(61)));
-      showAc(`投掷硬币结果：[ ${faces.join(' ] [ ')} ]`);
+      showAc(`投掷硬币结果：${faces.map((face: string) => `[${face}]`).join('')}`);
     };
     const onTossDice = (d: any) => {
-      const rolls = (d.results || []).join(' ] [ ');
-      showAc(`投掷骰子结果：[ ${rolls} ]`);
+      showAc(`投掷骰子结果：${(d.results || []).map((value: number) => `[${value}]`).join('')}`);
+    };
+    const reset = () => {
+      generation.current++;
+      timers.current.forEach(clearTimeout);
+      timers.current = [];
+      queue.current = [];
+      playing.current = false;
+      setSpec(null); setArtUrl(null); setAcText(null); setRps(null);
+      onChainEnd();
     };
 
     eventBus.on('duel:summoning', onSummoning);
@@ -174,12 +182,14 @@ export default function SpecOverlay() {
     eventBus.on('duel:spsummoning', onSpSummoning);
     eventBus.on('duel:chaining', onChaining);
     eventBus.on('duel:chain_negated', onChainNegated);
+    eventBus.on('duel:chain_end', onChainEnd);
     eventBus.on('duel:hint', onHint);
     eventBus.on('duel:card_hint', onCardHint);
-    eventBus.on('duel:confirm_cards', onConfirmCards);
     eventBus.on('duel:hand_res', onHandRes);
     eventBus.on('duel:toss_coin', onTossCoin);
     eventBus.on('duel:toss_dice', onTossDice);
+    eventBus.on('duel:start', reset);
+    eventBus.on('duel:win', reset);
 
     return () => {
       eventBus.off('duel:summoning', onSummoning);
@@ -187,12 +197,15 @@ export default function SpecOverlay() {
       eventBus.off('duel:spsummoning', onSpSummoning);
       eventBus.off('duel:chaining', onChaining);
       eventBus.off('duel:chain_negated', onChainNegated);
+      eventBus.off('duel:chain_end', onChainEnd);
       eventBus.off('duel:hint', onHint);
       eventBus.off('duel:card_hint', onCardHint);
-      eventBus.off('duel:confirm_cards', onConfirmCards);
       eventBus.off('duel:hand_res', onHandRes);
       eventBus.off('duel:toss_coin', onTossCoin);
       eventBus.off('duel:toss_dice', onTossDice);
+      eventBus.off('duel:start', reset);
+      eventBus.off('duel:win', reset);
+      generation.current++;
       timers.current.forEach(clearTimeout);
       timers.current = [];
       queue.current = [];
@@ -200,24 +213,33 @@ export default function SpecOverlay() {
     };
   }, []);
 
-  const drain = (): void => {
+  useEffect(() => {
+    if (!rps) return;
+    const started = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const frame = Math.floor((now - started) * 60 / 1000);
+      if (frame >= 60) { setRps(null); return; }
+      setRpsFrame(frame);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [rps]);
+
+  const drain = async (): Promise<void> => {
     if (playing.current) return;
     const next = queue.current.shift();
     if (!next) return;
     playing.current = true;
-    setSpec(next);
+    const current = generation.current;
+    let url: string | null = null;
     if (next.code) {
-      // 位置无关：拿到插画再播放也来得及（动画本身有 ~1s 时长）。
-      WailsBridge.getCardImage(next.code).then((p) => {
-        setArtUrl(p ? p.url : null);
-      });
+      try { url = (await WailsBridge.getCardImage(next.code))?.url || null; } catch { /* Render available effect textures. */ }
     }
-    const t = window.setTimeout(() => {
-      playing.current = false;
-      setSpec(null);
-      drain();
-    }, SPEC_MS[next.kind]);
-    timers.current.push(t);
+    if (current !== generation.current) return;
+    setArtUrl(url);
+    setSpec(next);
   };
 
   return (
@@ -225,19 +247,16 @@ export default function SpecOverlay() {
       <div
         id="draw-spec-overlay"
         style={{
-          position: 'absolute', left: '56%', top: '23%', zIndex: 900,
-          width: '177px', height: '254px', pointerEvents: 'none',
+          position: 'fixed', left: 0, top: 0, zIndex: 900,
+          width: '1024px', height: '640px', pointerEvents: 'none',
           display: spec ? 'block' : 'none',
         }}
       >
         {spec && (
           <div key={spec.key} className={`spec-card spec-${spec.kind}`}>
-            {artUrl
-              ? <img src={artUrl} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
-              : <div style={{ width: '100%', height: '100%', background: '#0f172a', border: '1px solid #94a3b8' }} />}
-            {spec.kind === 'reveal' && <div className="spec-mask" style={{ backgroundImage: "url('textures/mask.png')" }} />}
-            {spec.kind === 'negated' && <div className="spec-negated" style={{ backgroundImage: "url('textures/negated.png')" }} />}
-            {spec.kind === 'number' && <div className="spec-number"><span>{spec.num}</span></div>}
+            <SpecCardAnimation kind={spec.kind} url={artUrl} num={spec.num} onComplete={() => {
+              playing.current = false; setSpec(null); void drain();
+            }} />
           </div>
         )}
       </div>
@@ -245,8 +264,8 @@ export default function SpecOverlay() {
       {/* showcard=100：猜拳双拳对碰 */}
       {rps && (
         <div key={rps.key} id="rps-arena" className="rps-arena">
-          <img className="rps-hand rps-hand-top" src={rps.top} alt="对方出拳" />
-          <img className="rps-hand rps-hand-bottom" src={rps.bottom} alt="我方出拳" />
+          <img className="rps-hand rps-hand-top" src={rps.top} alt="对方出拳" style={{ left: 659.5, top: rpsOffset(rpsFrame) + 64, transform: `scale(${1 / scale.sx}, ${1 / scale.sy}) translate(-44.5px, -64px)` }} />
+          <img className="rps-hand rps-hand-bottom" src={rps.bottom} alt="我方出拳" style={{ left: 659.5, top: 604 - rpsOffset(rpsFrame), transform: `scale(${1 / scale.sx}, ${1 / scale.sy}) translate(-44.5px, -64px)` }} />
         </div>
       )}
 
@@ -255,15 +274,16 @@ export default function SpecOverlay() {
         style={{
           // 原版 wACMessage/stACMessage（game.cpp:527-533）：(490,240)-(840,300)
           // 350×60 无边框、0xc0c0c0ff 浅蓝白底、黑字居中
-          position: 'absolute', left: '490px', top: '240px', width: '350px', height: '60px', zIndex: 950,
+          position: 'fixed', left: '665px', top: '270px', width: '350px', height: '60px', zIndex: 950,
+          transformOrigin: '0 0', transform: `scale(${1 / scale.sx}, ${1 / scale.sy}) translate(-175px, -30px)`,
           display: acText ? 'block' : 'none',
           textAlign: 'center', lineHeight: '58px',
           background: 'rgba(192, 192, 255, 0.75)', color: '#000',
-          border: '1px solid #666', fontSize: '14px', pointerEvents: 'none',
+          border: '1px solid #666', fontSize: '12px', pointerEvents: 'none',
           whiteSpace: 'nowrap', boxSizing: 'border-box',
         }}
       >
-        {acText || ''}
+        <div style={{ width: 310, height: '100%', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 'normal', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{acText || ''}</div>
       </div>
     </React.Fragment>
   );

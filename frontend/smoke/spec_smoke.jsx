@@ -10,6 +10,7 @@ import '../css/style.css';
 import '../css/duel-original.css';
 import SpecOverlay from '../src/components/SpecOverlay.tsx';
 import CardTooltip from '../src/components/CardTooltip.tsx';
+import { drawSpecFrame, cardHintRect, rpsOffset } from '../src/duel/draw_spec.ts';
 
 const FAKE_PIC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
 WailsBridge.getCardImage = async () => ({ url: FAKE_PIC, full: false });
@@ -46,6 +47,24 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   try {
     await waitFor(() => !!$('#draw-spec-overlay'));
     const overlay = $('#draw-spec-overlay');
+    // Check the visible output against the source rectangles and sprite indices.
+    const pixelCanvas = document.createElement('canvas');
+    pixelCanvas.width = 1024; pixelCanvas.height = 640;
+    const ctx = pixelCanvas.getContext('2d');
+    const card = document.createElement('canvas'); card.width = 177; card.height = 254;
+    card.getContext('2d').fillStyle = '#123456'; card.getContext('2d').fillRect(0, 0, 177, 254);
+    const number = document.createElement('canvas'); number.width = 320; number.height = 256;
+    number.getContext('2d').fillStyle = '#ff0000'; number.getContext('2d').fillRect(128, 0, 64, 64);
+    const images = { card, number, mask: null, negated: null };
+    const pixel = (x, y) => [...ctx.getImageData(x, y, 1, 1).data].join(',');
+    drawSpecFrame(ctx, 'flip', 0, images, { sx: 1, sy: 1 });
+    record('flip-starts-edge-on', pixel(662, 277) === '0,0,0,0');
+    drawSpecFrame(ctx, 'flip', 10, images, { sx: 1, sy: 1 });
+    record('flip-opens-upright-at-source-rectangle', pixel(600, 200) === '18,52,86,255' && pixel(573, 200) === '0,0,0,0');
+    drawSpecFrame(ctx, 'number', 16, images, { sx: 1, sy: 1 }, 3);
+    record('turn-counter-uses-number-sprite-cell', pixel(664, 269) === '255,0,0,255' && pixel(600, 200) === '18,52,86,255');
+    record('card-hint-keeps-aspect-in-wide-window', cardHintRect(574, 150, 751, 404, { sx: 1.5, sy: 1 }).join(',') === '905,150,177,254');
+    record('rps-source-frame-offsets', rpsOffset(0) === 50 && rpsOffset(1) === 60 && rpsOffset(29) === rpsOffset(59));
 
     // --- 翻卡（duel:summoning → showcard=7） ---
     eventBus.emit('duel:summoning', { code: 89631139, cc: 0, cl: 4, cs: 2, cp: 1 });
@@ -54,7 +73,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
     // --- 排队：立刻再来一个 zoom，flip 播完后接续 ---
     eventBus.emit('duel:spsummoning', { code: 84013237, cc: 0, cl: 4, cs: 1, cp: 1 });
-    await sleep(1000); // flip(800ms) 已结束、zoom(500ms) 应正在播
+    await sleep(650); // 原版 flip 30 帧，随后 zoom 30 帧。
     record('queue-advances-to-zoom', !!$('.spec-zoom'));
     await waitFor(() => overlay.style.display === 'none', 3000);
     record('overlay-hides-after-queue', true);
@@ -71,14 +90,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     record('chain-negated-plays', true);
     await waitFor(() => overlay.style.display === 'none', 3000);
 
-    // --- showcard=4：confirm_cards 单卡淡入揭示 ---
+    // MSG_CONFIRM_CARDS uses the field/list confirmation path, no DrawSpec card.
     eventBus.emit('duel:confirm_cards', {
       player: 0, skipPanel: 0,
       cards: [{ code: 89631139, c: 0, l: 4, s: 0 }],
     });
-    await waitFor(() => !!$('.spec-fade'));
-    record('confirm-cards-plays-fade', true);
-    await waitFor(() => overlay.style.display === 'none', 3000);
+    await sleep(100);
+    record('confirm-cards-no-extra-overlay', overlay.style.display === 'none');
 
     // --- duel:hint HINT_EFFECT/HINT_CARD → mask 揭示（showcard=1） ---
     eventBus.emit('duel:hint', { type: 5, player: 0, data: 55144522 });
@@ -104,25 +122,31 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     record('hand-res-plays-rps', $('#rps-arena .rps-hand-bottom').src.endsWith('/f1.jpg')
       && $('#rps-arena .rps-hand-top').src.endsWith('/f3.jpg'));
     await waitFor(() => !$('#rps-arena'), 3000);
+    eventBus.emit('duel:start', { playerType: 1, lp0: 8000, lp1: 8000 });
+    eventBus.emit('duel:hand_res', { res: 1 | (3 << 2) });
+    await waitFor(() => !!$('#rps-arena'));
+    record('hand-res-maps-second-player', $('#rps-arena .rps-hand-bottom').src.endsWith('/f3.jpg')
+      && $('#rps-arena .rps-hand-top').src.endsWith('/f1.jpg'));
+    await waitFor(() => !$('#rps-arena'), 3000);
 
     // --- 猜硬币/骰子：图标动画 + ACMessage 文本弹条 ---
     eventBus.emit('duel:toss_coin', { player: 0, results: [1, 0] });
     record('coin-original-text-only', !$('#toss-arena'));
     await waitFor(() => $('#ac-message') && $('#ac-message').style.display === 'block');
-    record('coin-popup-text', $('#ac-message').textContent.includes('正面') && $('#ac-message').textContent.includes('反面'));
+    record('coin-popup-text', $('#ac-message').textContent === '投掷硬币结果：[正面][反面]');
     await waitFor(() => $('#ac-message').style.display === 'none' && !$('#toss-arena'), 3000);
 
     eventBus.emit('duel:toss_dice', { player: 0, results: [3, 5] });
     record('dice-original-text-only', !$('#toss-arena'));
     await waitFor(() => $('#ac-message').style.display === 'block');
-    record('dice-popup-text', $('#ac-message').textContent.includes('3') && $('#ac-message').textContent.includes('5'));
+    record('dice-popup-text', $('#ac-message').textContent === '投掷骰子结果：[3][5]');
     await waitFor(() => $('#ac-message').style.display === 'none', 3000);
 
     // --- HINT 宣言展示（duelclient.cpp:1108-1145）：OPSELECTED/RACE/ATTRIB/
     // CODE/NUMBER → stACMessage 浮条（SysString 1510/1511/1512） ---
     eventBus.emit('duel:hint', { type: 9, player: 1, data: 5 });
     await waitFor(() => $('#ac-message').style.display === 'block');
-    record('hint-number-popup', $('#ac-message').textContent.includes('玩家选择了：5'));
+    record('hint-number-popup', $('#ac-message').textContent === '玩家选择了：[5]');
     await waitFor(() => $('#ac-message').style.display === 'none', 3000);
 
     eventBus.emit('duel:hint', { type: 6, player: 1, data: 0x2001 }); // 战士/龙
@@ -151,6 +175,26 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     record('hint-opselected-popup', $('#ac-message').textContent.includes('选择'));
     await waitFor(() => $('#ac-message').style.display === 'none', 3000);
     WailsBridge.resolveDesc = async () => '';
+
+    // A delayed image from an old duel must never restart an obsolete animation.
+    const loadCardImage = WailsBridge.getCardImage;
+    let finishOldImage;
+    WailsBridge.getCardImage = () => new Promise(resolve => { finishOldImage = resolve; });
+    eventBus.emit('duel:hint', { type: 10, player: 0, data: 89631139 });
+    await waitFor(() => !!finishOldImage);
+    eventBus.emit('duel:start', { playerType: 0, lp0: 8000, lp1: 8000 });
+    finishOldImage({ url: FAKE_PIC });
+    WailsBridge.getCardImage = loadCardImage;
+    await sleep(100);
+    record('new-duel-discards-old-image-result', overlay.style.display === 'none');
+
+    eventBus.emit('duel:hint', { type: 9, player: 0, data: 1 });
+    await sleep(200);
+    eventBus.emit('duel:hint', { type: 9, player: 0, data: 2 });
+    await sleep(500);
+    record('new-message-keeps-own-duration', $('#ac-message').style.display === 'block'
+      && $('#ac-message').textContent === '玩家选择了：[2]');
+    await waitFor(() => $('#ac-message').style.display === 'none');
 
     // --- stTip：悬停出现、移开消失、跟随坐标；多行信息（原版 stTip 的
     // 攻守/星阶/种族属性行）---

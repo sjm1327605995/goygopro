@@ -13,7 +13,9 @@ fs.mkdirSync(out,{recursive:true});
   await page.goto(process.env.PARITY_URL||'http://127.0.0.1:19500/');
   await page.getByRole('button',{name:'编辑卡组',exact:true}).waitFor();
   await page.evaluate(async()=>{
-   const {WailsBridge:b,eventBus}=await import('/src/wails_bridge.ts');
+   // Vite may already have versioned this module after a source edit.
+   window.__loadModule=path=>import(performance.getEntriesByType('resource').find(r=>new URL(r.name).pathname===path)?.name||path);
+   const {WailsBridge:b,eventBus}=await window.__loadModule('/src/wails_bridge.ts');
    const cards=[
     {code:1001,name:'Alpha',type:0x11,level:4,attack:1000,defense:1000},
     {code:1002,name:'Beta',type:0x21,level:2,attack:3000,defense:0},
@@ -53,15 +55,39 @@ fs.mkdirSync(out,{recursive:true});
   await page.locator('#deck-shuffle-btn').click();
   check('shuffle-keeps-extra-side',JSON.stringify(await page.locator('.ds-grid-extra .deck-card-chip').evaluateAll(es=>es.map(e=>e.title)))===JSON.stringify(extras)&&JSON.stringify(await page.locator('.ds-grid-side .deck-card-chip').evaluateAll(es=>es.map(e=>e.title)))===JSON.stringify(sides));
   await page.screenshot({path:out+'/cpp-deck.png'});
+  await page.setViewportSize({width:1600,height:900});
+  await main.first().hover();
+  await page.waitForFunction(()=>Math.abs(document.querySelector('.native-card-image').getBoundingClientRect().width-248)<1);
+  const wideImage=await page.locator('.inspector-pic-box').boundingBox();
+  check('wide-preview-keeps-source-card-ratio',Math.round(wideImage.width)===248&&Math.round(wideImage.height)===357);
+  await page.getByRole('button',{name:'连接标记',exact:true}).click();
+  const marks=await page.locator('#deck-linkmarks-panel').boundingBox();
+  check('wide-linkmarks-keeps-source-window',Math.abs(marks.width-120)<1&&Math.abs(marks.height-120)<1&&Math.abs(marks.x-1127.5)<1);
+  await page.locator('#deck-linkmarks-panel').getByRole('button',{name:'确定',exact:true}).click();
+  await page.getByRole('button',{name:'卡组管理',exact:true}).click();
+  await page.waitForFunction(()=>{const r=document.querySelector('#deck-manage-modal')?.getBoundingClientRect();return r&&Math.abs(r.width-490)<1&&Math.abs(r.height-380)<1;});
+  const manage=await page.locator('#deck-manage-modal').boundingBox();
+  check('wide-deck-manager-keeps-source-window',Math.abs(manage.width-490)<1&&Math.abs(manage.height-380)<1);
+  await page.locator('#dm-close').click();
+  await page.screenshot({path:out+'/cpp-wide-fixed.png'});
+  await page.setViewportSize({width:1024,height:640});
   await page.getByRole('button',{name:'退出编辑',exact:true}).click();await page.getByRole('button',{name:'编辑卡组',exact:true}).waitFor();check('exit-click-not-obstructed');
-  await page.evaluate(async()=>{const {duelStore}=await import('/src/duel/store.ts');window.__store=duelStore;const e=window.__parityBus;e.emit('duel:start',{playerType:0,duelRule:5,lp0:8000,lp1:8000});e.emit('duel:draw',{player:0,count:2,cards:[1001,1001]});e.emit('nav','duel');});
+  await page.evaluate(async()=>{const {duelStore}=await window.__loadModule('/src/duel/store.ts');window.__store=duelStore;const e=window.__parityBus;e.emit('duel:start',{playerType:0,duelRule:5,lp0:8000,lp1:8000});e.emit('duel:draw',{player:0,count:2,cards:[1001,1001]});e.emit('nav','duel');});
   await page.locator('#duel-screen').waitFor();
   // Access only for scene geometry; user interaction below uses real projected coordinates.
   const stage=await page.evaluate(async()=>{const {DuelField3D}=await import('/src/duel/field3d.ts');return !!DuelField3D;});check('duel-mounted',stage);
   await page.evaluate(()=>window.__parityBus.emit('duel:new_phase',{phase:0x4}));
   await page.locator('#phase-status').waitFor();check('one-current-phase',await page.locator('#phase-status').innerText()==='Ｍ１'&&await page.locator('.phase-fold').count()===0&&await page.locator('#phase-dp').count()===0);
+  await page.setViewportSize({width:1600,height:900});
+  await page.evaluate(()=>window.__parityBus.emit('duel:new_phase',{phase:0x100}));
+  await page.waitForFunction(()=>getComputedStyle(document.querySelector('.phase-banner')).fontSize==='67px');
+  check('wide-phase-font-scales-with-height',true);
+  await page.setViewportSize({width:1024,height:640});
+  await page.evaluate(()=>window.__parityBus.emit('duel:new_phase',{phase:4}));
   await page.evaluate(()=>window.__parityBus.emit('duel:select_idlecmd',{summon:[{code:1001,c:0,l:2,s:0,idx:0},{code:1001,c:0,l:2,s:1,idx:1}],toBP:true,toEP:true}));
-  await page.locator('#phase-btn-bp').waitFor({state:'visible'});check('phase-buttons-original-positions',Math.round((await page.locator('#phase-btn-bp').boundingBox()).x)===640&&Math.round((await page.locator('#phase-btn-ep').boundingBox()).x)===800);
+  await page.locator('#phase-btn-bp').waitFor({state:'visible'});
+  await page.waitForFunction(()=>Math.abs(document.querySelector('#phase-btn-bp').getBoundingClientRect().x-640)<1);
+  check('phase-buttons-original-positions',Math.round((await page.locator('#phase-btn-bp').boundingBox()).x)===640&&Math.round((await page.locator('#phase-btn-ep').boundingBox()).x)===800);
   const handClick=await page.evaluate(async()=>{
     const THREE=await import('/libs/three.module.js');
     const camera=new THREE.PerspectiveCamera();camera.position.set(.4,15.6,16);camera.lookAt(.4,0,0);

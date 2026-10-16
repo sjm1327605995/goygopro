@@ -512,11 +512,6 @@ export class DuelManager {
       );
     });
 
-    sub('duel:damage', (data) => {
-      if (data.__instant) return;
-      this.field3D.cameraShake(0.3, 250);
-    });
-
     // Chain Events
     sub('duel:chaining', async (data) => {
       // 连锁段的对象集登记（MSG_BECOME_TARGET 追加到最后一条链）——

@@ -5,6 +5,8 @@ import GfwSelect from './ui/GfwSelect.tsx';
 import UiButton from '../ui/UiButton.tsx';
 import { UiInput, UiCheckbox } from '../ui/UiInput.tsx';
 import DesignSpace from '../ui/DesignSpace.tsx';
+import CardImageFrame from '../ui/CardImageFrame.tsx';
+import SourceWindow from '../ui/SourceWindow.tsx';
 import DeckManageModal from './DeckManageModal.tsx';
 import BigCardPanel from './BigCardPanel.tsx';
 import CardAvailabilityBadge from './CardAvailabilityBadge.tsx';
@@ -832,14 +834,12 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
       {/* 左列：wCardImg 框 (1,1)-(198,273)（game.cpp:335），卡图在内 (10,9)-(187,263)；
           wInfos 页签信息 (1,275)-(301,639)（game.cpp:356） */}
       <div className="card-inspector">
-        <div className="inspector-pic-frame">
-        <div className="inspector-pic-box">
+        <CardImageFrame className="inspector-pic-frame" imageClassName="inspector-pic-box">
           {inspectedPic
             ? <img id="deck-inspector-pic" src={inspectedPic} alt={inspected.name} draggable={false}
                 style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} onClick={() => setZoomCode(inspected.code)} />
             : <img src="textures/cover.jpg" alt="" style={{width:'100%',height:'100%',objectFit:'contain'}}/>}
-        </div>
-        </div>
+        </CardImageFrame>
         <div className="inspector-infos">
         <div className="inspector-tabs" role="tablist">
           <button
@@ -1093,7 +1093,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
           {/* wLinkMarks 连接标记浮窗（game.cpp:814-828：(700,30)-(820,150)，
               8 箭头 30×30 按 35 间距排布，中央 btnMarksOK 确定提交） */}
           {showLinkMarks ? (
-            <div id="deck-linkmarks-panel" className="ds-linkmarks-popup">
+            <SourceWindow x={700} y={30} width={120} height={120} id="deck-linkmarks-panel" className="ds-linkmarks-popup">
               {LINK_MARKS.slice(0, 3).map(([bit, arrow]) => (
                 <UiButton key={bit} variant={(linkMarksPending & bit) !== 0 ? 'gold' : 'default'}
                   className="ds-lm-btn" title="按住的箭头方向都要命中（子集语义）"
@@ -1111,7 +1111,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
                   className="ds-lm-btn" title="按住的箭头方向都要命中（子集语义）"
                   onClick={() => togglePendingMark(bit)}>{arrow}</UiButton>
               ))}
-            </div>
+            </SourceWindow>
           ) : null}
 
         {/* 主/额外/副卡组区（DrawDeckBd drawing.cpp:1228-1295 设计坐标）：

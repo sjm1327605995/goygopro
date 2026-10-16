@@ -271,6 +271,8 @@ const run = async () => {
   assert('winBannerLastsBeyondPhase', document.querySelector('.phase-banner')?.innerText === 'You Win!');
   assert('replayWaitsForWinBanner', !$('replay-save-prompt'));
   await waitFor(() => $('replay-save-prompt'));
+  const replayRect = $('replay-save-prompt').getBoundingClientRect();
+  assert('replaySaveUsesSourceWindowSize', replayRect.width === 310 && replayRect.height === 120);
   assert('winBannerExpiresBeforeReplay', !document.querySelector('.phase-banner') && !$('victory-reason'));
   $('replay-save-cancel').click();
   eventBus.emit('duel:win', { winner: 2, type: 1 });

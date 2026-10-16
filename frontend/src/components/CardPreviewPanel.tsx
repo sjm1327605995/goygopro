@@ -12,6 +12,7 @@ import { settingsStore } from '../domain/settings.ts';
 import { WailsBridge } from '../wails_bridge.ts';
 import {formatCardName,formatCardTypeLine,formatCardStats} from '../domain/card_information.ts';
 import {TYPE_MONSTER} from '../domain/constants.ts';
+import CardImageFrame from '../ui/CardImageFrame.tsx';
 
 export default function CardPreviewPanel() {
   const state = useSyncExternalStore(duelStore.subscribe, duelStore.getState);
@@ -40,11 +41,11 @@ export default function CardPreviewPanel() {
 
   return (
     <div id="card-preview-panel" className="card-preview-panel">
-      <div className="preview-image-box">
+      <CardImageFrame className="preview-image-box">
         {img
           ? <img className="preview-image" src={img} alt="" />
           : <img className="preview-image" src="textures/cover.jpg" alt="" />}
-      </div>
+      </CardImageFrame>
       {/* Radix Tabs：键盘左右切换 + roving tabindex；.active 类保留给冒烟/样式。
           两个 Tabs.Content 都在 Root 内，条件渲染保持旧的「非活动页不挂载」语义。 */}
       <Tabs.Root

@@ -5,12 +5,13 @@
  */
 import { useSyncExternalStore } from 'react';
 import { settingsStore } from '../../domain/settings.ts';
+import SourceWindow from '../../ui/SourceWindow.tsx';
 
 export function YesNoModal({ title, message, respond }: { title: string; message: string; respond: (yes: boolean) => void }) {
   const s = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
   const swap = !!s.swap_yes_no_button;
   return (
-    <div className="modal-box modal-query">
+    <SourceWindow x={490} y={200} width={350} height={140} className="modal-box modal-query">
       <div className="modal-title">{title}</div>
       <div className="query-msg">{message}</div>
       {/* 原版默认是左否右（swap 时互换）。DOM 顺序恒为是/否（冒烟按 id 定位），
@@ -19,6 +20,6 @@ export function YesNoModal({ title, message, respond }: { title: string; message
         <button id="modal-btn-yes" className="btn btn-primary" style={{ order: swap ? 2 : 1 }} onClick={() => respond(true)}>是</button>
         <button id="modal-btn-no" className="btn btn-secondary" style={{ order: swap ? 1 : 2 }} onClick={() => respond(false)}>否</button>
       </div>
-    </div>
+    </SourceWindow>
   );
 }

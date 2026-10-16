@@ -25,9 +25,11 @@ export default function PhaseStrip({ bannerOnly = false }: { bannerOnly?: boolea
 
   const phase = state.phase;
   const win = state.win;
+  const announcement = state.announcement;
   useEffect(() => {
-    const text = win ? winBannerText(win.winner) : phaseBannerText(phase);
-    const duration = win ? Math.max(0, WIN_BANNER_MS - (Date.now() - win.announcedAt)) : PHASE_BANNER_MS;
+    const text = win ? winBannerText(win.winner) : announcement ? announcement.text || phaseBannerText(phase) : '';
+    const duration = win ? Math.max(0, WIN_BANNER_MS - (Date.now() - win.announcedAt))
+      : announcement ? Math.max(0, PHASE_BANNER_MS - (Date.now() - announcement.startedAt)) : 0;
     if (!text || !duration) {
       setBanner(null);
       return undefined;
@@ -40,7 +42,7 @@ export default function PhaseStrip({ bannerOnly = false }: { bannerOnly?: boolea
       setBanner((cur) => (cur === entry ? null : cur));
     }, duration);
     return () => clearTimeout(t);
-  }, [phase, win]);
+  }, [phase, win, announcement]);
 
   const prompt = state.phasePrompt;
   const canBP = !!prompt && prompt.mode === 'idle' && prompt.canBP;
@@ -49,7 +51,7 @@ export default function PhaseStrip({ bannerOnly = false }: { bannerOnly?: boolea
   const reason = win ? winReason(win.winner, win.type, state.names, state.matchKill, !!settings.hide_player_name) : '';
   const bannerNode = banner ? (
     <React.Fragment key={banner.key}>
-      <div className="phase-banner-anchor" style={{ transform: `scale(${1 / scale.sx}, ${1 / scale.sy})`, '--banner-enter': `${360 * scale.sx}px`, '--banner-exit': `${400 * scale.sx}px` } as React.CSSProperties}>
+      <div className="phase-banner-anchor" style={{ transform: `scale(${1 / scale.sx}, ${1 / scale.sy})`, '--banner-enter': `${360 * scale.sx}px`, '--banner-exit': `${400 * scale.sx}px`, '--banner-font-size': `${Math.trunc(48 * scale.sy)}px` } as React.CSSProperties}>
         <div className={`phase-banner${win ? ' win-banner' : ''}`}>{banner.text}</div>
       </div>
       {win && reason && <div className="victory-reason-anchor" style={{ transform: `scale(${1 / scale.sx}, ${1 / scale.sy})` }}>
