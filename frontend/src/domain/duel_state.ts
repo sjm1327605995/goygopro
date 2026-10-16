@@ -32,6 +32,8 @@ export interface DuelStore {
   setHint(text: string): void;
   /** UI 动作：select 类弹窗/落点选择取走当前 selectHint（原版 select_hint=0） */
   consumeSelectHint(): void;
+  /** UI 动作：MSG_RETRY 恢复 select_hint（原版 select_hint = last_select_hint） */
+  restoreSelectHint(hint: number): void;
   /** UI 动作：选择进行中挂上提示文本（CardTooltip 悬停附带显示） */
   armSelectHint(text: string): void;
   disarmSelectHint(): void;
@@ -89,6 +91,9 @@ export function createDuelStore(): DuelStore {
     consumeSelectHint() {
       if (state.selectHint === null) return;
       commit({ ...state, selectHint: null });
+    },
+    restoreSelectHint(hint: number) {
+      commit({ ...state, selectHint: hint });
     },
     armSelectHint(text: string) {
       if (state.selectHintText === text) return;

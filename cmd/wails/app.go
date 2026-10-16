@@ -142,6 +142,11 @@ func (a *App) StartLocalServer(port int) map[string]interface{} {
 	}
 
 	utils.NetLogf("server", "local server started on :%d (all interfaces)", port)
+	// 原版 StopListen 只是停收连接（evconnlistener_disable），重新建立主机走
+	// StartServer 重建监听自然恢复接受（netserver.cpp:19-41）。本进程的
+	// AcceptingConnections 被 StopListen 落下后，此处成功启动新监听即复位，
+	// 否则每场对局结束后只能办一场、再次建房会拒绝一切新连接。
+	duel.AcceptingConnections.Store(true)
 	return map[string]interface{}{"success": true, "port": port}
 }
 

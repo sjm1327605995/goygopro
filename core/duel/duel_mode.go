@@ -96,8 +96,9 @@ func init() {
 //
 //	bool: 消息大小是否合法
 func CheckMsgSize(size int) bool {
-	// 空字符串不允许（至少需要一个字符和一个null终止符）
-	if size < 2*SizeOfUint16 {
+	// 原版 CreateChatPacket（netserver.cpp:374-386）只校验 NUL 结尾，
+	// 仅含终止符的空消息（2 字节）照发。
+	if size < SizeOfUint16 {
 		return false
 	}
 

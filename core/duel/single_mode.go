@@ -95,14 +95,16 @@ func (ss *SingleSession) PrepareWithOpt(scriptName string, opt int32) error {
 // → uint16 长度前缀 + 脚本文件名字节。文件布局与 core/duel/replay.go 的
 // ReadInfo 中 REPLAY_SINGLE_MODE 分支一一对应，SaveReplay 时还能原样读回。
 //
-// 注意：原版 `ExtendedReplayHeader rh;` 只显式填 id/version/flag/start_time/
-// seed_sequence，其余字段（seed/datasize/props/header_version/value*）是未初始化
-// 栈垃圾；Go 侧统一置零，写出更干净的头部（这些字段在读取端本就被忽略）。
+// 原版 `ExtendedReplayHeader rh;` 只显式填 id/version/flag/start_time/
+// seed_sequence；其余字段（seed/datasize/props/value*）是未初始化栈垃圾，
+// 而 header_version 有类内初始化 {1}（replay.h:39）恒为 1。Go 侧统一置零
+// 这些被忽略字段，并显式写 header_version=1。
 func (ss *SingleSession) beginRecord() {
 	rh := ExtendedReplayHeader{}
 	rh.Base.ID = REPLAY_ID_YRP2
 	rh.Base.Version = PRO_VERSION
 	rh.Base.Flag = REPLAY_UNIFORM | REPLAY_SINGLE_MODE
+	rh.HeaderVersion = 1
 	rh.SeedSequence = ss.seedSequence
 	rh.Base.StartTime = uint32(time.Now().Unix())
 

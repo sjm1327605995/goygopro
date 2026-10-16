@@ -280,6 +280,11 @@ func (r *Replay) OpenReplay(name string) bool {
 
 	if r.pheader.Base.Flag&REPLAY_COMPRESSED != 0 {
 		r.compSize, _ = rfp.Read(r.compData)
+		// 原版 replay.cpp:117-118：datasize 超过上限直接拒绝，防伪造头
+		// 导致解压后切片越界。
+		if r.pheader.Base.DataSize > MAX_REPLAY_SIZE {
+			return false
+		}
 		r.replaySize = int(r.pheader.Base.DataSize)
 
 		// YGOPro stores the raw LZMA1 stream directly after the header; the

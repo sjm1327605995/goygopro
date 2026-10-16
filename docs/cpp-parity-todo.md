@@ -1,5 +1,75 @@
 # C++ 原版对照差距 TODO Plan
 
+## 全仓残留差距批（2026-10-16，五路审计后实施）
+
+对照审计（duelclient/event_handler/drawing/game/menu/deck_con/replay_mode +
+netserver/single/tag/replay/deck_manager/data_manager 逐行复核，排除已完成项）
+出的残留差距，本批修复：
+
+### 批次A：Go 服务端（core/duel、cmd/wails、protocol、ocgcore）
+
+- [x] **Tag UpdateDeck 空指针 panic**：`tag_duel.go` pDeck 是 `[4]*Deck` 初值
+  nil（原版 tag_duel.cpp:281 是值成员），首传卡组即 nil deref，tag 房间无法
+  开赛。补与 single 同款的兜底分配 + 重复上传清空（原版 LoadDeck 入口
+  deck.clear()）。新增 `tag_duel_test.go::TestTagUpdateDeckAllocatesPDeck`。
+- [x] **Tag GetResponse 未截断响应**：对齐 tag_duel.cpp:1519-1520 的
+  SIZE_RETURN_VALUE 截断（single 侧已有），杜绝 >512 字节响应切片越界。
+  新增 `TestTagGetResponseTruncatesOversize`。
+- [x] **AcceptingConnections 置 false 后永不复位**：每场对局结束停服后只能
+  办一场。StartLocalServer 成功启动新监听即复位（对齐原版 StopListen 只
+  停收、StartServer 重建监听恢复接受）。
+- [x] **Tag 刷新参数表系统性偏离**：Go tag 全套 0x81fff4/0x781fff/无缓存，
+  而 C++ tag_duel.h:35-40 与 single_duel.h:35-40 默认参数完全相同
+  （0x881fff/0x681fff/0x781fff/0x81fff/0xe81fff，use_cache=1）。统一为
+  `defaultRefreshFlags()` 单表；连带修正 analyzeShuffleExtra 的
+  RefreshExtra（两模式均默认 0xe81fff/缓存1，single_duel.cpp:863、
+  tag_duel.cpp:834）与 tag refreshOnDuelStart（tag_duel.cpp:467-468）。
+- [x] **Single MSG_NEW_PHASE 不刷新手牌**：恢复 single_duel.cpp:942-943 的
+  RefreshHand(0)/(1)（旧注释"与原版一致"系误读）。
+- [x] **skipCardQuery 边界**：统一为 clen <= LEN_HEADER（C++ 两模式一致，
+  single_duel.cpp:1484/1505/1526），修正"原版两种实现都必须原样保留"的
+  误读注释。
+- [x] **waitForResponse 多重置 timeElapsed**：删除（C++ WaitforResponse 不
+  触碰，single_duel.cpp:1443-1456；清零只在扣减后与 TimeConfirm<10s）。
+  新增 `TestWaitForResponseKeepsTimeElapsed`。
+- [x] **Replay 加固/头部**：OpenReplay 补 datasize > MAX_REPLAY_SIZE 拒绝
+  （replay.cpp:117-118，防伪造头越界）；录像头 header_version 置 1
+  （C++ 类内初始化 {1}，replay.h:39）。
+- [x] **rule_code 全量推导**：CardDataC 新增 RuleCode 字段与 DuelCode()
+  （get_duel_code 语义 data_manager.h:60-62）：LoadDB 按 data_manager.cpp:
+  61-68 迁移非异画 alias（5405695 特例）、全表后继承 alias 目标 rule_code
+  （:86-92）；CheckDeck 同名/禁限计数改用 DuelCode()。
+- [x] **extra_setcode 补丁**：data_manager.cpp:24-27 的 8512558/55088578
+  系列码覆盖此前从未填充（Go 声明了 map 但恒空）。
+- [x] **空聊天消息**：CheckMsgSize 下限对齐原版 CreateChatPacket 只查 NUL
+  结尾（netserver.cpp:374-386），2 字节空消息照发。
+  新增 `data_manager_test.go`（DuelCode 优先级/rule_code 不变式/
+  extra_setcode/CheckMsgSize 用例）。
+- 维持现状不改：StateMiddleware 拒绝时回 STOC_ERROR_MSG（C++ 静默丢弃，
+  自制前端的刻意差异）。
+
+### 批次B：消息链路（MSG_RETRY / SWAP_GRAVE_DECK / SHUFFLE_DECK / MOVE 落位）
+
+- [x] **MSG_RETRY**：Go 侧不再跳过，emit `duel:retry`（服务端 analyzeRetry
+  只重发 RETRY 字节，不重发上一询问）；前端 `duel/store.ts` 记录最近询问
+  + select_hint 快照，retry 到达按原版 duelclient.cpp:990-1043 弹错误文案
+  （sys_strings 补 1421-1431）、恢复 select_hint、经总线重放询问重开弹窗。
+  store 新增 `restoreSelectHint`。
+- [x] **MSG_SWAP_GRAVE_DECK**：Go emit `duel:swap_grave_deck`；reducer 交换
+  该座 deck/grave 计数并清空墓地列表，紧随的 RefreshGrave 经扩展后的
+  update_data（GRAVE/BANISH/EXTRA 堆区整表替换，对齐原版 UpdateFieldCard
+  无区域白名单）重建；update_card 同步支持堆区单卡合并。额外列表腐坏
+  （shuffle_extra 后 RefreshExtra 被丢弃）同路修复。
+- [x] **MSG_SHUFFLE_DECK 表现**：Go emit `duel:shuffle_deck`；sound_manager
+  新增合成洗牌音（原版 SOUND_SHUFFLE），field3d 新增 `shakeDeckPile`
+  （计数浮签正弦抖 5 轮，卡组无实体 mesh），shuffle_extra 同步播音。
+- [x] **MSG_MOVE pl==0 落位**：从不可见区直入 mzone/szone 的卡此前不产生
+  mesh（等 update_data 漂移重建），现 placeCard + `fadeInMesh` 20 帧淡入
+  （原版 FadeCard，client_field.cpp:1107-1111）；placeCard 槽位复用前先
+  静默清旧 mesh（修 replay seek 双份网格泄漏）。
+- 验证：Go build/vet/test 全绿；tsc + 双 vite 构建全绿；ui_smoke_suite
+  14 页全绿（prompts 165 项含 retry×5/swap_grave_deck×4 新断言）。
+
 ## 实机对照后的修正（2026-10-15）
 
 - [x] Wails 实时事件增加 WaitFrameSignal 表现队列，伤害/回复/支付等待 41 帧、

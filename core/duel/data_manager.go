@@ -12,8 +12,13 @@ const MAX_CARD_ID = uint32(0x0fffffff)
 
 var (
 	stringPointer = make(map[uint32]*CardString, 32768)
-	extraSetCode  = make(map[uint32][]uint16)
-	datas         = make(map[uint32]*CardDataC, 32768)
+	// extraSetCode 对应原版 data_manager.cpp:24-27 的硬编码补丁：两张卡的
+	// 系列码无条件覆盖 DB 值。
+	extraSetCode = map[uint32][]uint16{
+		8512558:  {0x8f, 0x54, 0x59, 0x82, 0x13a},
+		55088578: {0x8f, 0x54, 0x59, 0x82, 0x13a},
+	}
+	datas = make(map[uint32]*CardDataC, 32768)
 )
 var DefaultDataManager = new(DataManager)
 
@@ -47,17 +52,15 @@ func (d *DataManager) LoadDB(file string) error {
 		if err != nil {
 			return err
 		}
-		if setCode != 0 {
-			it, exist := extraSetCode[cd.Code]
-			if exist && len(it) != 0 {
-				var setCodeLen = len(it)
-				if setCodeLen > ocgcore.SIZE_SETCODE {
-					setCodeLen = ocgcore.SIZE_SETCODE
-				}
-				copy(cd.Setcode[:], it[:setCodeLen])
-			} else {
-				cd.SetSetCode(setCode)
-			}
+		cd.SetSetCode(setCode)
+		// rule_code 推导（data_manager.cpp:61-68）：5405695 特例与其余卡的
+		// 非异画 alias 一律迁入 rule_code 并清零 alias。
+		if cd.Code == ocgcore.CARD_BLACK_LUSTER_SOLDIER2 {
+			cd.RuleCode = cd.Alias
+			cd.Alias = 0
+		} else if cd.Alias != 0 && cd.Type&ocgcore.TYPE_TOKEN == 0 && !isAlternativeCode(cd.Code, cd.Alias) {
+			cd.RuleCode = cd.Alias
+			cd.Alias = 0
 		}
 		if cd.Type&ocgcore.TYPE_LINK != 0 {
 			cd.LinkMarker = uint32(cd.Defense)
@@ -71,7 +74,32 @@ func (d *DataManager) LoadDB(file string) error {
 		datas[cd.Code] = &cd
 		stringPointer[cd.Code] = &cs
 	}
+	// 全表后处理（data_manager.cpp:86-104）：
+	// 1) 仍带 alias 的卡（异画等）继承 alias 目标的 rule_code；
+	// 2) extra_setcode 无条件覆盖对应卡的系列码。
+	for _, cd := range datas {
+		if cd.RuleCode != 0 || cd.Alias == 0 || cd.Type&ocgcore.TYPE_TOKEN != 0 {
+			continue
+		}
+		if target, ok := datas[cd.Alias]; ok {
+			cd.RuleCode = target.RuleCode
+		}
+	}
+	for code, list := range extraSetCode {
+		cd, ok := datas[code]
+		if !ok || len(list) == 0 || len(list) > ocgcore.SIZE_SETCODE {
+			continue
+		}
+		copy(cd.Setcode[:], list)
+	}
 	return nil
+}
+
+// isAlternativeCode 对应原版 is_alternative（data_manager.cpp:19-21）：
+// 互为异画的卡号（ artwork 版本偏移内）不做 rule_code 迁移。
+func isAlternativeCode(code, alias uint32) bool {
+	offset := uint32(ocgcore.CARD_ARTWORK_VERSIONS_OFFSET)
+	return alias != 0 && alias < code+offset && code < alias+offset
 }
 func (d *DataManager) GetCodePointer(code uint32) *CardDataC {
 	return datas[code]

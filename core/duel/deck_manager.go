@@ -198,10 +198,7 @@ func checkPile(cards []*CardDataC, ccount map[uint32]int, lflist *LFList, avail 
 		if !typeOK(card) {
 			return countErrCode << 28
 		}
-		code := uint32(card.Code)
-		if card.Alias != 0 {
-			code = card.Alias
-		}
+		code := card.DuelCode()
 		ccount[code]++
 		if ccount[code] > 3 {
 			return (network.DECKERROR_CARDCOUNT << 28) | uint32(card.Code)

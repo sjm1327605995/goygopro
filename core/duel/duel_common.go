@@ -92,10 +92,10 @@ type duelRoom interface {
 	// refreshAfterNewPhase 是 MSG_NEW_PHASE 后的区域刷新。
 	refreshAfterNewPhase()
 	// refreshSingleMoved 是 MSG_MOVE/POS_CHANGE/SWAP 后的单卡刷新
-	// （single: RefreshSingleDef 即 0xf81fff；tag: RefreshSingle 0x81fff4）。
+	// （两模式均为原 RefreshSingle 默认 0xf81fff）。
 	refreshSingleMoved(cc, cl, cs uint8)
 	// refreshSingleFlip 是 MSG_FLIPSUMMONING 前置的单卡刷新
-	// （single: 0xf81fff；tag: 0x81fff4）。
+	// （两模式均为 0xf81fff）。
 	refreshSingleFlip(cc, cl, cs uint8)
 	// seatCount 返回座位总数（single: 2；tag: 4），用于开局就绪检查与洗牌范围。
 	seatCount() int
@@ -159,7 +159,6 @@ func waitForResponse(m duelRoom, player byte) {
 		base.SendPacketDataToPlayer(p, network.STOC_GAME_MSG, msgWaiting)
 	}
 	if base.HostInfo.TimeLimit != 0 {
-		base.timeElapsed = 0
 		var sctl protocol.STOCTimeLimit
 		sctl.Player = player
 		sctl.LeftTime = uint16(base.timeLimit[player])
@@ -613,6 +612,8 @@ func beginDuel(m duelRoom, dp *DuelPlayer, swapped bool) {
 	rh.Base.Version = PRO_VERSION
 	rh.Base.Flag = m.replayFlag()
 	rh.Base.Seed = seed
+	// C++ 类内初始化 header_version{1}（replay.h:39），未显式赋值时默认 1。
+	rh.HeaderVersion = 1
 	for i := 0; i < SEED_COUNT; i++ {
 		rh.SeedSequence[i] = rand.Uint32()
 	}

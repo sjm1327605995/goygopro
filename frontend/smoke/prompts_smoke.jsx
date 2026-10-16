@@ -1180,6 +1180,52 @@ const run = async () => {
   await waitFor(() => leaveSends.length === 1 && observerLeaves.length === 1);
   assert('observerLeaveSends', leaveSends.length === 1 && observerLeaves.length === 1);
 
+  // ---- MSG_SWAP_GRAVE_DECK + 堆区 update_data：墓地与卡组交换（原版
+  // duelclient.cpp:2378-2420），墓地列表由紧随的 RefreshGrave 经 GRAVE
+  // 堆区整表替换重建 ----
+  eventBus.emit('duel:move', { code: 89631139, pc: 0, pl: 0x01, ps: 0, pp: 0, cc: 0, cl: 0x10, cs: 0, cp: 0, reason: 0 });
+  await waitFor(() => duelStore.getState().piles[0].grave === 1);
+  assert('moveBuildsGravePile', duelStore.getState().board[0].grave.length === 1);
+  const deckBefore = duelStore.getState().piles[0].deck;
+  eventBus.emit('duel:swap_grave_deck', { player: 0 });
+  await waitFor(() => duelStore.getState().piles[0].grave === deckBefore
+    && duelStore.getState().piles[0].deck === 1);
+  assert('swapGraveDeckCounts', duelStore.getState().piles[0].deck === 1
+    && duelStore.getState().piles[0].grave === deckBefore,
+    JSON.stringify(duelStore.getState().piles[0]));
+  assert('swapClearsGraveList', duelStore.getState().board[0].grave.length === 0);
+  eventBus.emit('duel:update_data', { player: 0, location: 0x10, cards: [{ code: 89631139, position: { p: 0 } }] });
+  await waitFor(() => duelStore.getState().board[0].grave.length === 1);
+  assert('graveUpdateDataRebuilds', duelStore.getState().board[0].grave[0].code === 89631139);
+
+  // ---- MSG_RETRY：引擎驳回应答——错误文案（SysString 1427）+ 恢复
+  // select_hint + 重放最近询问重新弹窗（原版 duelclient.cpp:990-1043） ----
+  eventBus.emit('duel:hint', { type: 3, player: 0, data: 550 });
+  await waitFor(() => duelStore.getState().selectHint === 550);
+  assert('retryHintArmed', true);
+  eventBus.emit('duel:select_card', {
+    player: 0, cancelable: false, min: 1, max: 1,
+    cards: [{ code: 89631139, c: 0, l: 0x10, s: 0 }],
+  });
+  assert('retrySelectEmitted', true);
+  await waitForModal('.card-tile');
+  assert('retryModalOpen', true);
+  // 单选询问双击快选（CardSelectModal quickPick）直接应答
+  overlay().querySelectorAll('.card-tile')[0].dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  r = await waitResp();
+  await waitModalClosed();
+  await waitFor(() => duelStore.getState().selectHint === null);
+  eventBus.emit('duel:retry', {});
+  await waitFor(() => duelStore.getState().hint === '选择的卡片不符合条件。'
+    && duelStore.getState().selectHint === 550);
+  assert('retryErrorAndHintRestored', true);
+  await waitForModal('.card-tile');
+  assert('retryReopensPrompt', true);
+  overlay().querySelectorAll('.card-tile')[0].dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  r = await waitResp();
+  await waitModalClosed();
+  assert('retryReplayResponds', r.kind === 'card' && JSON.stringify(r.indices) === '[0]', JSON.stringify(r));
+
   window.__promptsSmoke.checks = checks;
   window.__promptsSmoke.ready = true;
 };
