@@ -11,6 +11,44 @@ import { settingsStore } from '../domain/settings.ts';
 import GameDialog from './GameDialog.tsx';
 import UiButton from '../ui/UiButton.tsx';
 import { UiCheckbox } from '../ui/UiInput.tsx';
+import GfwSelect from './ui/GfwSelect.tsx';
+import { WailsBridge } from '../wails_bridge.ts';
+
+/** 原版 chkLFlist+cbLFlist（game.cpp:473-480）：勾选启用禁限卡表并选表，
+ *  表序号写入 default_lflist（use_lflist=0 = N/A 无限制） */
+function LFListRow() {
+  const s = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
+  const [lists, setLists] = useState<{ hash: number; name: string }[]>([]);
+  React.useEffect(() => {
+    let alive = true;
+    WailsBridge.listLFLists().then((r) => { if (alive && r) setLists(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const useList = !!s.use_lflist;
+  const idx = Math.min(Math.max(Number(s.default_lflist ?? 0) || 0, 0), Math.max(lists.length - 1, 0));
+  return (
+    <>
+      <UiCheckbox
+        classNames={{ root: 'settings-row', label: 'settings-row-label' }}
+        data-setting="use_lflist"
+        checked={useList}
+        onChange={(e) => settingsStore.set('use_lflist', e.target.checked ? 1 : 0)}
+        label="使用禁限卡表"
+      />
+      <label className="settings-row" style={{ opacity: useList ? 1 : 0.5 }}>
+        <span className="settings-row-label">默认禁限卡表</span>
+        <GfwSelect
+          id="settings-lflist-select"
+          width={150}
+          disabled={!useList}
+          value={lists[idx] ? String(idx) : ''}
+          onValueChange={(v) => settingsStore.set('default_lflist', Number(v))}
+          options={lists.map((l, i) => ({ value: String(i), label: l.name }))}
+        />
+      </label>
+    </>
+  );
+}
 
 function CheckRow({ k, label, hint }: { k: string; label: string; hint?: string }) {
   const s = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
@@ -98,6 +136,8 @@ export default function SettingsPanel({ open, onClose }: { open: boolean; onClos
               <CheckRow k="draw_field_spell" label="显示场地魔法背景" />
               <CheckRow k="swap_yes_no_button" label="左右互换「是/否」按钮位置" />
               <CheckRow k="hide_hint_button" label="隐藏提示按钮（完成/取消）" />
+              <CheckRow k="music_mode" label="随机播放音乐" hint="music_mode：BGM 各场景多套音型随机（原版 chkMusicMode）" />
+              <LFListRow />
             </div>
           ) : (
             <div className="settings-body" data-page="helper">
@@ -111,6 +151,9 @@ export default function SettingsPanel({ open, onClose }: { open: boolean; onClos
               <SpeedRow k="animation_speed" label="动画速度" />
               <CheckRow k="auto_save_replay" label="自动保存录像" />
               <CheckRow k="draw_single_chain" label="只有连锁1也显示连锁动画" />
+              <CheckRow k="auto_search_limit" label="无搜索限制" hint="auto_search_limit：卡组编辑器搜索结果不分页上限（原版 chkAutoSearch）" />
+              <CheckRow k="search_multiple_keywords" label="多个关键词搜索" hint="search_multiple_keywords：卡组编辑器搜索支持空格分隔多关键词（原版 chkMultiKeywords）" />
+              <CheckRow k="ignore_deck_changes" label="更换卡组时不提示保存" hint="ignore_deck_changes：编辑器载入别的卡组前不再弹未保存确认（原版 chkIgnoreDeckChanges 的编辑器侧语义）" />
             </div>
           )}
           <div className="settings-footer">

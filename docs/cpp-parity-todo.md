@@ -70,6 +70,80 @@ netserver/single/tag/replay/deck_manager/data_manager 逐行复核，排除已�
 - 验证：Go build/vet/test 全绿；tsc + 双 vite 构建全绿；ui_smoke_suite
   14 页全绿（prompts 165 项含 retry×5/swap_grave_deck×4 新断言）。
 
+### 批次C：前端交互还原（event_handler.cpp / game.cpp / menu_handler.cpp / replay_mode.cpp）
+
+- [x] **SELECT_POSITION 单选项自动应答**（duelclient.cpp:1916-1919）：只有一
+  个可选表示形式时直接应答不弹窗。
+- [x] **是/否询问右键 = 否**（event_handler.cpp:2564-2571 CancelOrFinish）：
+  select_yesno/select_effectyn 弹窗期右键应答 0，与连锁右键取消同通道。
+- [x] **宣言属性/种族选满自动应答**（event_handler.cpp:843-846/857-860）：
+  BitmaskModal 勾选数达到 announce_count 立即应答并关窗；连点闭包用 ref
+  同步避免同渲染批次旧值漏判。SortModal 排满自动应答同理（:784-791）。
+- [x] **回放播完提示「录像结束」**：ReplayTheater advance 到末尾按原版
+  replay_mode.cpp:223-251 EndReplay 弹 SysString(1501)；原版随后自动回录像
+  窗，Web 形态刻意保留事件流以便回退步/重看（差异项，记此）。
+- [x] **回放单步/撤销播放中先暂停**（原版 event_handler.cpp:68-71 两钮仅
+  暂停后可见）：修播放中点单步与推进定时器并发双重推进。
+- [x] **回放/观战可浏览堆区**（event_handler.cpp:1113-1162）：解除
+  onPileRightClick 的 interactive 限制；CardListOverlay 在 compact（剧场）
+  也挂载。
+- [x] **点超量怪「查看素材」**（event_handler.cpp:1211-1216 COMMAND_LIST）：
+  双方场上带素材的怪点击弹动作菜单含查看素材，CardListOverlay 支持
+  ui:show_pile 带 seq 只看该槽素材。
+- [x] **右键收起堆区列表**（event_handler.cpp:2535-2562）：新增
+  ui:close_pile 事件，CancelOrFinish 路径发出。
+- [x] **选择期间悬停照做**（event_handler.cpp:1507-1704）：field3d
+  handleHover 在落点/选卡点选期间不再 early-return，悬停照常更新卡片
+  详情与 stTip，仅光标体现可选态。
+- [x] **大厅准备后锁定卡组下拉**（menu_handler.cpp:178-185）：卡组与分类
+  下拉 disabled={isReady}，取消准备解锁。
+- [x] **加入游戏连接防重入**（menu_handler.cpp:94-98）：joiningRef 守卫。
+- [x] **建房禁限卡表默认值跟随配置**（game.cpp:236）：use_lflist=1 选
+  default_lflist 索引，否则 N/A（同 DeckBuilder 语义）。
+- [x] **设置面板补 5 个有消费方但无开关的键**：use_lflist+default_lflist
+  （LFListRow 勾选+选表）、music_mode、auto_search_limit、
+  search_multiple_keywords、ignore_deck_changes。
+- 验证：tsc + 双构建全绿；prompts 168 项（含种族选满/排序排满/表示形式
+  单选/右键=否 5 项新断言）、theater 53 项全绿。
+
+### 批次D：表现层还原（drawing.cpp / duelclient.cpp 表现分支）
+
+- [x] **LP 三事件事件级音效**：duel:damage/recover/pay_lpcost 播
+  SOUND_DAMAGE/SOUND_RECOVER（新增 playRecover 合成音）合成等价；
+  数字滚动本身仍不加 tick（todo 刻意项）。
+- [x] **连锁应答即清 act 角标**（client_field.cpp:404-420 ClearChainSelect）：
+  chaining 到达即 clearActivatable，不残留到 chain_end/下一阶段。
+- [x] **draw_single_chain 设置消费**（drawing.cpp:541）：连锁序号角标仅
+  在连锁数>1 或开启该设置时绘制。
+- [x] **额外卡组双数字**（drawing.cpp:726-727,749-750）：store PileCounts
+  增 extraP（reload_field 的 extraP / tag_swap 的 extraFaceUpCount 落库），
+  额外堆浮签渲染「总数(表侧数)」。
+- [x] **卡背按控制方区分**（drawing.cpp:425 tCover[controler]）：
+  1 号位加载 cover2.jpg，createCardMesh 增加 player 参数。
+- [x] **指示物增减浮条+音效**（duelclient.cpp:3390-3430）：sys_strings 补
+  1617/1618，SpecOverlay 按位置解析卡名 + getCounterName 弹 stACMessage
+  浮条；sound_manager 新增 playCounter。
+- [x] **HINT_EVENT 进询问弹窗**（duelclient.cpp:1084-1086/1524/1813-1817）：
+  store 增 hintEvent，select_effectyn/单候选连锁的文案以 event_string 开头。
+- 验证：同批次C 全量验证。
+
+### 本批未做（审计残留，后续可选）
+
+- SELECT_CHAIN 空列表 + always_chain 仍弹询问、chkAutoChain 只代答强制连锁
+  的原版语义（现有三键模型与原版有出入，改动会动 A/S/D 热键与冒烟契约）。
+- MSG_CONFIRM_DECKTOP/EXTRATOP 逐张揭示动画（duelclient.cpp:2086-2160）。
+- is_highlighting 青色选框（EFFECTYN/CHAINING/BECOME_TARGET/RANDOM_SELECTED，
+  drawing.cpp:437-442）。
+- MSG_BECOME_TARGET 对象卡三次闪烁、MSG_RANDOM_SELECTED 30 帧高亮。
+- ANNOUNCE_NUMBER ≤12 时的原版 12 键数字盘（duelclient.cpp:3673-3709）。
+- 灵摆刻度场上常显数字（drawing.cpp:689-723）、悬停空格/堆区呼吸高亮
+  （drawing.cpp:242-276）、卡组/额外实体卡叠层（drawing.cpp:360-378，
+  连带 deck_top/REVERSE_DECK 表侧承载）、conti_act 永续角标堆
+  （drawing.cpp:523-540）、CHINT_DESC_ADD/REMOVE 悬停效果文本。
+- 单人模式查看卡组列表（需 deck 内容落 store，数据面改动）。
+- CLI 参数/文件关联（gframe.cpp:24-202）、录像信息面板 version 行
+  （极轻）、聊天淡出 12s→20s 节奏。
+
 ## 实机对照后的修正（2026-10-15）
 
 - [x] Wails 实时事件增加 WaitFrameSignal 表现队列，伤害/回复/支付等待 41 帧、

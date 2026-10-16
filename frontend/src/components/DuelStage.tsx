@@ -132,8 +132,9 @@ export default function DuelStage({
       {/* P4 波 6 补完：DrawSpec 特效（翻卡/放大/揭示/无效化 + 猜硬币文本）与 stTip 悬浮提示 */}
       {!compact && <SpecOverlay />}
       {!compact && <LpFloatText />}
-      {/* F1-F8 墓地/除外/额外/超量素材列表浮窗（原版 wCardDisplay，进设计空间） */}
-      {!compact && <CardListOverlay />}
+      {/* F1-F8 墓地/除外/额外/超量素材列表浮窗（原版 wCardDisplay，进设计空间）。
+          观战/回放也可浏览堆区（原版 event_handler.cpp:1113-1162），compact 也挂载 */}
+      <CardListOverlay />
       </DesignSpace>
       {!compact && <ActionPopup />}
       {!compact && <CardTooltip />}

@@ -6,6 +6,7 @@
 import * as THREE from '../../libs/three.module.js';
 import * as TWEEN from '../../libs/tween.esm.js';
 import { soundManager } from '../audio/sound_manager.ts';
+import { settingsStore } from '../domain/settings.ts';
 import { TYPE_TRAP, TYPE_SPELL, TYPE_CONTINUOUS, TYPE_FIELD } from '../domain/constants.ts';
 
 /** field3d 提供给连锁可视化依赖的最小面（field3d.ts strict 化后收敛为真实类型） */
@@ -70,7 +71,10 @@ export class ChainVisualizer {
     let pinMesh = null;
     if (slot) {
       pinMesh = this.field3D.getCardMesh(slot.player || 0, slot.loc || 'mzone', slot.seq || 0);
-      if (pinMesh) {
+      // 原版 drawing.cpp:541：连锁序号角标仅在连锁数 >1 或开启
+      // draw_single_chain（「只有连锁1也显示连锁动画」）时绘制
+      const drawSingle = !!Number(settingsStore.get('draw_single_chain'));
+      if (pinMesh && (linkNum > 1 || drawSingle)) {
         iconMesh = this.createChainLinkSprite(linkNum);
         this.chainGroup.add(iconMesh);
       }

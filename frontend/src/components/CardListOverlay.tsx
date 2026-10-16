@@ -21,6 +21,8 @@ export type ShowPile = 'grave' | 'banish' | 'extra' | 'overlay';
 export interface ShowPileEvent {
   player: number;
   pile: ShowPile;
+  /** overlay 专用：只看该 mzone 槽位的素材（原版点超量怪 COMMAND_LIST） */
+  seq?: number;
 }
 
 const PILE_LABEL: Record<ShowPile, string> = {
@@ -66,11 +68,21 @@ export default function CardListOverlay() {
       const st = duelStore.getState();
       if (data.pile === 'grave' && st.cantCheckGrave) return;
       const side = st.board[data.player];
-      if (!side || (data.pile === 'overlay' ? side.overlay.flat().length : side[data.pile].length) === 0) return;
+      if (!side) return;
+      if (data.pile === 'overlay') {
+        const mats = data.seq != null ? (side.overlay[data.seq] || []) : side.overlay.flat();
+        if (!mats.length) return;
+      } else if (side[data.pile].length === 0) return;
       setOpen((cur) => cur || data);
     };
     eventBus.on('ui:show_pile', onShow);
-    return () => { eventBus.off('ui:show_pile', onShow); };
+    // 原版 CancelOrFinish（event_handler.cpp:2535-2562）：右键收起已开的列表
+    const onClose = (): void => setOpen(null);
+    eventBus.on('ui:close_pile', onClose);
+    return () => {
+      eventBus.off('ui:show_pile', onShow);
+      eventBus.off('ui:close_pile', onClose);
+    };
   }, []);
 
   useEffect(() => {
@@ -84,7 +96,7 @@ export default function CardListOverlay() {
     if (!side) return [];
     let codes: number[];
     if (open.pile === 'overlay') {
-      codes = side.overlay.flat();
+      codes = open.seq != null ? (side.overlay[open.seq] || []) : side.overlay.flat();
     } else {
       codes = side[open.pile].map((c) => c.code);
     }

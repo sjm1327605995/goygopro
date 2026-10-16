@@ -30,6 +30,8 @@ export interface DuelStore {
   closeActionPopup(): void;
   /** UI 动作：设置 stHintMsg 提示条文本（duel:hint 的 HINT_EVENT/HINT_MESSAGE） */
   setHint(text: string): void;
+  /** UI 动作：HINT_EVENT 文本入 store（原版 event_string，询问弹窗文案前缀） */
+  setHintEvent(text: string | null): void;
   /** UI 动作：select 类弹窗/落点选择取走当前 selectHint（原版 select_hint=0） */
   consumeSelectHint(): void;
   /** UI 动作：MSG_RETRY 恢复 select_hint（原版 select_hint = last_select_hint） */
@@ -87,6 +89,10 @@ export function createDuelStore(): DuelStore {
     setHint(text: string) {
       if (state.hint === text) return;
       commit({ ...state, hint: text });
+    },
+    setHintEvent(text: string | null) {
+      if (state.hintEvent === text) return;
+      commit({ ...state, hintEvent: text });
     },
     consumeSelectHint() {
       if (state.selectHint === null) return;

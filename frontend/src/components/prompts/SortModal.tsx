@@ -1,6 +1,6 @@
+import { useRef, useState } from 'react';
 import { CardTile } from './CardTile.tsx';
 import type { SelectCard } from './CardTile.tsx';
-import { useCardSelection } from './useCardSelection.ts';
 
 /** Card ordering（MSG_SORT_CARD）：按顺序点击；确认回排序置换字节 */
 export function SortModal({ title, cards, respond }: {
@@ -8,8 +8,25 @@ export function SortModal({ title, cards, respond }: {
   cards: SelectCard[];
   respond: (result: { order: number[] | null }) => void;
 }) {
-  // min=0（无需最少张数）、max=cards.length（要排满才可确认）；selected 即排序序
-  const { selected: order, toggle } = useCardSelection(0, cards.length);
+  // selected 即排序序（点击顺序）。ref 与 state 同步：连点在同一渲染批次内
+  // 完成时闭包里的 state 仍是旧值，自动应答判定必须读 ref。
+  const [order, setOrder] = useState<number[]>([]);
+  const orderRef = useRef<number[]>([]);
+
+  // 原版 event_handler.cpp:784-791：最后一张指派序号后立即应答并关窗
+  const onPick = (idx: number) => {
+    const cur = orderRef.current;
+    if (cur.includes(idx)) {
+      orderRef.current = cur.filter((i) => i !== idx);
+    } else {
+      orderRef.current = [...cur, idx];
+      if (orderRef.current.length === cards.length) {
+        respond({ order: orderRef.current });
+        return;
+      }
+    }
+    setOrder(orderRef.current);
+  };
 
   return (
     <div className="modal-box" style={{ minWidth: '520px' }}>
@@ -27,7 +44,7 @@ export function SortModal({ title, cards, respond }: {
               name={c.name}
               className="sort-card"
               dataAttrs={{ 'data-idx': idx }}
-              onPick={() => toggle(idx)}
+              onPick={() => onPick(idx)}
             >
               <span className="sort-badge" data-idx={idx} style={{ display: rank > -1 ? 'block' : 'none' }}>
                 {rank > -1 ? rank + 1 : ''}
