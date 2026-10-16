@@ -254,6 +254,39 @@ class SoundManager {
   }
 
   /**
+   * Deck Shuffle — 原版 SOUND_SHUFFLE（duelclient.cpp:2263/2345 卡组/额外
+   * 洗切）的合成等价：几段短促的噪声沙沙声模拟拨牌。
+   */
+  playShuffle() {
+    if (this.muted) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    const t0 = this.ctx.currentTime;
+    const len = Math.floor(this.ctx.sampleRate * 0.07);
+    for (let burst = 0; burst < 5; burst++) {
+      const t = t0 + burst * 0.09;
+      const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < len; i++) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+      }
+      const src = this.ctx.createBufferSource();
+      src.buffer = buffer;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 2400 + burst * 300;
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.22 * this.sfxVolume, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+      src.start(t);
+    }
+  }
+
+  /**
    * Card Destroyed — sharp shatter over a low thud（原版 destroy.wav 的合成等价）
    */
   playDestroy() {
@@ -285,7 +318,6 @@ class SoundManager {
     if (this.muted) return;
     this.ensureContext();
     if (!this.ctx) return;
-
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();

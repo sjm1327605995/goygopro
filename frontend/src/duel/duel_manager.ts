@@ -379,6 +379,19 @@ export class DuelManager {
       if (!data.__instant) this.field3D.shuffleHand?.(data.player);
     });
 
+    // MSG_SHUFFLE_DECK：原版 SOUND_SHUFFLE + 卡组 5 轮抖动（duelclient.cpp:2263-2301）
+    sub('duel:shuffle_deck', (data) => {
+      if (data.__instant) return;
+      soundManager.playShuffle();
+      this.field3D.shakeDeckPile?.(data.player as 0 | 1);
+    });
+    // MSG_SHUFFLE_EXTRA：原版同样播 SOUND_SHUFFLE（duelclient.cpp:2345-2372）；
+    // 额外堆无实体 mesh，不抖动
+    sub('duel:shuffle_extra', (data) => {
+      if (data.__instant) return;
+      soundManager.playShuffle();
+    });
+
     sub('duel:select_card',data=>{if(data.tribute)this.beginFieldSelection('tribute',data);});
     sub('duel:select_sum',data=>this.beginFieldSelection('sum',data));
     sub('duel:select_counter',data=>this.beginFieldSelection('counter',data));
@@ -491,11 +504,16 @@ export class DuelManager {
         } else {
           this.field3D.moveCard(mesh, data.cc, toLoc, data.cs, data.cp, { instant: !!data.__instant });
         }
-      } else if ((toLoc === 'grave' || toLoc === 'banish') && data.code) {
-        // Card left the board without a rendered mesh — materialize it in its
-        // pile so grave/banish counts stay honest.
+      } else if ((toLoc === 'grave' || toLoc === 'banish' || toLoc === 'mzone' || toLoc === 'szone') && data.code) {
+        // 卡从不可见区域直接落到可见区（pl==0 凭空出现：token 出场、手牌/
+        // 卡组直入场上等）——原地生成 mesh；场上目标再按原版 FadeCard 20 帧
+        // 淡入（client_field.cpp:1107-1111），不再等下一次 update_data 的
+        // 漂移重建。grave/banish 目标维持原样的即时堆叠。
         const cardInfo = await WailsBridge.getCard(data.code);
-        this.field3D.placeCard(data.cc, toLoc, data.cs, data.code, cardInfo, data.cp);
+        const mesh = this.field3D.placeCard(data.cc, toLoc, data.cs, data.code, cardInfo, data.cp);
+        if (mesh && (toLoc === 'mzone' || toLoc === 'szone')) {
+          this.field3D.fadeInMesh(mesh, !!data.__instant);
+        }
       }
       // Note: a plain move INTO our hand renders nothing (the store's hand
       // dock shows it); from-board meshes retire above.

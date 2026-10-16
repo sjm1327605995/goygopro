@@ -321,6 +321,28 @@ export interface DuelShuffleExtraEvent {
   cards: number[];
 }
 
+/** MSG_SHUFFLE_DECK — 卡组洗切（duelclient.cpp:2263 播 SOUND_SHUFFLE + 卡组抖动） */
+export interface DuelShuffleDeckEvent {
+  event: 'duel:shuffle_deck';
+  player: number;
+}
+
+/** MSG_SWAP_GRAVE_DECK — 墓地与卡组交换（现世与冥界的逆转等） */
+export interface DuelSwapGraveDeckEvent {
+  event: 'duel:swap_grave_deck';
+  player: number;
+}
+
+/** MSG_RETRY — 引擎驳回应答：前端按已记录的最近询问重放（原版 last_successful_msg 语义） */
+export interface DuelRetryEvent {
+  event: 'duel:retry';
+}
+
+/** MSG_REVERSE_DECK — 卡组翻转 */
+export interface DuelReverseDeckEvent {
+  event: 'duel:reverse_deck';
+}
+
 export interface DuelRefreshDeckEvent {
   event: 'duel:refresh_deck';
   player: number;
@@ -662,6 +684,10 @@ export type DuelEvent =
   | DuelConfirmCardsEvent
   | DuelShuffleHandEvent
   | DuelShuffleExtraEvent
+  | DuelShuffleDeckEvent
+  | DuelSwapGraveDeckEvent
+  | DuelRetryEvent
+  | DuelReverseDeckEvent
   | DuelRefreshDeckEvent
   | DuelShuffleSetCardEvent
   | DuelDeckTopEvent

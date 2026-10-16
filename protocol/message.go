@@ -434,6 +434,16 @@ func (m *ShuffleHandMsg) Pack() []byte {
 // MSG_SHUFFLE_EXTRA 与 MSG_SHUFFLE_HAND 布局相同
 type ShuffleExtraMsg = ShuffleHandMsg
 
+// MSG_SHUFFLE_DECK / MSG_SWAP_GRAVE_DECK 只有 player 一个字节
+//（duelclient.cpp:2263、:2378）。
+type ShuffleDeckMsg struct {
+	Player uint8 `struct:"uint8" json:"player"`
+}
+
+type SwapGraveDeckMsg struct {
+	Player uint8 `struct:"uint8" json:"player"`
+}
+
 // ------------------------------------------------------------------
 // MSG_MOVE — 移动卡片
 // per field.cpp: code(4) + 原位置 get_info_location(4) + 新位置(4) + reason(4) = 16 bytes

@@ -107,14 +107,10 @@ func refreshExtra(m duelRoom, player int, flag uint32, useCache int) {
 	base.SendPacketDataToPlayer(m.currentPlayer(player), network.STOC_GAME_MSG, queryBuffer[:length+3])
 }
 
-// skipCardQuery 报告查询块长度 clen 是否应跳过抹除处理。边界语义按模式保留：
-// single 为 clen < LEN_HEADER，tag 为 clen <= LEN_HEADER（refreshFlags.skipCardQueryLe），
-// 原版两种实现都必须原样保留。
+// skipCardQuery 报告查询块长度 clen 是否应跳过抹除处理。两模式的边界语义
+// 一致：clen <= LEN_HEADER（single_duel.cpp:1484/1505/1526 与 tag 侧同为 <=）。
 func skipCardQuery(base *DuelMode, clen int32) bool {
-	if base.refresh.skipCardQueryLe {
-		return clen <= ocgcore.LEN_HEADER
-	}
-	return clen < ocgcore.LEN_HEADER
+	return clen <= ocgcore.LEN_HEADER
 }
 
 // 以下为 *Def 默认参数的公共包装，两个模式的取值完全一致。
@@ -139,31 +135,49 @@ func refreshExtraDef(m duelRoom, player int) {
 	refreshExtra(m, player, 0xe81fff, 1)
 }
 
-// refreshFlags 汇集两模式仅在查询 flag / 缓存 / 边界语义上不同的刷新参数。
-// SingleDuel 的取值即原 *Def 系列的默认参数（带缓存），TagDuel 为原版
-// TagDuel 的 0x81fff4 / 0x781fff（无缓存）；由 newSingleDuel / newTagDuel
-// 构造时一次性填好，各 refresh 钩子与 skipCardQuery 的边界判断读表实现。
-// 场景 flag 字段为 0 表示该场景不刷新此区域（single 的 newPhase 不刷新手牌，
-// 与原版一致），因此 0 不能作为合法的查询 flag 使用。
+// refreshFlags 汇集各刷新场景的查询 flag / 缓存参数。两模式取值完全一致：
+// 原版 tag_duel.h:35-40 与 single_duel.h:35-40 的默认参数相同（0x881fff /
+// 0x681fff / 0x81fff / 0xe81fff，use_cache=1，RefreshSingle 0xf81fff），
+// 由 newSingleDuel / newTagDuel 经 defaultRefreshFlags 构造时一次性填好，
+// 各 refresh 钩子读表实现。
+// 场景 flag 字段为 0 表示该场景不刷新此区域，因此 0 不能作为合法的查询 flag 使用。
 type refreshFlags struct {
 	// summon / chain / damageStep / newPhase 是 MSG_SUMMONED/SPSUMMONED/
 	// FLIPSUMMONED、MSG_CHAINED/CHAIN_SOLVED/CHAIN_END、MSG_DAMAGE_STEP_START/
-	// END、MSG_NEW_PHASE 后按 mzone→szone→hand 顺序整区刷新的查询 flag。
+	// END、MSG_NEW_PHASE 后按 mzone→szone→hand 顺序整区刷新的查询 flag
+	//（summon 与 damageStep 不含手牌，与原版一致）。
 	summonMzone, summonSzone                   uint32
 	chainMzone, chainSzone, chainHand          uint32
 	damageStepMzone                            uint32
 	newPhaseMzone, newPhaseSzone, newPhaseHand uint32
 	// singleMoved / singleFlip 是 MSG_MOVE/POS_CHANGE/SWAP 与 MSG_FLIPSUMMONING
-	// 前置单卡刷新 RefreshSingle 的查询 flag（single: 0xf81fff；tag: 0x81fff4）。
+	// 前置单卡刷新 RefreshSingle 的查询 flag（两模式均为默认 0xf81fff）。
 	singleMoved, singleFlip uint32
 	// graveAfterSwap 是 MSG_SWAP_GRAVE_DECK 后墓地刷新的查询 flag
-	//（single: 0x81fff 即 RefreshGraveDef；tag: 0x81fff4）。
+	//（两模式均为默认 0x81fff，即 RefreshGraveDef）。
 	graveAfterSwap uint32
-	// useCache 是整区刷新的缓存参数（single 的 *Def 系列传 1；tag 传 0）。
+	// useCache 是整区刷新的缓存参数（两模式的默认刷新均传 1）。
 	useCache int
-	// skipCardQueryLe 是查询块抹除跳过的边界语义：false = clen < LEN_HEADER
-	//（single）；true = clen <= LEN_HEADER（tag）——原版两种实现都必须原样保留。
-	skipCardQueryLe bool
+}
+
+// defaultRefreshFlags 返回两模式共用的刷新参数表（C++ 两模式的默认刷新参数
+// 完全一致，见 refreshFlags 文档）。
+func defaultRefreshFlags() refreshFlags {
+	return refreshFlags{
+		summonMzone:     0x881fff,
+		summonSzone:     0x681fff,
+		chainMzone:      0x881fff,
+		chainSzone:      0x681fff,
+		chainHand:       0x681fff,
+		damageStepMzone: 0x881fff,
+		newPhaseMzone:   0x881fff,
+		newPhaseSzone:   0x681fff,
+		newPhaseHand:    0x681fff,
+		singleMoved:     0xf81fff,
+		singleFlip:      0xf81fff,
+		graveAfterSwap:  0x81fff,
+		useCache:        1,
+	}
 }
 
 // refreshAfterSummon 是 MSG_SUMMONED/SPSUMMONED/FLIPSUMMONED 后的场地刷新。
@@ -197,8 +211,9 @@ func (d *DuelMode) refreshAfterDamageStep() {
 	d.RefreshMzone(1, f.damageStepMzone, f.useCache)
 }
 
-// refreshAfterNewPhase 是 MSG_NEW_PHASE 后的区域刷新。flag 0 表示不刷新
-//（single 的 newPhaseHand 为 0，即原版 single 不刷新手牌；tag 为 0x781fff）。
+// refreshAfterNewPhase 是 MSG_NEW_PHASE 后的区域刷新。两模式都刷新手牌
+//（single_duel.cpp:942-943 / tag_duel.cpp 同）；flag 0 的防御性跳过保留，
+// 防止参数表缺字段时发出 flag=0 的非法查询。
 func (d *DuelMode) refreshAfterNewPhase() {
 	f := d.refresh
 	d.RefreshMzone(0, f.newPhaseMzone, f.useCache)
@@ -212,20 +227,20 @@ func (d *DuelMode) refreshAfterNewPhase() {
 }
 
 // refreshSingleMoved 是 MSG_MOVE/POS_CHANGE/SWAP 后的单卡刷新。flag 差异已收进
-// refreshFlags.singleMoved（single 即原 RefreshSingleDef 的 0xf81fff；tag 0x81fff4）；
+// refreshFlags.singleMoved（两模式均为原 RefreshSingleDef 的 0xf81fff）；
 // RefreshSingle 本身按模式不同（发送对象不同），仍由模式实现。
 func (d *DuelMode) refreshSingleMoved(cc, cl, cs uint8) {
 	d.room.RefreshSingle(cc, cl, cs, int32(d.refresh.singleMoved))
 }
 
 // refreshSingleFlip 是 MSG_FLIPSUMMONING 前置的单卡刷新，flag 差异已收进
-// refreshFlags.singleFlip（single: 0xf81fff；tag: 0x81fff4）。
+// refreshFlags.singleFlip（两模式均为 0xf81fff）。
 func (d *DuelMode) refreshSingleFlip(cc, cl, cs uint8) {
 	d.room.RefreshSingle(cc, cl, cs, int32(d.refresh.singleFlip))
 }
 
 // refreshGraveAfterSwap 是 MSG_SWAP_GRAVE_DECK 后的墓地刷新。flag/缓存差异已收进
-// refreshFlags.graveAfterSwap/useCache（single 即原 RefreshGraveDef；tag 0x81fff4/无缓存）。
+// refreshFlags.graveAfterSwap/useCache（两模式均为原 RefreshGraveDef 的 0x81fff/缓存）。
 func (d *DuelMode) refreshGraveAfterSwap(player int) {
 	d.RefreshGrave(player, d.refresh.graveAfterSwap, d.refresh.useCache)
 }

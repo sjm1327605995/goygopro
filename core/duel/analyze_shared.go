@@ -420,7 +420,9 @@ func analyzeShuffleExtra(m duelRoom, engType uint8, pbuf *utils.YGOBuffer) int {
 	for _, v := range base.Observers {
 		base.ReSendToPlayer(v)
 	}
-	m.RefreshExtra(int(msg.Player), 0x81fff4, 0)
+	// 两模式的 MSG_SHUFFLE_EXTRA 都调裸 RefreshExtra(player) 默认参数
+	// 0xe81fff / use_cache=1（single_duel.cpp:863、tag_duel.cpp:834）。
+	m.RefreshExtra(int(msg.Player), 0xe81fff, 1)
 	return 0
 }
 

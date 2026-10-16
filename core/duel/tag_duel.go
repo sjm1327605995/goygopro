@@ -14,24 +14,9 @@ import (
 func newTagDuel() *TagDuel {
 	td := &TagDuel{DuelMode: DuelMode{
 		Observers: make(map[string]*DuelPlayer),
-		// 刷新参数表：tag 的取值为原版 TagDuel 的 0x81fff4 / 0x781fff（无缓存）；
-		// skipCardQueryLe = true（边界语义 clen <= LEN_HEADER，与 single 的 < 不同）。
-		refresh: refreshFlags{
-			summonMzone:     0x81fff4,
-			summonSzone:     0x81fff4,
-			chainMzone:      0x81fff4,
-			chainSzone:      0x81fff4,
-			chainHand:       0x781fff,
-			damageStepMzone: 0x81fff4,
-			newPhaseMzone:   0x81fff4,
-			newPhaseSzone:   0x81fff4,
-			newPhaseHand:    0x781fff,
-			singleMoved:     0x81fff4,
-			singleFlip:      0x81fff4,
-			graveAfterSwap:  0x81fff4,
-			useCache:        0,
-			skipCardQueryLe: true,
-		},
+		// 刷新参数表与 single 完全一致（C++ tag_duel.h:35-40 与
+		// single_duel.h:35-40 的默认参数相同），见 defaultRefreshFlags。
+		refresh: defaultRefreshFlags(),
 	}}
 	td.room = td
 	return td
@@ -186,6 +171,14 @@ func (s *TagDuel) UpdateDeck(dp *DuelPlayer, pData []byte) {
 	if !ok {
 		return
 	}
+	// pDeck 是指针数组、初值为 nil（原版 tag_duel.cpp:281 的 pdeck 是值成员，
+	// 永远存在）；与 single 同样兜底分配，重复上传时清空重载（原版 LoadDeck
+	// 入口即 deck.clear()）。
+	if s.pDeck[dp.Type] == nil {
+		s.pDeck[dp.Type] = &Deck{}
+	} else {
+		s.pDeck[dp.Type].Clear()
+	}
 	s.DeckError[dp.Type] = DeckManager.LoadDeck(s.pDeck[dp.Type], deckBuf.List[:], deckBuf.MainC, deckBuf.SideC, false)
 }
 
@@ -337,7 +330,7 @@ func (s *TagDuel) analyzeTagSwap(pbuf, offset *utils.YGOBuffer) int {
 	for _, v := range s.Observers {
 		s.ReSendToPlayer(v)
 	}
-	s.RefreshExtra(int(player), 0x81fff4, 0)
+	s.RefreshExtra(int(player), 0xe81fff, 1)
 	s.RefreshMzone(0, 0x81fff, 0)
 	s.RefreshMzone(1, 0x81fff, 0)
 	s.RefreshSzone(0, 0x681fff, 0)
@@ -360,7 +353,13 @@ func (s *TagDuel) GetResponse(dp *DuelPlayer, msgBuffer []byte) {
 	if dp != s.curPlayer[s.lastResponse] {
 		return
 	}
-	recordResponseAndSet(&s.DuelMode, msgBuffer)
+	// 原版 tag_duel.cpp:1519-1520：响应长度先截断到 SIZE_RETURN_VALUE，
+	// 超过定长缓冲的响应直接写回放缓冲区会越界。
+	length := len(msgBuffer)
+	if length > ocgcore.SIZE_RETURN_VALUE {
+		length = ocgcore.SIZE_RETURN_VALUE
+	}
+	recordResponseAndSet(&s.DuelMode, msgBuffer[:length])
 	s.players[dp.Type].State = 0xff
 	if s.HostInfo.TimeLimit != 0 {
 		respType := 0
@@ -409,8 +408,6 @@ func (s *TagDuel) handMaskedRecipients(player int) []*DuelPlayer {
 	}
 	return recipients
 }
-
-func (s *TagDuel) skipCardQuery(clen int32) bool { return clen <= ocgcore.LEN_HEADER }
 
 func (s *TagDuel) waitingNotifyRecipients(player byte) []*DuelPlayer {
 	recipients := make([]*DuelPlayer, 0, 3)
@@ -496,10 +493,11 @@ func (s *TagDuel) loadDecksToEngine(d *ocgcore.Duel, rp *Replay) {
 	loadTag(s.pDeck[2].Extra, 1, ocgcore.LOCATION_EXTRA)
 }
 
-// refreshOnDuelStart 是开局额外卡组刷新（原版 tag RefreshExtra，0x81fff4/无缓存）。
+// refreshOnDuelStart 是开局额外卡组刷新（原版 tag_duel.cpp:467-468 的
+// 裸 RefreshExtra(0)/(1)，即默认参数 0xe81fff/缓存，与 single 相同）。
 func (s *TagDuel) refreshOnDuelStart() {
-	s.RefreshExtra(0, 0x81fff4, 0)
-	s.RefreshExtra(1, 0x81fff4, 0)
+	s.RefreshExtraDef(0)
+	s.RefreshExtraDef(1)
 }
 
 // armDuelTimer 武装决斗秒表：TagTimer 非超时路径每秒自行重新武装
@@ -510,9 +508,9 @@ func (s *TagDuel) armDuelTimer() {
 
 // refreshGraveAfterSwap / refreshAfterSummon / refreshAfterChain /
 // refreshAfterDamageStep / refreshAfterNewPhase / refreshSingleMoved /
-// refreshSingleFlip / skipCardQuery 原本在本文件以 0x81fff4 等常量实现，
-// 差异已收进 DuelMode.refresh 参数表（构造时填写），统一由 DuelMode 基类
-// 读表实现（见 duel_refresh.go）。
+// refreshSingleFlip 原本在本文件以显式常量实现，差异已收进 DuelMode.refresh
+// 参数表（构造时填写，两模式取值一致），统一由 DuelMode 基类读表实现
+//（见 duel_refresh.go）。
 
 func (s *TagDuel) onDuelEnded() {
 	for i := 0; i < 4; i++ {

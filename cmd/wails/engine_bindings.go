@@ -1037,12 +1037,19 @@ var engineBindings = map[byte]engineBinding{
 	ocgcore.MSG_CHAIN_END:       {name: "CHAIN_END", event: "duel:chain_end"},
 	ocgcore.MSG_ATTACK_DISABLED: {name: "ATTACK_DISABLED", event: "duel:attack_disabled"},
 	ocgcore.MSG_WAITING:         {name: "WAITING", event: "duel:waiting"},
+	// MSG_RETRY：服务端只重发 RETRY 字节（analyze_shared.go analyzeRetry 不重发
+	// 上一询问），由前端按已记录的最近询问重放（原版 duelclient.cpp:990-1043
+	// 用 last_successful_msg 重跑 ClientAnalyze）。
+	ocgcore.MSG_RETRY:         {name: "RETRY", event: "duel:retry"},
+	ocgcore.MSG_REVERSE_DECK:  {name: "REVERSE_DECK", event: "duel:reverse_deck"},
 
 	// ---- 展示/标记消息（波 B：原先只对齐字节流，现在完整 emit）----
 	ocgcore.MSG_HINT:             {name: "HINT", newMsg: func() any { return &protocol.HintMsg{} }, event: "duel:hint"},
 	ocgcore.MSG_CONFIRM_CARDS:    {name: "CONFIRM_CARDS", newMsg: func() any { return &protocol.ConfirmCardsMsg{} }, event: "duel:confirm_cards", decorate: decorateConfirmCards},
 	ocgcore.MSG_SHUFFLE_HAND:     {name: "SHUFFLE_HAND", newMsg: func() any { return &protocol.ShuffleHandMsg{} }, event: "duel:shuffle_hand"},
 	ocgcore.MSG_SHUFFLE_EXTRA:    {name: "SHUFFLE_EXTRA", newMsg: func() any { return &protocol.ShuffleExtraMsg{} }, event: "duel:shuffle_extra"},
+	ocgcore.MSG_SHUFFLE_DECK:     {name: "SHUFFLE_DECK", newMsg: func() any { return &protocol.ShuffleDeckMsg{} }, event: "duel:shuffle_deck"},
+	ocgcore.MSG_SWAP_GRAVE_DECK:  {name: "SWAP_GRAVE_DECK", newMsg: func() any { return &protocol.SwapGraveDeckMsg{} }, event: "duel:swap_grave_deck"},
 	ocgcore.MSG_REFRESH_DECK:     {name: "REFRESH_DECK", newMsg: func() any { return &protocol.RefreshDeckMsg{} }, event: "duel:refresh_deck", decorate: decorateRefreshDeck},
 	ocgcore.MSG_SHUFFLE_SET_CARD: {name: "SHUFFLE_SET_CARD", newMsg: func() any { return &protocol.ShuffleSetCardMsg{} }, event: "duel:shuffle_set_card", decorate: decorateShuffleSetCard},
 	ocgcore.MSG_DECK_TOP:         {name: "DECK_TOP", newMsg: func() any { return &protocol.DeckTopMsg{} }, event: "duel:deck_top"},

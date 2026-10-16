@@ -15,23 +15,11 @@ import (
 func newSingleDuel(matchMode bool) *SingleDuel {
 	sd := &SingleDuel{MatchMode: matchMode, DuelMode: DuelMode{
 		Observers: make(map[string]*DuelPlayer),
-		// 刷新参数表：single 的取值即原 *Def 系列默认参数（带缓存）；
-		// newPhaseHand 留 0（single 的 MSG_NEW_PHASE 后不刷新手牌，与原版一致）；
-		// skipCardQueryLe 留 false（边界语义 clen < LEN_HEADER）。
-		refresh: refreshFlags{
-			summonMzone:     0x881fff,
-			summonSzone:     0x681fff,
-			chainMzone:      0x881fff,
-			chainSzone:      0x681fff,
-			chainHand:       0x681fff,
-			damageStepMzone: 0x881fff,
-			newPhaseMzone:   0x881fff,
-			newPhaseSzone:   0x681fff,
-			singleMoved:     0xf81fff,
-			singleFlip:      0xf81fff,
-			graveAfterSwap:  0x81fff,
-			useCache:        1,
-		},
+		// 刷新参数表即原版 *Def 系列默认参数（带缓存）；tag 的默认值与之
+		// 完全一致（tag_duel.h:35-40 == single_duel.h:35-40），见
+		// defaultRefreshFlags。MSG_NEW_PHASE 后按原版 single_duel.cpp:942-943
+		// 同样刷新手牌。
+		refresh: defaultRefreshFlags(),
 	}}
 	sd.room = sd
 	return sd

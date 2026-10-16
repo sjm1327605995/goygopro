@@ -981,6 +981,10 @@ export class DuelField3D {
     if (locName === 'mzone' || locName === 'szone') {
       const coord = this.getZonePosition(player, locName, seq);
       if (!coord) return null;
+      // 槽位已有 mesh（如 MSG_MOVE 先行落位、SUMMONING/SET 再到）先静默清掉，
+      // 防止 scene/cardMeshes 泄漏双份
+      const existing = this.cardsOnField[player][locName][seq];
+      if (existing) this.retireMesh(existing, true);
       const mesh = this.createCardMesh(cardCode, cardInfo);
       mesh.position.set(coord.x, coord.y + 0.05, coord.z);
       mesh.rotation.set(0, 0, 0);
@@ -1006,6 +1010,22 @@ export class DuelField3D {
       return mesh;
     }
     return null; // deck/extra/hand/overlay have no resting mesh on the board
+  }
+
+  // 原版 FadeCard（client_field.cpp:1107-1111）：凭空出现的卡（token 出场等
+  // MSG_MOVE pl==0 路径）20 帧淡入。
+  fadeInMesh(mesh: any, instant = false): void {
+    if (!mesh || instant) return;
+    const mats: any[] = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    mats.forEach((m) => { m.transparent = true; m.opacity = 0; });
+    const state = { t: 0 };
+    this.makeTween(state)
+      .to({ t: 1 }, 20 * 1000 / 60)
+      .onUpdate(() => { mats.forEach((m) => { m.opacity = state.t; }); })
+      .onComplete(() => {
+        mats.forEach((m) => { m.opacity = 1; m.transparent = false; m.needsUpdate = true; });
+      })
+      .start();
   }
 
   // Moves an existing mesh to a destination zone. `instant` snaps instead of
@@ -1475,6 +1495,22 @@ export class DuelField3D {
         this.pileCountSprites[key] = sprite;
       }
     }
+  }
+
+  // 原版 MSG_SHUFFLE_DECK 的卡组抖动（duelclient.cpp:2263-2301 共 5 轮）：
+  // 卡组堆无实体卡 mesh，抖动落在计数浮签上（正弦往返 5 次）。
+  shakeDeckPile(seat: number): void {
+    const sprite = this.pileCountSprites[`${seat}:deck`];
+    if (!sprite) return;
+    const baseX = sprite.position.x;
+    const state = { t: 0 };
+    this.makeTween(state)
+      .to({ t: 1 }, 5 * 2 * 2000 / 60)
+      .onUpdate(() => {
+        sprite.position.x = baseX + Math.sin(state.t * Math.PI * 2 * 5) * 0.12;
+      })
+      .onComplete(() => { sprite.position.x = baseX; })
+      .start();
   }
 
   clearPileCounts(): void {

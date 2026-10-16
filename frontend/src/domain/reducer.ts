@@ -376,6 +376,14 @@ function zoneOf(side: BoardSide, loc: number): (BoardCard | null)[] | null {
   return null;
 }
 
+/** 堆区列表（grave/banish/extra；deck/hand 内容本前端不可见不落 board） */
+function stackOfZone(side: BoardSide, loc: number): BoardCard[] | null {
+  if (loc === LOC_GRAVE) return side.grave;
+  if (loc === LOC_BANISH) return side.banish;
+  if (loc === LOC_EXTRA) return side.extra;
+  return null;
+}
+
 /** 场上放置（召唤/盖卡类事件）：cc/ccs/cl 已定，pos 直接记录 */
 function boardPlace(state: DuelState, seat: number, loc: number, seq: number, card: BoardCard): DuelState {
   const board = cloneBoard(state);
@@ -403,12 +411,7 @@ function boardMove(state: DuelState, ev: {
   const dispOf = (seat: number) => localSeat(state, seat);
 
   // 堆区的公共进出：grave/banish/extra 同一语义（extra 列表供 F3/F7 查看）
-  const stackOf = (side: BoardSide, loc: number): BoardCard[] | null => {
-    if (loc === LOC_GRAVE) return side.grave;
-    if (loc === LOC_BANISH) return side.banish;
-    if (loc === LOC_EXTRA) return side.extra;
-    return null;
-  };
+  const stackOf = (side: BoardSide, loc: number): BoardCard[] | null => stackOfZone(side, loc);
 
   const srcSide = board[dispOf(ev.pc)];
   const srcZone = zoneOf(srcSide, ev.pl);
@@ -728,6 +731,21 @@ const boardHandlers: Record<string, EventHandler> = {
     return next;
   },
 
+  'duel:swap_grave_deck': (state, ev) => {
+    // MSG_SWAP_GRAVE_DECK（现世与冥界的逆转等）：原版 duelclient.cpp:2378-2420
+    // 就地交换 grave/deck 容器、额外系怪兽挪入额外显示堆。卡组内容本前端
+    // 不可见，交换体现为计数互换 + 墓地列表清空；紧随的 RefreshGrave 经
+    // update_data（GRAVE 堆区整表替换）重建墓地列表。额外计数偏差留待后续
+    // 额外相关事件校正（原版同样依赖后续刷新收敛）。
+    const disp = localSeat(state, ev.player);
+    const piles: [PileCounts, PileCounts] = [...state.piles];
+    const p = piles[disp];
+    piles[disp] = { ...p, deck: p.grave, grave: p.deck };
+    const board = cloneBoard(state);
+    board[disp].grave = [];
+    return { ...state, piles, board };
+  },
+
   'duel:update_data': (state, ev) => {
     // MSG_UPDATE_DATA：cards[i] 按序对应 location 区的第 i 张卡
     if (!ev.cards || !ev.cards.length) return state;
@@ -740,7 +758,24 @@ const boardHandlers: Record<string, EventHandler> = {
       return { ...state, [key]: arr };
     }
     const board = cloneBoard(state);
-    const zone = zoneOf(board[localSeat(state, ev.player)], ev.location);
+    const side = board[localSeat(state, ev.player)];
+    // 堆区整表替换：cards[i] 按序对应堆的第 i 张（顶→底），MSG_SWAP_GRAVE_DECK
+    // 后的 RefreshGrave/RefreshExtra 即靠这条路径重建列表（原版 UpdateFieldCard
+    // 覆盖所有区域，无白名单）。
+    const stack = stackOfZone(side, ev.location);
+    if (stack) {
+      const next = (ev.cards as (CardQuery | null)[])
+        .filter((q): q is CardQuery => !!q && !!q.code)
+        .map((q) => ({ code: q.code!, pos: q.position?.p ?? 0 }));
+      if (next.length !== stack.length || next.some((c, i) => stack[i].code !== c.code)) {
+        if (ev.location === LOC_GRAVE) side.grave = next;
+        else if (ev.location === LOC_BANISH) side.banish = next;
+        else side.extra = next;
+        return { ...state, board };
+      }
+      return state;
+    }
+    const zone = zoneOf(side, ev.location);
     if (!zone) return state;
     let changed = false;
     (ev.cards as (CardQuery | null)[]).forEach((q, seq) => {
@@ -788,7 +823,25 @@ const boardHandlers: Record<string, EventHandler> = {
   'duel:update_card': (state, ev) => {
     // MSG_UPDATE_CARD：只带变化字段的 query blob；缺的字段沿用旧值
     const board = cloneBoard(state);
-    const zone = zoneOf(board[localSeat(state, ev.player)], ev.location);
+    const side = board[localSeat(state, ev.player)];
+    // 堆区单卡刷新（RefreshSingle 同样覆盖 grave/banish/extra）：按序号合并字段
+    const stack = stackOfZone(side, ev.location);
+    if (stack) {
+      if (ev.sequence < 0 || ev.sequence >= stack.length) return state;
+      const cur = stack[ev.sequence];
+      const merged: BoardCard = {
+        ...cur,
+        code: ev.code ?? cur.code,
+        pos: ev.position?.p ?? cur.pos,
+        attack: ev.attack ?? cur.attack,
+        defense: ev.defense ?? cur.defense,
+      };
+      if (merged.code === cur.code && merged.pos === cur.pos
+        && merged.attack === cur.attack && merged.defense === cur.defense) return state;
+      stack[ev.sequence] = merged;
+      return { ...state, board };
+    }
+    const zone = zoneOf(side, ev.location);
     if (!zone || ev.sequence < 0 || ev.sequence >= zone.length) return state;
     const cur = zone[ev.sequence];
     let overlayChanged=false;
