@@ -6,6 +6,7 @@
 
 import { FORWARDED_EVENTS } from './net/events_forward.ts';
 import { registerCardName } from './domain/card_names.ts';
+import { PresentationQueue } from './net/presentation_queue.ts';
 
 // Sample mock card database for standalone preview & testing
 const MOCK_CARD_DB = [
@@ -166,6 +167,8 @@ class EventBus {
 }
 
 export const eventBus = new EventBus();
+export const presentationQueue = new PresentationQueue((name, data) => eventBus.emit(name, data));
+eventBus.on('nav', () => presentationQueue.clear());
 
 // Wails v3 运行时：生产环境由 /wails/runtime.js 提供（index.html 静态 import
 // 先行加载）；浏览器/冒烟环境没有该模块 → 落入 Mock 桥。注意 Call/Events 是
@@ -198,7 +201,7 @@ if (wailsEvents && wailsEvents.On) {
   // Bridge Wails events to internal eventBus. 名字唯一来源见
   // net/events_forward.ts（与 Go emit 点有名字对齐测试）。
   FORWARDED_EVENTS.forEach(name => {
-    wailsEvents.On(name, (ev: any) => eventBus.emit(name, ev && ev.data !== undefined ? ev.data : ev));
+    wailsEvents.On(name, (ev: any) => presentationQueue.enqueue(name, ev && ev.data !== undefined ? ev.data : ev));
   });
 }
 
@@ -257,6 +260,7 @@ export const WailsBridge = {
   // 成功后事件流与在线对局同构（duel:start → reload_field/update_data →
   // select_* → …… → single:ended）。
   async startSingle(name: string, returnDeckTop = false): Promise<{ success: boolean; name?: string; error?: string }> {
+    presentationQueue.clear();
     if (isWails) {
       return await callWails("StartSingle", name, returnDeckTop);
     }
@@ -265,6 +269,7 @@ export const WailsBridge = {
   },
 
   stopSingle() {
+    presentationQueue.clear();
     if (isWails) callWails("StopSingle");
     else console.log("[MockBridge] StopSingle");
   },

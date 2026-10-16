@@ -4,6 +4,7 @@ import GfwSelect from './ui/GfwSelect.tsx';
 import UiButton from '../ui/UiButton.tsx';
 import { UiInput } from '../ui/UiInput.tsx';
 import DesignSpace from '../ui/DesignSpace.tsx';
+import SourceWindow from '../ui/SourceWindow.tsx';
 
 // 卡组/分类管理窗口（原版 wDeckManage，game.cpp:660-683 + deck_con.cpp:423-676）。
 // 左分类列表 / 右该分类下的卡组列表；分类：新建/重命名/删除；卡组：新建/
@@ -138,7 +139,7 @@ export default function DeckManageModal({ deckList, onClose, onRefresh, onImport
           按钮列 x350-480 宽 130、y30 起 35 距 25 高。名称输入/目标分类/关闭是
           扩展件（原版走 wDMQuery 弹窗），压在底部扩展行（列表收短到 300）。 */}
       <DesignSpace>
-      <div
+      <SourceWindow x={310} y={135} width={490} height={380}
         id="deck-manage-modal"
         className="modal-box"
         style={{
@@ -207,8 +208,8 @@ export default function DeckManageModal({ deckList, onClose, onRefresh, onImport
             <UiButton id="deck-export-code-btn" onClick={onExport}>导出卡组码</UiButton>
           </div>
         </div>
-      </div>
-      {query&&<div id="dm-query" className="gfw-window" style={{left:400,top:200,width:310,height:120,transform:'none',zIndex:3000}}>
+      </SourceWindow>
+      {query&&<SourceWindow x={400} y={200} width={310} height={120} id="dm-query" className="gfw-window" style={{zIndex:3000}}>
         <div className="gfw-title">卡组管理</div>
         <div style={{position:'relative',height:96}}>
           <div style={{position:'absolute',left:20,top:6,width:270,textAlign:'center'}}>{query.message}</div>
@@ -234,7 +235,7 @@ export default function DeckManageModal({ deckList, onClose, onRefresh, onImport
             <UiButton id="dm-query-ok" style={{position:'absolute',left:60,top:56,width:80,height:25}} onClick={()=>{const value=query.kind==='name'?nameInput.trim():query.kind==='category'?targetCategory:'yes';if(query.kind!=='name'||value)answer(value);}}>确定</UiButton>
             <UiButton id="dm-query-cancel" style={{position:'absolute',left:170,top:56,width:80,height:25}} onClick={()=>answer(null)}>取消</UiButton>
         </div>
-      </div>}
+      </SourceWindow>}
       </DesignSpace>
     </div>
   );

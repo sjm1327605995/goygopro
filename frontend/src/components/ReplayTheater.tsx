@@ -7,6 +7,7 @@ import GfwSelect from './ui/GfwSelect.tsx';
 import UiButton from '../ui/UiButton.tsx';
 import { UiInput } from '../ui/UiInput.tsx';
 import DesignSpace from '../ui/DesignSpace.tsx';
+import { presentationDelay } from '../net/presentation_queue.ts';
 
 /**
  * Replay Theater: lists recorded .yrp duels, asks the Go backend to replay one
@@ -263,6 +264,8 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
   const waitThenAdvance = (started: number): void => {
     const sp = playSpeedRef.current || 1;
     const minGap = Math.max(120, Math.round(MIN_GAP_MS / sp));
+    const last = eventsRef.current[stepRef.current - 1];
+    const presentationGap = last ? presentationDelay(last.type, last.data) : 0;
     const maxAnim = Math.round(MAX_ANIM_MS / sp);
     const poll = (): void => {
       if (!isPlayingRef.current) return; // 暂停/变速时被 timer 清空打断
@@ -271,7 +274,7 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
       const elapsed = Date.now() - started;
       if (animating && elapsed < maxAnim) {
         timerRef.current = window.setTimeout(poll, 16);
-      } else if (elapsed < minGap) {
+      } else if (elapsed < Math.max(minGap, presentationGap)) {
         timerRef.current = window.setTimeout(poll, 16);
       } else {
         advance();

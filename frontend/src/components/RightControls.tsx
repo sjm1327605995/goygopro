@@ -16,6 +16,7 @@ import chainPrefs from '../duel/chain_prefs.ts';
 import type { ChainPrefMode } from '../duel/chain_prefs.ts';
 import { duelStore } from '../duel/store.ts';
 import { settingsStore } from '../domain/settings.ts';
+import SourceWindow from '../ui/SourceWindow.tsx';
 
 const MODES: { key: ChainPrefMode; label: string; title: string }[] = [
   { key: 'ignore', label: '忽略时点', title: '自动放弃一切连锁机会' },
@@ -118,7 +119,7 @@ export default function RightControls({ onSurrendered, onLeaveObserver, singleMo
       </div>
       {state.phasePrompt?.canShuffle && !state.cardSelect && <button id="shuffle-hand-btn" className="chain-btn" onClick={() => WailsBridge.respondIdleCmd(0,8)}>洗切手牌</button>}
       {confirming && (
-        <div className="surrender-confirm">
+        <SourceWindow x={490} y={200} width={350} height={140} className="surrender-confirm">
           <div className="surrender-confirm-title">是否确定投降？</div>
           {teammateSurrender && (
             <div style={{ fontSize: '12px', color: '#fbbf24', marginBottom: '6px' }}>
@@ -137,7 +138,7 @@ export default function RightControls({ onSurrendered, onLeaveObserver, singleMo
               return settingsStore.get('swap_yes_no_button') ? [no, yes] : [yes, no];
             })()}
           </div>
-        </div>
+        </SourceWindow>
       )}
     </div>
   );

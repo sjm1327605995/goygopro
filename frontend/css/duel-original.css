@@ -242,7 +242,7 @@
   position: relative;
   height: 100%;
   background: url('/textures/lp.png') repeat-x center / auto 100%;
-  transition: width 0.4s ease;
+  transition: none;
 }
 
 /* LP 超过初始值时的底层满条（分层配色，见 PlayerPanel lpBarLayers） */
@@ -450,7 +450,7 @@
   left: 0;
   top: 0;
   width: max-content;
-  font-size: 48px;
+  font-size: var(--banner-font-size,48px);
   font-weight: normal;
   color: #fff;
   text-shadow: 1px 1px #000;
@@ -978,142 +978,23 @@
 .spec-card {
   position: absolute;
   inset: 0;
-  border: 1px solid #94a3b8;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
-  overflow: hidden;
+  border: 0;
+  box-shadow: none;
+  overflow: visible;
 }
-
-/* showcard=7：翻卡（召唤/反转召唤，水平翻转半周） */
-.spec-flip { animation: spec-flip-anim 0.8s ease-in-out; }
-@keyframes spec-flip-anim {
-  0%   { transform: perspective(700px) rotateY(0deg); }
-  50%  { transform: perspective(700px) rotateY(90deg); }
-  100% { transform: perspective(700px) rotateY(180deg); }
-}
-
-/* showcard=5：特殊召唤（中心放大淡入） */
-.spec-zoom { animation: spec-zoom-anim 0.5s ease-out; }
-@keyframes spec-zoom-anim {
-  0%   { transform: scale(0.1); opacity: 0; }
-  100% { transform: scale(1);   opacity: 1; }
-}
-
-/* showcard=1+2：连锁发动（mask.png 从右往左遮入再从右往左揭出） */
-.spec-mask {
-  position: absolute;
-  inset: 0;
-  background-size: 100% 100%;
-  animation: spec-mask-anim 0.9s linear;
-}
-@keyframes spec-mask-anim {
-  0%   { clip-path: inset(0 100% 0 0); }
-  50%  { clip-path: inset(0 0 0 0); }
-  100% { clip-path: inset(0 0 0 100%); }
-}
-
-/* showcard=3：无效化（negated.png 收缩罩盖到卡图上） */
-.spec-negated {
-  position: absolute;
-  inset: 0;
-  background-size: 100% 100%;
-  animation: spec-negated-anim 0.6s ease-out;
-}
-@keyframes spec-negated-anim {
-  0%   { transform: scale(1.8); opacity: 0; }
-  40%  { opacity: 1; }
-  100% { transform: scale(1);   opacity: 1; }
-}
-
-/* showcard=4：淡入揭示（alpha 渐显，confirm_cards 单卡揭示） */
-.spec-fade { animation: spec-fade-anim 0.7s ease-out; }
-@keyframes spec-fade-anim {
-  0%   { opacity: 0; }
-  100% { opacity: 1; }
-}
-
-/* showcard=6：回合数大字盖戳（CHINT_TURN 的 number.png 叠卡图） */
-.spec-number {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(10, 12, 20, 0.55);
-  animation: spec-number-anim 0.9s ease-out;
-}
-.spec-number > span {
-  font-size: 96px;
-  font-weight: 900;
-  color: #fbbf24;
-  text-shadow: 0 0 12px #000, 0 0 24px #f59e0b;
-  animation: spec-number-pop 0.5s ease-out;
-}
-@keyframes spec-number-anim {
-  0%   { opacity: 0; }
-  30%  { opacity: 1; }
-  85%  { opacity: 1; }
-  100% { opacity: 0; }
-}
-@keyframes spec-number-pop {
-  0%   { transform: scale(2.2); }
-  100% { transform: scale(1); }
-}
-
-/* showcard=100：猜拳双拳下落对碰（原版 tHand 两拳相向会合） */
+/* DrawSpec is rasterized from the C++ frame formulas, without CSS transforms. */
 .rps-arena {
-  position: absolute;
-  left: 50%;
-  top: 34%;
-  transform: translateX(-50%);
+  position: fixed;
+  inset: 0;
   z-index: 930;
-  width: 320px;
-  height: 240px;
   pointer-events: none;
 }
 .rps-hand {
   position: absolute;
-  left: 50%;
-  font-size: 84px;
-  transform: translateX(-50%);
-  text-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
+  width: 89px;
+  height: 128px;
+  transform-origin: 0 0;
 }
-.rps-hand-top {
-  top: -120px;
-  animation: rps-drop-top 0.55s cubic-bezier(0.5, 0, 0.8, 0.4) forwards;
-}
-.rps-hand-bottom {
-  bottom: -120px;
-  animation: rps-rise-bottom 0.55s cubic-bezier(0.5, 0, 0.8, 0.4) forwards;
-}
-@keyframes rps-drop-top {
-  0%   { top: -120px; }
-  70%  { top: 62px; }
-  85%  { top: 54px; }
-  100% { top: 60px; }
-}
-@keyframes rps-rise-bottom {
-  0%   { bottom: -120px; }
-  70%  { bottom: 62px; }
-  85%  { bottom: 54px; }
-  100% { bottom: 60px; }
-}
-.rps-clash {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 40px;
-  height: 40px;
-  margin: -20px 0 0 -20px;
-  border: 4px solid #fde047;
-  border-radius: 50%;
-  opacity: 0;
-  animation: rps-clash-anim 0.5s ease-out 0.5s forwards;
-}
-@keyframes rps-clash-anim {
-  0%   { transform: scale(0.4); opacity: 0.9; }
-  100% { transform: scale(3.2); opacity: 0; }
-}
-
 /* 掷币/掷骰图标动画（toss_coin/toss_dice 的图标化升级，文本弹条保留） */
 .toss-arena {
   position: absolute;

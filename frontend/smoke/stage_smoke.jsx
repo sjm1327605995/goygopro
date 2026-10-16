@@ -228,7 +228,7 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     // 0.4s CSS transition 时序影响，无头虚拟时间下不可靠）。
     eventBus.emit('duel:recover', { player: 1, amount: 5000 }); // 4000 → 9000
     const fgPct = () => ($('#player-panel .lp-fill:not(.lp-fill-bg)').style.width || '');
-    await waitFor(() => $('#player-panel .lp-fill-bg') && fgPct() === '25%', 'layered LP settles');
+    await waitFor(() => $('#player-panel-lp').textContent === '9000' && $('#player-panel .lp-fill-bg') && fgPct() === '25%', 'layered LP settles');
     record('lp-layered-partial', fgPct() === '25%');
     record('lp-layered-rows',
       $('#player-panel .lp-fill-bg').style.backgroundPositionY === '25%'
@@ -282,7 +282,7 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     eventBus.emit('duel:damage', { player: 1, amount: 2000 }); // 9000 → 7000
     await waitFor(() => lpText() === '7000', 'lp settles');
     record('lp-rolls-to-target', lpText() === '7000');
-    record('lp-tick-sound', lpTicks > 0, `ticks=${lpTicks}`);
+    record('lp-has-no-added-tick-sound', lpTicks === 0, `ticks=${lpTicks}`);
     soundManager.playLPTick = origTick;
 
     // ---- 交换视角（btnSpectatorSwap/btnReplaySwap → SwapField）：store 显示座

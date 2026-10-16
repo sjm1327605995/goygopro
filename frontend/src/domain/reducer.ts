@@ -22,6 +22,7 @@ import {
 } from './constants.ts';
 import { cardName } from './card_names.ts';
 import { sysString, PHASE_LABELS } from './sys_strings.ts';
+import type { LifePointChange, LifePointKind } from './life_points.ts';
 
 export interface HandCard {
   code: number;
@@ -154,6 +155,8 @@ export interface DuelState {
   /** [本方, 对方] 名字；练习模式没有 player_enter 时用占位名 */
   names: [string, string];
   lp: [number, number];
+  lpChange: LifePointChange | null;
+  announcement: { text: string; startedAt: number } | null;
   turn: number;
   /** 显示座：0=本方回合 */
   turnPlayer: number;
@@ -238,6 +241,8 @@ export function initialDuelState(): DuelState {
     playerSlot: 0,
     names: ['YugiMuto', 'SetoKaiba'],
     lp: [8000, 8000],
+    lpChange: null,
+    announcement: null,
     turn: 0,
     turnPlayer: 0,
     phase: 0,
@@ -302,6 +307,14 @@ function setLP(state: DuelState, seat: number, lp: number): DuelState {
   const lp2: [number, number] = [...state.lp];
   lp2[disp] = Math.max(0, lp);
   return { ...state, lp: lp2 };
+}
+
+function changeLP(state: DuelState, ev: any, value: number, kind: LifePointKind): DuelState {
+  const player = localSeat(state, ev.player);
+  const next = setLP(state, ev.player, value);
+  return { ...next, lpChange: ev.__instant ? null : {
+    player, from: state.lp[player], to: next.lp[player], amount: ev.amount || 0, kind, startedAt: Date.now(),
+  } };
 }
 
 function adjustPile(
@@ -469,6 +482,7 @@ export function applyViewSwap(state: DuelState): DuelState {
     viewSwapped: !state.viewSwapped,
     names: [state.names[1], state.names[0]],
     lp: [state.lp[1], state.lp[0]],
+    lpChange: state.lpChange ? { ...state.lpChange, player: state.lpChange.player === 0 ? 1 : 0 } : null,
     piles: [state.piles[1], state.piles[0]],
     timer: [state.timer[1], state.timer[0]],
     board: [state.board[1], state.board[0]],
@@ -528,6 +542,8 @@ const lifecycleHandlers: Record<string, EventHandler> = {
       duelRule: ev.duelRule || 5,
       playerSlot,
       lp: [0, 0],
+      lpChange: null,
+      announcement: ev.__instant ? null : { text: 'Duel Start', startedAt: Date.now() },
       turn: 0,
       turnPlayer: 0,
       phase: 0,
@@ -621,21 +637,21 @@ const lifecycleHandlers: Record<string, EventHandler> = {
 
 /** LP 变化（差值事件按显示座累加，绝对值事件覆盖） */
 const lpHandlers: Record<string, EventHandler> = {
-  'duel:lp_update': (state, ev) => setLP(state, ev.player, ev.lp),
+  'duel:lp_update': (state, ev) => changeLP(state, ev, ev.lp, 'update'),
 
   'duel:damage': (state, ev) => withLog(
-    setLP(state, ev.player, state.lp[localSeat(state, ev.player)] - ev.amount),
+    changeLP(state, ev, state.lp[localSeat(state, ev.player)] - ev.amount, 'damage'),
     `玩家 ${localSeat(state, ev.player) === 0 ? '你' : '对方'} 受到 ${ev.amount} 点伤害！`,
     'log-damage',
   ),
 
   'duel:recover': (state, ev) => withLog(
-    setLP(state, ev.player, state.lp[localSeat(state, ev.player)] + ev.amount),
+    changeLP(state, ev, state.lp[localSeat(state, ev.player)] + ev.amount, 'recover'),
     `回复了 ${ev.amount} 点 LP！`,
   ),
 
   'duel:pay_lpcost': (state, ev) => withLog(
-    setLP(state, ev.player, state.lp[localSeat(state, ev.player)] - ev.amount),
+    changeLP(state, ev, state.lp[localSeat(state, ev.player)] - ev.amount, 'pay'),
     `支付了 ${ev.amount} 点 LP 作为代价。`,
     'log-damage',
   ),
@@ -828,6 +844,7 @@ const phaseHandlers: Record<string, EventHandler> = {
   'duel:new_turn': (state, ev) => withLog({
     ...state,
     turn: state.turn + 1,
+    announcement: ev.__instant ? null : { text: 'Next Players Turn', startedAt: Date.now() },
     turnPlayer: localSeat(state, ev.player),
     // 新回合意味着上一条阶段按钮提示已作废
     phasePrompt: null,
@@ -835,7 +852,8 @@ const phaseHandlers: Record<string, EventHandler> = {
   }, `—— 玩家 ${localSeat(state, ev.player) === 0 ? '你' : '对方'} 的回合 ——`, 'log-action'),
 
   'duel:new_phase': (state, ev) => withLog(
-    { ...state, phase: ev.phase, phasePrompt: null, cmdActions: null },
+    { ...state, phase: ev.phase, phasePrompt: null, cmdActions: null,
+      announcement: ev.__instant ? null : { text: '', startedAt: Date.now() } },
     `进入${PHASE_LABELS[ev.phase] || '未知阶段'}`,
     'log-action',
   ),
@@ -856,7 +874,7 @@ const singleModeHandlers: Record<string, EventHandler> = {
   'duel:reload_field': (state, ev) => {
     // MSG_RELOAD_FIELD：完整布场快照。先落 LP 与堆计数；场上卡的细节
     // 由紧随其后的 update_data 刷新（SinglePlayRefresh）补齐。
-    let next = state;
+    let next: DuelState = { ...state, lpChange: null };
     for (const seat of [0, 1] as const) {
       const p = ev.players && ev.players[seat];
       if (!p) continue;
