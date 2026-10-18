@@ -19,3 +19,13 @@ export function formatCardStats(info:any):string {
   const ad=link?`${stat(info.attack)}/-   ${formatLinkMarker(info.linkMarker||0)}`:`${stat(info.attack)}/${stat(info.defense)}`;
   return `[${form}${info.level??0}] ${ad}${(info.type&TYPE_PENDULUM)?`   ${info.lscale||0}/${info.rscale||0}`:''}`;
 }
+
+export function splitPendulumDescription(input:string):[string,string] {
+  const text=String(input??'').replace(/←.*?→/g,'').trim();
+  const marker=/【(?:怪兽效果|怪獸效果|モンスター効果)】|\[\s*(?:Monster Effect|Efecto de Monstruo)\s*\]/i;
+  const separator=marker.exec(text)??/\r?\n[-─━]{3,}\r?\n/.exec(text);
+  if(!separator)return ['',text];
+  const pendulum=text.slice(0,separator.index).replace(/【(?:灵摆效果|靈擺效果|Ｐ効果|P効果)】|\[\s*(?:Pendulum Effect|Efecto de Péndulo)\s*\]/gi,'').trim();
+  const monster=text.slice(separator.index+separator[0].length).trim();
+  return [pendulum,monster];
+}

@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/sjm1327605995/goygopro/protocol"
 )
 
 // testApp 构造一个指向仓库根数据文件的 App，并把 cwd 切到仓库根（生产环境
@@ -204,6 +206,65 @@ func TestStartSingleDrivesPuzzleToWin(t *testing.T) {
 	}
 }
 
+func TestStartSingleDarkMagicianPuzzleToWin(t *testing.T) {
+	a := testApp(t)
+	rec := newEventRecorder()
+	orig := EmitWailsEvent
+	pilot := autoPilot(t, "魔导师的初阵", a, rec, 1)
+	EmitWailsEvent = func(_ context.Context, name string, data interface{}) {
+		pilot(name, data)
+	}
+	defer func() { EmitWailsEvent = orig }()
+
+	res := a.StartSingle("魔导师的初阵.lua", false)
+	if res["success"] != true {
+		if strings.Contains(res["error"].(string), "init error") {
+			t.Skipf("ocgcore library not available: %v", res["error"])
+		}
+		t.Fatalf("StartSingle: %v", res)
+	}
+	rec.waitFor(t, func() bool { return rec.count("single:ended") > 0 }, "single:ended")
+
+	idleEvents := rec.all("duel:select_idlecmd")
+	if len(idleEvents) == 0 {
+		t.Fatal("puzzle did not emit select_idlecmd")
+	}
+	firstIdle, ok := idleEvents[0].(selectIdleCmdDTO)
+	if !ok {
+		t.Fatalf("first idlecmd payload = %T", idleEvents[0])
+	}
+	canSummonDarkMagician := false
+	for _, card := range firstIdle.Summon {
+		if card.Code == 46986414 {
+			canSummonDarkMagician = true
+			break
+		}
+	}
+	if !canSummonDarkMagician {
+		t.Fatalf("first idlecmd cannot summon Dark Magician: %+v", firstIdle)
+	}
+
+	var tribute *selectCardDTO
+	for _, ev := range rec.all("duel:select_card") {
+		sel := ev.(selectCardDTO)
+		if sel.Tribute {
+			tribute = &sel
+			break
+		}
+	}
+	if tribute == nil || tribute.Min != 2 || len(tribute.Cards) != 2 {
+		t.Fatalf("tribute prompt = %+v, want two tributes", tribute)
+	}
+	win, ok := rec.last("duel:win").(*protocol.WinMsg)
+	if !ok || win.Player != 0 {
+		t.Fatalf("duel:win = %+v, want player 0", rec.last("duel:win"))
+	}
+	end := rec.last("single:ended").(map[string]interface{})
+	if end["completed"] != true {
+		t.Fatalf("single:ended = %v, want completed=true", end)
+	}
+}
+
 // StopPlay 语义：谜题等待玩家作答时退出 → single:ended completed=false，
 // 且响应通道的后续投递被安全丢弃。
 func TestStartSingleStopWhileWaiting(t *testing.T) {
@@ -232,6 +293,31 @@ func TestStartSingleStopWhileWaiting(t *testing.T) {
 	end := rec.last("single:ended").(map[string]interface{})
 	if end["completed"] != false {
 		t.Fatalf("single:ended = %v, want completed=false", end)
+	}
+}
+
+func TestRouteResponseSingleStopUnblocksSender(t *testing.T) {
+	a := NewApp()
+	run := &singleRun{
+		respCh: make(chan []byte, 1),
+		stopCh: make(chan struct{}),
+		done:   make(chan struct{}),
+	}
+	run.respCh <- []byte{0}
+	a.single = run
+	close(run.stopCh)
+	returned := make(chan struct{})
+	go func() {
+		_ = a.routeResponseB([]byte{1})
+		_ = a.routeResponseI(-1)
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(250 * time.Millisecond):
+		close(run.done)
+		<-returned
+		t.Fatal("single responses remained blocked after stopCh closed")
 	}
 }
 

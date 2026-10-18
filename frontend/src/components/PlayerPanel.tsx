@@ -65,6 +65,8 @@ export default function PlayerPanel({ side }: { side: 'player' | 'opponent' }) {
   // 时限条（drawing.cpp:637-642）：仅非观战 + 已知时限时画灰条
   const showTimeBar = !state.isObserver && state.timeLimit > 0 && timer != null;
   const timePct = showTimeBar ? Math.max(0, Math.min(100, (timer / state.timeLimit) * 100)) : 0;
+  const isLowTime = showTimeBar && timer != null && timer <= 30;
+  const sideLabel = side === 'player' ? '我方' : '对方';
 
   return (
     <div
@@ -72,12 +74,20 @@ export default function PlayerPanel({ side }: { side: 'player' | 'opponent' }) {
       className={`player-state-panel${isTurn ? ' is-turn' : ''}`}
     >
       <div className="player-state-head">
-        <span id={`${side}-panel-name`} className="player-state-name">
+        <span id={`${side}-panel-name`} className="player-state-name" title={shownName}>
           {shownName}
         </span>
         {isTurn ? <span className="player-turn-chip">回合 {state.turn}</span> : null}
       </div>
-      <div className="lp-frame">
+      <div
+        className="lp-frame"
+        role="meter"
+        aria-label={`${sideLabel}基本分`}
+        aria-valuemin={0}
+        aria-valuemax={Math.max(maxLP, lp)}
+        aria-valuenow={lp}
+        aria-valuetext={`${lp} 点基本分`}
+      >
         <div className="lp-track">
           {layered && <div className="lp-fill lp-fill-bg" style={{ width: '100%', ...rowStyle(bgRow) }} />}
           <div className="lp-fill" style={{ width: `${fgPct}%`, ...rowStyle(fgRow) }} />
@@ -85,7 +95,17 @@ export default function PlayerPanel({ side }: { side: 'player' | 'opponent' }) {
         <span id={`${side}-panel-lp`} className="lp-value">{shownLP}</span>
       </div>
       {showTimeBar && (
-        <div className="time-limit-bar" id={`${side}-time-bar`}>
+        <div
+          className={`time-limit-bar${isLowTime ? ' is-low' : ''}`}
+          id={`${side}-time-bar`}
+          data-low-time={isLowTime ? 'true' : undefined}
+          role="progressbar"
+          aria-label={`${sideLabel}剩余时间`}
+          aria-valuemin={0}
+          aria-valuemax={state.timeLimit}
+          aria-valuenow={timer ?? 0}
+          aria-valuetext={fmtTimer(timer)}
+        >
           <div className="time-limit-fill" style={{ width: `${timePct}%` }} />
         </div>
       )}

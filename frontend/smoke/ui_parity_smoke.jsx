@@ -21,14 +21,19 @@ const pauseFrame=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFr
  const p=f.camera.projectionMatrix.elements;
  check('cpp-asymmetric-projection',near(p[0],4/2.7)&&near(p[5],4/1.68)&&near(p[8],-1/3));
  check('cpp-camera-pose',near(f.camera.position.x,.4)&&near(f.camera.position.y,15.6)&&near(f.camera.position.z,16));
- check('cpp-unlit-cards',f.createCardMesh(1001).material[2].type==='MeshBasicMaterial'&&!f.renderer.shadowMap.enabled);
+ const testCard=f.createCardMesh(1001);
+ check('cpp-unlit-cards',testCard.material[2].type==='MeshBasicMaterial'&&!f.renderer.shadowMap.enabled);
+ const cardTexture=testCard.material[2].map,maxAnisotropy=f.renderer.capabilities.getMaxAnisotropy();
+ check('card-texture-sharp-filters',cardTexture.anisotropy===maxAnisotropy&&cardTexture.colorSpace==='srgb');
+ check('card-back-texture-sharp-filters',[f.cardBackTexture,f.cardBackTexture2].every(x=>x.anisotropy===maxAnisotropy&&x.colorSpace==='srgb'));
  for(const count of [1,2,6,7,10,20]){
   f.setHands([Array(count).fill(1001),Array(count).fill(0)]);
   const first=f.handMeshes[0][0],last=f.handMeshes[0][count-1];
   const xFirst=count<=6?2*((5.5-.8*count)/2+1.55-4):-4.2;
   const xLast=count<=6?xFirst+(count-1)*1.6:3.8;
   check('hand-'+count+'-cpp-spacing',f.handMeshes[0].length===count&&near(first.position.x,xFirst)&&near(last.position.x,xLast));
-  check('hand-'+count+'-straight-3d',f.handMeshes[0].every(x=>near(x.rotation.x,.798056)&&near(x.rotation.y,0)&&near(x.rotation.z,0)));
+  check('hand-'+count+'-front-facing-south',f.handMeshes[0].every(x=>near(x.rotation.x,.798056)&&near(x.rotation.y,0)&&near(x.rotation.z,0)));
+  check('hand-'+count+'-back-facing-south',f.handMeshes[1].every(x=>near(x.rotation.x,Math.PI+.798056)&&near(x.rotation.y,0)&&near(x.rotation.z,0)));
  }
  f.setHands([[1001,1002],[]]);const h=f.handMeshes[0][1];f.setHandHover(h,true);f.tweenGroup.update(performance.now()+5000);
  check('hand-hover-cpp-pose',near(h.position.y,1.314)&&near(h.position.z,7.68));
@@ -48,6 +53,9 @@ const pauseFrame=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFr
  check('second-player-camera',f.camera.position.z===-16);
  eventBus.emit('duel:draw',{player:1,count:2,cards:[1001,1002]});await pauseFrame();
  check('second-player-hand',f.handMeshes[1].length===2&&f.handMeshes[0].length===0);
+ check('second-player-hand-facing-north',f.handMeshes[1].every(x=>near(x.rotation.x,-.798056)&&near(x.rotation.y,Math.PI)&&near(x.rotation.z,0)));
+ f.setHands([[0],[]]);
+ check('second-player-opponent-back-facing-north',f.handMeshes[0].every(x=>near(x.rotation.x,Math.PI-.798056)&&near(x.rotation.y,Math.PI)&&near(x.rotation.z,0)));
  // Attack arrows must not move the attacker or alter the fixed camera.
  f.placeCard(1,'mzone',2,1002,null,1);const card=f.cardsOnField[1].mzone[2],pos=card.position.clone(),camera=f.camera.position.clone();
  f.animateAttack(1,2,0,2,true);f.tweenGroup.update(performance.now()+500);

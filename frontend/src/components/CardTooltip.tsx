@@ -1,7 +1,7 @@
 /**
- * gframe stTip: white 0xc0 block above/left of the pointer, with live card
- * attack/defense and grade/race/attribute lines. Selection hints remain in
- * stHintMsg. The event carries physical pointer coordinates outside DesignSpace.
+ * gframe stTip: white 0xc0 block above/left of the pointer, flipping only when
+ * it would leave the viewport. Shows live card attack/defense and grade/race/
+ * attribute lines. The event carries physical pointer coordinates outside DesignSpace.
  */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {TYPE_MONSTER,TYPE_LINK,TYPE_XYZ,TYPE_PENDULUM,formatRace,formatAttribute} from '../domain/constants.ts';
@@ -54,9 +54,26 @@ function buildLines(info: any, live: HoverDetail['live'],location?:string): stri
 export default function CardTooltip() {
   const [tip, setTip] = useState<TipState | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
-  useLayoutEffect(()=>{
-    const el=tipRef.current;if(el&&tip){el.style.left=`${tip.x-el.offsetWidth-10}px`;el.style.top=`${tip.y-el.offsetHeight-10}px`;}
-  },[tip]);
+  useLayoutEffect(() => {
+    const el = tipRef.current;
+    if (!el || !tip) return undefined;
+    const update = () => {
+      const margin = 8;
+      const width = el.offsetWidth;
+      const height = el.offsetHeight;
+      let x = tip.x - width - 10;
+      let y = tip.y - height - 10;
+      if (x < margin) x = tip.x + 10;
+      if (y < margin) y = tip.y + 10;
+      x = Math.max(margin, Math.min(x, window.innerWidth - width - margin));
+      y = Math.max(margin, Math.min(y, window.innerHeight - height - margin));
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [tip]);
 
   useEffect(() => {
     const container = document.getElementById('duel-canvas-container');
@@ -90,11 +107,13 @@ export default function CardTooltip() {
     <div
       ref={tipRef}
       id="st-tip"
+      role="tooltip"
       style={{
         position: 'fixed', left: `${x}px`, top: `${y}px`, zIndex: 1200,
         background: 'rgba(255,255,255,0.75)', color: '#000',
         padding: '5px', fontSize: '12px', fontWeight: 400,
-        pointerEvents: 'none',whiteSpace:'pre',textAlign:'center',
+        pointerEvents: 'none',whiteSpace:'pre-wrap',overflowWrap:'anywhere',
+        maxWidth:'calc(100vw - 16px)',boxSizing:'border-box',textAlign:'center',
       }}
     >
       <div>{tip.text}</div>

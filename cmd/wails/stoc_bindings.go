@@ -4,9 +4,9 @@ import (
 	"encoding/binary"
 	"log"
 	"time"
-	"unicode/utf16"
 
 	"github.com/sjm1327605995/goygopro/core/duel"
+	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
@@ -43,7 +43,7 @@ func decorateTypeChange(c *WailsDuelClient, msg any) {
 // decorateHsPlayerEnter 把 UTF-16 定长名字解码成 Go 字符串。
 func decorateHsPlayerEnter(c *WailsDuelClient, msg any) {
 	m := msg.(*protocol.STOCHsPlayerEnter)
-	name := string(utf16.Decode(m.Name[:]))
+	name := utils.WideString(m.Name[:])
 	c.emit("stoc:player_enter", map[string]interface{}{
 		"pos":  m.Pos,
 		"name": name,
@@ -105,7 +105,7 @@ func handleChat(c *WailsDuelClient, payload []byte) {
 	for i := range msgRunes {
 		msgRunes[i] = binary.LittleEndian.Uint16(payload[2+i*2 : 4+i*2])
 	}
-	msg := string(utf16.Decode(msgRunes))
+	msg := utils.WideString(msgRunes)
 	c.emit("stoc:chat", map[string]interface{}{
 		"player": player,
 		"msg":    msg,

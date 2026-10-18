@@ -19,7 +19,8 @@ export function fieldZonePosition(player: number, loc: string, seq: number, duel
   return Array.isArray(zone) ? zone[seq] || null : zone;
 }
 
-// ClientField::GetCardLocation LOCATION_HAND. All cards have the same rotation.
+// ClientField::GetCardLocation LOCATION_HAND. Rotation is viewer-dependent and
+// applied by DuelField3D after this position lookup.
 export function handPose(player: number, sequence: number, count: number, hovered = false) {
   const qx = player === 0
     ? count <= 6 ? (5.5-0.8*count)/2 + 1.55 + sequence*0.8 : 1.9 + sequence*4/(count-1)
@@ -27,6 +28,5 @@ export function handPose(player: number, sequence: number, count: number, hovere
   return {
     x:2*(qx-4), y:2*((hovered?0.656:0.5)+(player===0?1:-1)*0.001*sequence),
     z:2*(player===0?(hovered?3.84:4):(hovered?-3.56:-3.4)),
-    rotationX:player===0?-0.798056:0.798056,
   };
 }

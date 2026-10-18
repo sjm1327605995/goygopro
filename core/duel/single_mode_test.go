@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -123,6 +124,70 @@ func TestSingleSessionPlayPuzzle(t *testing.T) {
 	}
 	if ss.ResponsesConsumed < 2 {
 		t.Fatalf("responses consumed = %d, want >= 2", ss.ResponsesConsumed)
+	}
+}
+
+func TestSingleSessionConsumesResponseAfterRetry(t *testing.T) {
+	initSingleEngine(t)
+	ss := NewSingleSession(newRandomSeed())
+	if err := ss.Prepare("青眼一击.lua"); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	respCh := make(chan []byte, 8)
+	stopCh := make(chan struct{})
+	var stopOnce sync.Once
+	stop := func() { stopOnce.Do(func() { close(stopCh) }) }
+	timer := time.AfterFunc(10*time.Second, stop)
+	defer timer.Stop()
+	retries := 0
+	attacksLeft := 1
+	sentInvalid := false
+	sawWin := false
+	err := ss.Run(func(msg []byte) {
+		if len(msg) == 0 {
+			return
+		}
+		switch msg[0] {
+		case ocgcore.MSG_SELECT_IDLECMD:
+			if !sentInvalid {
+				sentInvalid = true
+				respCh <- encodeI(-1)
+			} else {
+				respCh <- encodeI(6)
+			}
+		case ocgcore.MSG_RETRY:
+			retries++
+			if retries > 1 {
+				stop()
+				return
+			}
+			respCh <- encodeI(6)
+		case ocgcore.MSG_SELECT_BATTLECMD:
+			if attacksLeft > 0 {
+				attacksLeft--
+				respCh <- encodeI(1)
+			} else {
+				respCh <- encodeI(3)
+			}
+		case ocgcore.MSG_SELECT_CHAIN:
+			respCh <- encodeI(-1)
+		case ocgcore.MSG_SELECT_CARD:
+			respCh <- []byte{1, 0}
+		case ocgcore.MSG_WIN:
+			sawWin = true
+		}
+	}, respCh, stopCh)
+	if err != nil {
+		t.Fatalf("run after retry: %v (retries=%d)", err, retries)
+	}
+	if !sentInvalid || retries != 1 {
+		t.Fatalf("invalid response/retry count = %v/%d, want true/1", sentInvalid, retries)
+	}
+	if !sawWin || !ss.Completed {
+		t.Fatalf("duel did not complete after corrected response (win=%v completed=%v)", sawWin, ss.Completed)
+	}
+	if ss.ResponsesConsumed < 3 {
+		t.Fatalf("responses consumed = %d, want at least invalid, corrected and attack responses", ss.ResponsesConsumed)
 	}
 }
 

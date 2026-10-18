@@ -188,6 +188,10 @@ export class DuelField3D {
     // 原版卡背按控制方区分（drawing.cpp:425 tCover[pcard->controler]）：
     // 0 号位 cover.jpg、1 号位 cover2.jpg
     this.cardBackTexture2 = this.textureLoader.load('textures/cover2.jpg');
+    for (const tex of [this.cardBackTexture, this.cardBackTexture2]) {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+    }
     this.negatedTexture = this.textureLoader.load('textures/negated.png');
     // 原版卡片状态角标贴图（drawing.cpp）：
     // attack.png 可攻击标记 :464、act.png 可发动旋转图标 :483、
@@ -220,10 +224,12 @@ export class DuelField3D {
     // 有表侧场地魔法时换透明版露出场地大图
     const matTex = this.textureLoader.load('textures/field3.png', (tex: any) => {
       tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
     });
     this.matTexture = matTex;
     this.transparentMatTexture = this.textureLoader.load('textures/field-transparent3.png', (tex: any) => {
       tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
     });
 
     const matGeo = new (THREE as any).PlaneGeometry(20, 16);
@@ -486,10 +492,11 @@ export class DuelField3D {
   // ---- 视角交换（观战 btnSpectatorSwap / 回放 btnReplaySwap）----
   // 相机绕到场地另一侧（等效场地旋转 180°）：卡牌朝向/守备方向随观看侧
   // 自然正确，3D 座标与 ZONE_COORDS 不变。2D HUD 的座位显示由 store 的
-  // viewSwapped 负责（localSeat 翻转），这里只搬相机。
+  // viewSwapped 负责（localSeat 翻转），这里搬相机并同步手卡朝向。
   setViewSwapped(on: boolean): void {
     if (this.viewSwapped === on) return;
     this.viewSwapped = on;
+    this.syncHandRotations();
     const targetZ = on ? -12.5 : 12.5;
     const lookZ = on ? -0.3 : 0.3;
     this.makeTween(this.camera.position)
@@ -1135,9 +1142,27 @@ export class DuelField3D {
     this.refreshFieldSpell();
   }
 
+  handRotationFor(code: number): { x: number; y: number; z: number } {
+    const tilt = 0.798056;
+    const bottomSeat = this.viewSwapped ? 1 - this.localSeat : this.localSeat;
+    if (bottomSeat !== 1) {
+      return { x: code ? tilt : Math.PI + tilt, y: 0, z: 0 };
+    }
+    return { x: code ? -tilt : Math.PI - tilt, y: Math.PI, z: 0 };
+  }
+
+  syncHandRotations(): void {
+    for (const seat of [0, 1] as const) {
+      for (const mesh of this.handMeshes[seat]) {
+        const rot = this.handRotationFor(mesh.userData.cardCode || 0);
+        mesh.rotation.set(rot.x, rot.y, rot.z);
+      }
+    }
+  }
+
   // 双方手牌的 3D 直排（client_field.cpp GetCardLocation LOCATION_HAND：
-  // 同旋转、≤6 张固定间距、更多压缩；零码 = 卡背）。无飞入动画——
-  // 抽牌动画由 animateDrawCard 负责，这里只把持久表示同步成最新张数。
+  // ≤6 张固定间距、更多压缩；零码 = 卡背）。正反面都朝向当前观察者，
+  // 避免二号位本地视角或北侧对手手卡出现旋转 180° 的图像。
   setHands(codes: [number[], number[]]): void {
     for (const seat of [0,1] as const) {
       const meshes = this.handMeshes[seat];
@@ -1156,8 +1181,8 @@ export class DuelField3D {
         mesh.userData.originalY = pose.y;
         if (mesh.userData.drawing) return;
         mesh.position.set(pose.x,pose.y,pose.z);
-        mesh.rotation.set(seat===0?0.798056:-0.798056,0,0);
-        if (!code) mesh.rotation.x += Math.PI;
+        const rot = this.handRotationFor(code);
+        mesh.rotation.set(rot.x,rot.y,rot.z);
       });
     }
   }
@@ -1234,6 +1259,7 @@ export class DuelField3D {
   setBottomSeat(seat: number, instant = false): void {
     const swap = seat === 1;
     this.localSeat = seat;
+    this.syncHandRotations();
     if (instant) {
       this.camera.position.set(swap?-0.6:0.4,15.6,swap?-16:16);
       this.camera.lookAt(swap?-0.6:0.4,0,0);
