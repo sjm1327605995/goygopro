@@ -197,13 +197,32 @@ const run = async () => {
     race: 0x1000000, attribute: 0x10, linkMarker: 133,
     desc: '2+ Effect Monsters',
   };
-  WailsBridge.getCard = async (code) => (code === 1861629 ? LINK_MONSTER : origGetCard(code));
+  const PENDULUM_MONSTER = {
+    code: 10000001, name: 'Pendulum Test',
+    type: 0x1000000 | 0x1 | 0x20,
+    attack: 1800, defense: 1200, level: 4, lscale: 1, rscale: 1,
+    race: 0x2000, attribute: 0x10,
+    desc: '←1 【灵摆】 1→\n【灵摆效果】灵摆区效果文本\n【怪兽效果】怪兽区效果文本',
+  };
+  WailsBridge.getCard = async (code) => {
+    if (code === 1861629) return LINK_MONSTER;
+    if (code === 10000001) return PENDULUM_MONSTER;
+    return origGetCard(code);
+  };
   duelStore.inspect(1861629);
   await waitFor(() => $('preview-card-name').innerText === 'Decode Talker[01861629]');
   const statsEl = document.querySelector('.preview-stats');
   // textContent 保留多空格（innerText 会折叠），核对与格式串的空格一致
   assert('previewLinkArrows', statsEl && statsEl.textContent === '[LINK-3] 2300/-   [↑][↙][↘]',
     `got ${statsEl && statsEl.textContent}`);
+  duelStore.inspect(10000001);
+  await waitFor(() => $('preview-card-name').innerText === 'Pendulum Test[10000001]');
+  const effectHeadings = [...document.querySelectorAll('#preview-card-desc .preview-effect-heading')].map((el) => el.innerText);
+  assert('previewPendulumSections', effectHeadings.join('|') === '灵摆效果|怪兽效果'
+    && $('preview-card-desc').textContent.includes('灵摆区效果文本')
+    && $('preview-card-desc').textContent.includes('怪兽区效果文本')
+    && !$('preview-card-desc').textContent.includes('【怪兽效果】')
+    && !$('preview-card-desc').textContent.includes('←1'), $('preview-card-desc').textContent);
   WailsBridge.getCard = origGetCard;
 
   // ---- turn/phase ----
@@ -211,11 +230,21 @@ const run = async () => {
   eventBus.emit('duel:new_phase', { phase: 0x04 });
   await waitFor(() => $('player-panel').className.includes('is-turn'));
   assert('turnHighlight', $('player-panel').className.includes('is-turn'));
+  assert('playerNameTitle', $('player-panel-name').title === $('player-panel-name').textContent);
+  assert('lpMeterAria', document.querySelector('#player-panel .lp-frame').getAttribute('role') === 'meter'
+    && document.querySelector('#player-panel .lp-frame').getAttribute('aria-valuenow') === String(duelStore.getState().lp[0]));
 
   // ---- timer ----
   eventBus.emit('stoc:time_limit', { player: 1, leftTime: 125 });
   await waitFor(() => $('player-panel').innerText.includes('02:05'));
   assert('timerShown', $('player-panel').innerText.includes('02:05'));
+  assert('timerAria', $('player-time-bar').getAttribute('role') === 'progressbar'
+    && $('player-time-bar').getAttribute('aria-valuenow') === '125'
+    && $('player-time-bar').getAttribute('aria-valuetext') === '02:05');
+  eventBus.emit('stoc:time_limit', { player: 1, leftTime: 30 });
+  await waitFor(() => $('player-time-bar').dataset.lowTime === 'true');
+  assert('timerLowTimeState', $('player-time-bar').classList.contains('is-low')
+    && $('player-time-bar').getAttribute('aria-valuenow') === '30');
 
   // ---- PhaseStrip: idlecmd prompt enables BP/EP with the right responses ----
   const bpBtn = () => $('phase-btn-bp');

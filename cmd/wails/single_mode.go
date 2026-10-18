@@ -332,6 +332,8 @@ func (a *App) routeResponseB(data []byte) error {
 		case run.respCh <- append([]byte(nil), data...):
 		case <-run.done:
 			// 会话刚结束：响应无处可投，丢弃
+		case <-run.stopCh:
+			// 玩家已退出：即使通道已满也不能把 Wails 调用留在阻塞状态。
 		}
 		return nil
 	}
@@ -350,6 +352,7 @@ func (a *App) routeResponseI(val int32) error {
 		select {
 		case run.respCh <- buf:
 		case <-run.done:
+		case <-run.stopCh:
 		}
 		return nil
 	}

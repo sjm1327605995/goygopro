@@ -13,6 +13,7 @@ import { DuelManager } from '../src/duel/duel_manager.ts';
 import '../css/style.css';
 import '../css/gframe-window.css';
 import SingleModeWindow from '../src/components/SingleModeWindow.tsx';
+import ReplaySavePrompt from '../src/components/ReplaySavePrompt.tsx';
 
 window.__singleSmoke = { checks: {}, ready: false };
 const checks = window.__singleSmoke.checks;
@@ -41,7 +42,8 @@ screen = (
     onStart={() => starts.push(1)}
   />
 );
-root.render(<UiRoot>{screen}</UiRoot>);
+root.render(<UiRoot>{screen}<ReplaySavePrompt /></UiRoot>);
+eventBus.on('nav', (name) => navs.push(name));
 
 const $ = (id) => document.getElementById(id);
 const waitFor = (predicate, timeoutMs = 5000) => new Promise((resolve, reject) => {
@@ -94,6 +96,27 @@ try {
   // 退出回主菜单
   $('single-exit').click();
   record('single-exit-navigates', JSON.stringify(navs) === JSON.stringify(['menu']));
+
+  eventBus.emit('single:replay', { name: 'cancel-path', autoSaved: false });
+  await waitFor(() => !!$('replay-save-prompt'));
+  $('replay-save-cancel').click();
+  await waitFor(() => navs.length === 2);
+  record('single-replay-cancel-returns-menu', navs[1] === 'menu' && !$('replay-save-prompt'));
+
+  let savedSingleName = '';
+  WailsBridge.saveSingleReplay = async (name) => {
+    savedSingleName = name;
+    return { success: true, name: name + '.yrp' };
+  };
+  eventBus.emit('single:replay', { name: 'save-path', autoSaved: false });
+  await waitFor(() => !!$('replay-save-prompt'));
+  $('replay-save-confirm').click();
+  await waitFor(() => savedSingleName === 'save-path' && navs.length === 3);
+  record('single-replay-save-returns-menu', navs[2] === 'menu' && !$('replay-save-prompt'));
+
+  eventBus.emit('single:replay', { name: 'auto-path.yrp', autoSaved: true });
+  await waitFor(() => navs.length === 4);
+  record('single-replay-autosave-returns-menu', navs[3] === 'menu' && !$('replay-save-prompt'));
 
   // ---- 数据侧：谜题事件流 ----
   duelStore.reset();

@@ -58,7 +58,7 @@
 :is(#app,#root) .duel-stage .surrender-btn, :is(#app,#root) .duel-stage .leave-game-btn { height:75px; width:90px; font-size:12px; }
 :is(#app,#root) .duel-stage .chain-group { gap:5px; padding-top:20px; }
 :is(#app,#root) .duel-stage .chain-btn { width:90px; height:35px; font-size:12px; }
-:is(#app,#root) .duel-stage .chain-group { position:absolute; left:0; top:95px; padding:0; gap:5px; }
+:is(#app,#root) .duel-stage .chain-group { position:absolute; left:0; top:95px; padding:0; margin-top:0; gap:5px; }
 :is(#app,#root) .duel-stage .card-select-bar { left:205px; top:230px; bottom:auto; transform:none; width:90px; height:35px; padding:0; background:none; box-shadow:none; border:0; border-radius:0; }
 :is(#app,#root) .duel-stage .card-select-bar span { display:none; }
 :is(#app,#root) .duel-stage .card-select-bar button { width:90px; height:35px; }

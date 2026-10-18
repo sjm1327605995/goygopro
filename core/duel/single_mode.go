@@ -215,9 +215,10 @@ func (ss *SingleSession) Run(handler func(msg []byte), respCh <-chan []byte, sto
 				break
 			}
 			// 批次以交互提示结尾（或无法解析流布局时引擎报告 WAITING）→
-			// 等玩家作答。MSG_RETRY 批次同样落在这里：引擎驳回了上一响应，
-			// 前端会重新弹出提示等待再次作答。
-			if (ok && respOffset >= 0) || (!ok && engFlag == ocgcore.PROCESSOR_WAITING) {
+			// 等玩家作答。MSG_RETRY 没有 response 布局标记，但它同样表示引擎
+			// 正在等待纠正后的响应；若不消费新响应，旧非法响应会不断触发 retry。
+			retryBatch := n > 0 && buf[0] == ocgcore.MSG_RETRY
+			if (ok && respOffset >= 0) || (engFlag == ocgcore.PROCESSOR_WAITING && (!ok || retryBatch)) {
 				if ss.OnPrompt != nil {
 					ss.OnPrompt()
 				}

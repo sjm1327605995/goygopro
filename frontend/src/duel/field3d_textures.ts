@@ -20,6 +20,8 @@ export function generateCardTexture(self: DuelField3D, cardCode: number): any {
   canvas.width = 512;
   canvas.height = 744;
   const ctx = canvas.getContext('2d')!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
 
   // 加载中 / 缺图占位：整张卡直接铺满卡图即可，无需程序自绘卡名/攻防/星数
   // （那不是原版行为，原版卡面就是整张卡图）。
@@ -27,6 +29,10 @@ export function generateCardTexture(self: DuelField3D, cardCode: number): any {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const texture = new (THREE as any).CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = self.renderer.capabilities.getMaxAnisotropy();
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
   self.cardTextureCache.set(cardCode, texture);
 
   // Real card art layers in asynchronously — the card is playable immediately

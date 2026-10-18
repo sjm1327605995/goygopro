@@ -17,6 +17,9 @@ export default function ReplaySavePrompt() {
   const [mode, setMode] = useState<'net' | 'single'>('net');
   const settingsSnap = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
   const autoSaveRef = useRefLatest(!!settingsSnap.auto_save_replay);
+  const finishSingle = (): void => {
+    eventBus.emit('nav', 'menu');
+  };
 
   useEffect(() => {
     const pending = new Set<ReturnType<typeof setTimeout>>();

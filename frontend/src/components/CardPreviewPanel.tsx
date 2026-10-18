@@ -5,13 +5,13 @@
  * 写入；卡信息与卡图异步 getCard/getCardImage 回填）。
  * 视觉按原版：177×254 卡图 + 页签化的名称/类型/种族属性等级/效果文本。
  */
-import React, { useEffect, useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { duelStore } from '../duel/store.ts';
 import { settingsStore } from '../domain/settings.ts';
 import { WailsBridge } from '../wails_bridge.ts';
-import {formatCardName,formatCardTypeLine,formatCardStats} from '../domain/card_information.ts';
-import {TYPE_MONSTER} from '../domain/constants.ts';
+import {formatCardName,formatCardTypeLine,formatCardStats,splitPendulumDescription} from '../domain/card_information.ts';
+import {TYPE_MONSTER,TYPE_PENDULUM} from '../domain/constants.ts';
 import CardImageFrame from '../ui/CardImageFrame.tsx';
 
 export default function CardPreviewPanel() {
@@ -20,6 +20,7 @@ export default function CardPreviewPanel() {
   const insp = state.inspection;
   const [tab, setTab] = useState<'info' | 'log'>('info');
   const [img, setImg] = useState<string | null>(null);
+  const logRef = useRef<HTMLDivElement | null>(null);
 
   const code = insp ? insp.code : null;
   useEffect(() => {
@@ -35,9 +36,18 @@ export default function CardPreviewPanel() {
     return () => { alive = false; };
   }, [code]);
 
+  useEffect(() => {
+    const el = logRef.current;
+    if (tab === 'log' && el) el.scrollTop = el.scrollHeight;
+  }, [tab, state.log]);
+
   const info = (insp && insp.info) || null;
   const type = info ? Number(info.type || 0) : 0;
   const isMonster = (type & TYPE_MONSTER) !== 0;
+  const description = info ? String(info.desc ?? '') : '';
+  const pendulumDescription = info && (type & TYPE_PENDULUM)
+    ? splitPendulumDescription(description)
+    : null;
 
   return (
     <div id="card-preview-panel" className="card-preview-panel">
@@ -65,7 +75,7 @@ export default function CardPreviewPanel() {
         </Tabs.List>
         {tab === 'info' ? (
           <Tabs.Content value="info" id="preview-info" className="preview-info">
-            <div id="preview-card-name" className="preview-name">
+            <div id="preview-card-name" className="preview-name" title={info ? formatCardName(info) : undefined}>
               {info ? formatCardName(info) : ''}
             </div>
             {info && type ? <div className="preview-type">{formatCardTypeLine(info)}</div> : null}
@@ -76,11 +86,26 @@ export default function CardPreviewPanel() {
             ) : null}
             {info && !settings.hide_setname && Array.isArray(info.setNames) && info.setNames.length ? <div className="preview-setnames">系列：{info.setNames.join(' / ')}</div> : null}
             <div id="preview-card-desc" className="preview-desc">
-              {info ? String(info.desc ?? '') : ''}
+              {pendulumDescription ? (
+                <>
+                  {pendulumDescription[0] && (
+                    <section className="preview-effect-section">
+                      <div className="preview-effect-heading">灵摆效果</div>
+                      <div className="preview-effect-text">{pendulumDescription[0]}</div>
+                    </section>
+                  )}
+                  {pendulumDescription[1] && (
+                    <section className="preview-effect-section">
+                      <div className="preview-effect-heading">怪兽效果</div>
+                      <div className="preview-effect-text">{pendulumDescription[1]}</div>
+                    </section>
+                  )}
+                </>
+              ) : description}
             </div>
           </Tabs.Content>
         ) : (
-          <Tabs.Content value="log" id="preview-log" className="preview-log">
+          <Tabs.Content value="log" id="preview-log" className="preview-log" ref={logRef}>
             {/* duel-log-list：日志条目的稳定锚点（旧右侧 LogDrawer 已删，
                 原版 wInfos 只有这一个 Log 页签） */}
             <div id="duel-log-list">

@@ -201,12 +201,17 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 2px;
+  margin-top: 0;
   line-height: 18px;
+}
+
+#player-panel .player-state-head {
+  margin-left: 4px;
 }
 
 #opponent-panel .player-state-head {
   flex-direction: row-reverse;
+  margin-right: 5px;
 }
 
 .player-state-name {
@@ -266,19 +271,24 @@
   right: 0;
 }
 
-/* 时限条（drawing.cpp:637-642：100px 宽灰条 + 白描边；对手从右往左缩） */
+/* 时限条（drawing.cpp:637-642：己方 (525,34)、对方 (695,34)，100px 宽灰条） */
 .time-limit-bar {
-  order: 1;
-  position: relative;
+  position: absolute;
+  top: 24px;
   height: 10px;
   width: 100px;
-  margin: 1px auto 0;
+  margin: 0;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid #ffffff;
   display: flex;
 }
 
+#player-panel .time-limit-bar {
+  left: 196px;
+}
+
 #opponent-panel .time-limit-bar {
+  left: 4px;
   justify-content: flex-end;
 }
 
@@ -893,7 +903,7 @@
 .chat-overlay input {
   width: 100%;
   box-sizing: border-box;
-  height: 28px;
+  height: 25px;
   background: #f2f2f2;
   border: 1px solid #8a8a8a;
   border-radius: 0;
@@ -1228,6 +1238,44 @@
 
 .player-state-name {
   letter-spacing: 1px;
+}
+
+.player-state-head {
+  min-width: 0;
+}
+
+.player-state-name {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.time-limit-bar.is-low {
+  border-color: #ff8080;
+}
+
+.time-limit-bar.is-low .time-limit-fill {
+  background: rgba(255, 80, 80, 0.82);
+}
+
+.preview-effect-section + .preview-effect-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid currentColor;
+}
+
+.preview-effect-heading {
+  margin-bottom: 4px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.preview-effect-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* ---- 卡牌图块：悬浮轻抬、选中金晕 ---- */

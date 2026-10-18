@@ -220,6 +220,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await waitFor(() => !$('#st-tip'));
     record('tooltip-hides-on-hover-end', true);
 
+    canvas.dispatchEvent(new CustomEvent('ygo:cardhover', { detail: { code: 89631139, info: blueEyes, x: 0, y: 0 } }));
+    await waitFor(() => !!$('#st-tip'));
+    const edgeTipRect = $('#st-tip').getBoundingClientRect();
+    record('tooltip-stays-inside-viewport', edgeTipRect.left >= 0 && edgeTipRect.top >= 0
+      && edgeTipRect.right <= window.innerWidth && edgeTipRect.bottom <= window.innerHeight,
+      JSON.stringify({ left: edgeTipRect.left, top: edgeTipRect.top, right: edgeTipRect.right, bottom: edgeTipRect.bottom }));
+    record('tooltip-semantics', $('#st-tip').getAttribute('role') === 'tooltip');
+    canvas.dispatchEvent(new CustomEvent('ygo:cardhoverend'));
+    await waitFor(() => !$('#st-tip'));
+
     // --- 选择进行中（store.selectHintText）：悬停 tip 首行附带选择提示 ---
     duelStore.armSelectHint('请选择要破坏的卡(1-2)');
     canvas.dispatchEvent(new CustomEvent('ygo:cardhover', { detail: { code: 89631139, info: { name: '青眼白龙', type: 0x11 }, x: 400, y: 300 } }));

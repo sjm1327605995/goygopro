@@ -12,7 +12,14 @@ import { duelStore } from '../duel/store.ts';
 export default function HintBar() {
   const hint = useSyncExternalStore(duelStore.subscribe, duelStore.getState).hint;
   return (
-    <div id="hint-bar" className="hint-bar" style={{ display: hint ? 'block' : 'none' }}>
+    <div
+      id="hint-bar"
+      className="hint-bar"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      style={{ display: hint ? 'block' : 'none' }}
+    >
       {hint || ''}
     </div>
   );

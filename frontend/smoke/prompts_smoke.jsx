@@ -658,6 +658,31 @@ const run = async () => {
   assert('multiEffectRespondsPickedIdx', r.kind === 'idle' && r.idx === 3 && r.cmdType === 5, JSON.stringify(r));
   WailsBridge.resolveDesc = async () => '';
 
+  duelStore.openActionPopup(window.innerWidth - 1, window.innerHeight - 1, [
+    { label: '操作甲', action: 'noop_a' },
+    { label: '操作乙', action: 'noop_b' },
+  ]);
+  await waitFor(() => document.querySelectorAll('#action-popup .action-btn').length === 2);
+  const edgeMenu = document.getElementById('action-popup');
+  const edgeButtons = [...edgeMenu.querySelectorAll('.action-btn')];
+  await waitFor(() => document.activeElement === edgeButtons[0]);
+  const edgeRect = edgeMenu.getBoundingClientRect();
+  assert('actionPopupStaysInsideViewport', edgeRect.left >= 0 && edgeRect.top >= 0
+    && edgeRect.right <= window.innerWidth && edgeRect.bottom <= window.innerHeight,
+    JSON.stringify({ left: edgeRect.left, top: edgeRect.top, right: edgeRect.right, bottom: edgeRect.bottom }));
+  assert('actionPopupMenuSemantics', edgeMenu.getAttribute('role') === 'menu'
+    && edgeButtons.every((button) => button.getAttribute('role') === 'menuitem'));
+  const pressMenuKey = (key) => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  pressMenuKey('ArrowDown');
+  assert('actionPopupArrowNavigation', document.activeElement === edgeButtons[1]);
+  pressMenuKey('Home');
+  assert('actionPopupHomeNavigation', document.activeElement === edgeButtons[0]);
+  pressMenuKey('End');
+  assert('actionPopupEndNavigation', document.activeElement === edgeButtons[1]);
+  pressMenuKey('Escape');
+  await waitFor(() => !duelStore.getState().actionPopup);
+  assert('actionPopupEscapeCloses', edgeMenu.style.display === 'none');
+
   // ---- 战阶手牌二速（battlecmd activate 的手牌条目 → 战阶应答 cmdType 0）----
   eventBus.emit('duel:select_battlecmd', {
     player: 0,

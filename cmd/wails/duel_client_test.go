@@ -5,7 +5,9 @@ import (
 	"io"
 	"net"
 	"testing"
+	"unicode/utf16"
 
+	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
 
@@ -85,5 +87,34 @@ func TestTeardownGenerationGuard(t *testing.T) {
 	c.mu.Unlock()
 	if connected {
 		t.Fatal("当前 readLoop 的 teardown 未断开连接")
+	}
+}
+
+func TestSTOCWideStringsStopAtNUL(t *testing.T) {
+	got := map[string]interface{}{}
+	c := NewWailsDuelClient(func(name string, data ...interface{}) {
+		if len(data) > 0 {
+			got[name] = data[0]
+		}
+	})
+
+	enter := &protocol.STOCHsPlayerEnter{Pos: 1}
+	copy(enter.Name[:], utf16.Encode([]rune("Blackwing-A")))
+	decorateHsPlayerEnter(c, enter)
+	name := got["stoc:player_enter"].(map[string]interface{})["name"]
+	if name != "Blackwing-A" {
+		t.Fatalf("player name = %q, want NUL-terminated name", name)
+	}
+
+	msg := utf16.Encode([]rune("hello"))
+	payload := make([]byte, 2+(len(msg)+2)*2)
+	binary.LittleEndian.PutUint16(payload[:2], 1)
+	for i, unit := range msg {
+		binary.LittleEndian.PutUint16(payload[2+i*2:], unit)
+	}
+	handleChat(c, payload)
+	chat := got["stoc:chat"].(map[string]interface{})["msg"]
+	if chat != "hello" {
+		t.Fatalf("chat message = %q, want NUL-terminated message", chat)
 	}
 }

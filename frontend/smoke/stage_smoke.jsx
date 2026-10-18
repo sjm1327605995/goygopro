@@ -133,15 +133,26 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     const handMeshes = handScene.handMeshes[1];
     record('hand-bottom-centered', handMeshes.length >= 4
       && handMeshes.every((m) => m.userData.slot.loc === 'hand' && m.position.z < 0)
-      && handMeshes.every((m) => Math.abs(m.rotation.x + 0.798056) < 0.0001));
+      && handMeshes.every((m) => Math.abs(m.rotation.x + 0.798056) < 0.0001
+        && Math.abs(m.rotation.y - Math.PI) < 0.0001));
     record('hand-after-summon', $('#hand-cards-dock').children.length === 4);
 
     // ---- 聊天：底部输入条 + 着色消息（原版 wChat 全宽条） ----
     const chatInput = rectOf('.chat-overlay input');
     record('chat-input-bottom-bar', chatInput && chatInput.bottom >= H - 12
       && chatInput.left >= W * 0.28, JSON.stringify(chatInput));
+    record('chat-input-original-rect', chatInput && Math.abs(chatInput.left - 307 * sx) < 2
+      && Math.abs(chatInput.y - 615 * sy) < 2 && Math.abs(chatInput.height - 25 * sy) < 2, JSON.stringify(chatInput));
     await waitFor(() => $('.chat-line.chat-p0'), 'chat line shows');
     record('chat-line-colored', !!$('.chat-line.chat-p0'));
+
+    const chainGroup = rectOf('.chain-group');
+    record('chain-group-original-position', chainGroup && Math.abs(chainGroup.x - 205 * sx) < 2
+      && Math.abs(chainGroup.y - 100 * sy) < 2, JSON.stringify(chainGroup));
+    const playerName = rectOf('#player-panel-name'), opponentName = rectOf('#opponent-panel-name');
+    record('player-names-original-insets', playerName && opponentName
+      && Math.abs(playerName.left - 334 * sx) < 3 && Math.abs(opponentName.right - 986 * sx) < 3,
+      JSON.stringify({ playerName, opponentName }));
 
     // ---- 提示条：顶部偏右（原版 hint 中心 ~64%） ----
     eventBus.emit('duel:waiting', {});
@@ -220,6 +231,16 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     const tf2 = $('#player-time-bar .time-limit-fill').getBoundingClientRect().width;
     const ratio = tf2 / tb2;
     record('time-limit-half', ratio > 0.4 && ratio < 0.6, String(ratio));
+    const playerTime = rectOf('#player-time-bar');
+    record('player-time-limit-original-position', playerTime && Math.abs(playerTime.x - 525 * sx) < 3
+      && Math.abs(playerTime.y - 34 * sy) < 3 && Math.abs(playerTime.width - 100 * sx) < 3
+      && Math.abs(playerTime.height - 10 * sy) < 3, JSON.stringify(playerTime));
+    eventBus.emit('stoc:time_limit', { player: 0, leftTime: 120 });
+    await waitFor(() => !!$('#opponent-time-bar'), 'opponent time bar mounts');
+    const opponentTime = rectOf('#opponent-time-bar');
+    record('opponent-time-limit-original-position', opponentTime && Math.abs(opponentTime.x - 695 * sx) < 3
+      && Math.abs(opponentTime.y - 34 * sy) < 3 && Math.abs(opponentTime.width - 100 * sx) < 3
+      && Math.abs(opponentTime.height - 10 * sy) < 3, JSON.stringify(opponentTime));
 
     // LP 超过初始值 → 分层彩条（drawing.cpp:590-619：底层满条 + 前景余数
     // 条）。startLP 取本方初始 LP（playerSlot=1 → lp1=4000）：4000+5000=9000
