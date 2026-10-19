@@ -8,6 +8,7 @@ import { createRoot } from 'react-dom/client';
 import React from 'react';
 import { eventBus, WailsBridge } from '../src/wails_bridge.ts';
 import '../css/duel-original.css';
+import '../css/duel-neos.css';
 import '../src/duel/store.ts'; // creates + wires duelStore as a side effect
 import CardPreviewPanel from '../src/components/CardPreviewPanel.tsx';
 import PlayerPanel from '../src/components/PlayerPanel.tsx';

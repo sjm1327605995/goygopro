@@ -294,15 +294,15 @@ export default function SpecOverlay() {
 
       <div
         id="ac-message"
+        className="ac-message"
         style={{
           // 原版 wACMessage/stACMessage（game.cpp:527-533）：(490,240)-(840,300)
-          // 350×60 无边框、0xc0c0c0ff 浅蓝白底、黑字居中
+          // 350×60 居中浮条；配色走 duel-neos.css 的 .ac-message
           position: 'fixed', left: '665px', top: '270px', width: '350px', height: '60px', zIndex: 950,
           transformOrigin: '0 0', transform: `scale(${1 / scale.sx}, ${1 / scale.sy}) translate(-175px, -30px)`,
           display: acText ? 'block' : 'none',
           textAlign: 'center', lineHeight: '58px',
-          background: 'rgba(192, 192, 255, 0.75)', color: '#000',
-          border: '1px solid #666', fontSize: '12px', pointerEvents: 'none',
+          fontSize: '12px', pointerEvents: 'none',
           whiteSpace: 'nowrap', boxSizing: 'border-box',
         }}
       >

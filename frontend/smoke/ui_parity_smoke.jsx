@@ -5,6 +5,7 @@ import DuelStage from '../src/components/DuelStage.tsx';
 import {WailsBridge,eventBus} from '../src/wails_bridge.ts';
 import '../css/style.css';
 import '../css/duel-original.css';
+import '../css/duel-neos.css';
 WailsBridge.getCard=async code=>({code,name:String(code),type:0x11,attack:1000,defense:1000,level:4,strings:[]});
 WailsBridge.getCardImage=async code=>({url:'data:image/svg+xml,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="177" height="254"><rect width="177" height="254" fill="orange"/><text x="10" y="30">${code}</text></svg>`)});
 createRoot(document.getElementById('root')).render(<UiRoot><div style={{height:'100vh',width:'100vw'}}><DuelStage interactive={true} onReady={stage=>window.__cppStage=stage}/></div></UiRoot>);

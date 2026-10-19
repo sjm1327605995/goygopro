@@ -7,6 +7,7 @@ import React from 'react';
 import { eventBus, WailsBridge } from '../src/wails_bridge.ts';
 import '../css/style.css';
 import '../css/duel-original.css';
+import '../css/duel-neos.css';
 import DuelStage from '../src/components/DuelStage.tsx';
 
 // 卡面必须能和卡背（cover.jpg 漩涡）区分开，且自带方向标记：
@@ -36,7 +37,7 @@ root.render(
   </UiRoot>
 );
 
-window.__stageSmoke = { checks: {}, ready: false };
+window.__stageSmoke = { checks: {}, ready: false, eventBus };
 const checks = window.__stageSmoke.checks;
 const record = (name, ok) => { checks[name] = ok; };
 
@@ -114,8 +115,8 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     eventBus.emit('duel:recover', { player: 0, amount: 500 });
     await waitFor(() => $('#lp-float-1') && $('#lp-float-1').textContent === '+500', 'lp float recover shows');
     record('lp-float-recover', rectOf('#lp-float-1').top < 300 * (H / 640));
-    // lpf.png 被 vite 内联成 data URL，只断言背景图确实解析成功
-    record('lp-frame-uses-texture', getComputedStyle($('.lp-frame')).backgroundImage.startsWith('url('));
+    // neos 皮：lpf.png 木框去掉，LP 条是暗色圆角轨道（fill 仍用 lp.png 彩条）
+    record('lp-frame-dark-track', getComputedStyle($('.lp-frame')).backgroundColor === 'rgba(0, 0, 0, 0.35)');
 
     // ---- 回合数菱形块：原版 (632,10)-(688,50)，中心 x=660 设计像素 ----
     const tb = rectOf('#turn-block');
@@ -150,8 +151,10 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     record('chain-group-original-position', chainGroup && Math.abs(chainGroup.x - 205 * sx) < 2
       && Math.abs(chainGroup.y - 100 * sy) < 2, JSON.stringify(chainGroup));
     const playerName = rectOf('#player-panel-name'), opponentName = rectOf('#opponent-panel-name');
-    record('player-names-original-insets', playerName && opponentName
-      && Math.abs(playerName.left - 334 * sx) < 3 && Math.abs(opponentName.right - 986 * sx) < 3,
+    // neos 皮：面板内边距 12px（名字另带 4/5px 原版内缩）
+    record('player-names-panel-insets', playerName && opponentName
+      && Math.abs(playerName.left - pp.left - 16 * sx) < 3
+      && Math.abs(opponentName.right - op.right + 17 * sx) < 3,
       JSON.stringify({ playerName, opponentName }));
 
     // ---- 提示条：顶部偏右（原版 hint 中心 ~64%） ----
@@ -207,16 +210,15 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     });
     eventBus.emit('duel:new_turn', { player: 1 });
 
-    // 当前回合背景框（drawing.cpp:582-588：0xa0000000 填充 + 0xffff8080 红描边）
-    // + LP 数字黄字黑描边（:643-644）
+    // neos 皮：当前回合背景框 = 深蓝玻璃 + 蓝色高光描边；LP 数字大白字
     const myStyle = getComputedStyle($('#player-panel'));
     const oppStyle = getComputedStyle($('#opponent-panel'));
-    record('turn-frame-red-outline', myStyle.borderTopColor === 'rgb(255, 128, 128)'
-      && myStyle.backgroundColor === 'rgba(0, 0, 0, 0.63)'
-      && oppStyle.borderTopColor !== 'rgb(255, 128, 128)',
+    record('turn-frame-accent-outline', myStyle.borderTopColor === 'rgba(74, 163, 255, 0.55)'
+      && myStyle.backgroundColor === 'rgba(17, 30, 50, 0.92)'
+      && oppStyle.borderTopColor !== 'rgba(74, 163, 255, 0.55)',
       `${myStyle.borderTopColor} / ${myStyle.backgroundColor} / ${oppStyle.borderTopColor}`);
-    record('lp-value-yellow-shadow',
-      getComputedStyle($('#player-panel-lp')).color === 'rgb(255, 255, 0)');
+    record('lp-value-white',
+      getComputedStyle($('#player-panel-lp')).color === 'rgb(255, 255, 255)');
 
     // 时限条（drawing.cpp:637-642）：首个 time_limit 包学满额，随后按比例缩
     eventBus.emit('stoc:time_limit', { player: 1, leftTime: 240 });
@@ -234,13 +236,13 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     const playerTime = rectOf('#player-time-bar');
     record('player-time-limit-original-position', playerTime && Math.abs(playerTime.x - 525 * sx) < 3
       && Math.abs(playerTime.y - 34 * sy) < 3 && Math.abs(playerTime.width - 100 * sx) < 3
-      && Math.abs(playerTime.height - 10 * sy) < 3, JSON.stringify(playerTime));
+      && Math.abs(playerTime.height - 6 * sy) < 3, JSON.stringify(playerTime));
     eventBus.emit('stoc:time_limit', { player: 0, leftTime: 120 });
     await waitFor(() => !!$('#opponent-time-bar'), 'opponent time bar mounts');
     const opponentTime = rectOf('#opponent-time-bar');
     record('opponent-time-limit-original-position', opponentTime && Math.abs(opponentTime.x - 695 * sx) < 3
       && Math.abs(opponentTime.y - 34 * sy) < 3 && Math.abs(opponentTime.width - 100 * sx) < 3
-      && Math.abs(opponentTime.height - 10 * sy) < 3, JSON.stringify(opponentTime));
+      && Math.abs(opponentTime.height - 6 * sy) < 3, JSON.stringify(opponentTime));
 
     // LP 超过初始值 → 分层彩条（drawing.cpp:590-619：底层满条 + 前景余数
     // 条）。startLP 取本方初始 LP（playerSlot=1 → lp1=4000）：4000+5000=9000

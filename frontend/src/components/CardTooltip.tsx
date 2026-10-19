@@ -108,17 +108,16 @@ export default function CardTooltip() {
       ref={tipRef}
       id="st-tip"
       role="tooltip"
+      className="st-tip"
       style={{
         position: 'fixed', left: `${x}px`, top: `${y}px`, zIndex: 1200,
-        background: 'rgba(255,255,255,0.75)', color: '#000',
-        padding: '5px', fontSize: '12px', fontWeight: 400,
-        pointerEvents: 'none',whiteSpace:'pre-wrap',overflowWrap:'anywhere',
-        maxWidth:'calc(100vw - 16px)',boxSizing:'border-box',textAlign:'center',
+        pointerEvents: 'none', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+        maxWidth: 'calc(100vw - 16px)', boxSizing: 'border-box', textAlign: 'center',
       }}
     >
       <div>{tip.text}</div>
       {tip.lines.map((line, i) => (
-        <div key={i} style={{ fontWeight: 400, color: '#525252' }}>{line}</div>
+        <div key={i} className="st-tip-line">{line}</div>
       ))}
     </div>
   );

@@ -26,6 +26,7 @@ import ActionPopup from '../src/components/ActionPopup.tsx';
 // 原版样式（动作弹窗/提示条的视觉断言需要真样式表）
 import '../css/style.css';
 import '../css/duel-original.css';
+import '../css/duel-neos.css';
 
 soundManager.muted = true;
 

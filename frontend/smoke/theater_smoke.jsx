@@ -15,6 +15,7 @@ import ReplaySavePrompt from '../src/components/ReplaySavePrompt.tsx';
 import '../css/style.css';
 import '../css/gframe-window.css';
 import '../css/duel-original.css';
+import '../css/duel-neos.css';
 
 // ---- mock 卡图/卡信息（带 ▲ 方向标记，方便肉眼核对朝向） ----
 const FRONT_SVG = (code) => 'data:image/svg+xml;utf8,' + encodeURIComponent(
