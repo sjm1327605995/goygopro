@@ -19,10 +19,6 @@ import (
 // 表内没有的类型记日志后丢弃（以前静默丢弃，便于发现协议偏差）。
 func (c *WailsDuelClient) handleSTOCPacket(proto byte, payload []byte) {
 	utils.NetLogf("client", "recv STOC %s (0x%02x) len=%d", network.STOCName(proto), proto, len(payload))
-	if proto == network.STOC_ERROR_MSG && len(payload) >= 8 {
-		utils.NetLogf("client", "STOC_ERROR_MSG detail: msg=%d code=%d",
-			payload[0], binary.LittleEndian.Uint32(payload[4:8]))
-	}
 	binding, ok := stocBindings[proto]
 	if !ok {
 		log.Printf("[WailsDuelClient] unknown STOC packet 0x%02x (%d bytes), dropped", proto, len(payload))
@@ -41,8 +37,14 @@ func (c *WailsDuelClient) handleSTOCPacket(proto byte, payload []byte) {
 	}
 
 	msg := binding.newMsg()
-	// 与原 switch 分支一致：Unpack 错误被忽略，仍按零值/部分解析 emit。
-	_ = restruct.Unpack(payload, binary.LittleEndian, msg)
+	// Unpack 失败（包体截断/协议偏移错位）时丢弃整包并记日志：零值/半解析
+	// 结构体 emit 出去会给前端伪造事件（如 lp0=0 的 duel:start），比丢包更糟。
+	// 与 handleGameMessage 的错误路径一致。
+	if err := restruct.Unpack(payload, binary.LittleEndian, msg); err != nil {
+		log.Printf("[WailsDuelClient] STOC %s (0x%02x) unpack failed (%d bytes): %v — packet dropped",
+			binding.name, proto, len(payload), err)
+		return
+	}
 	if binding.decorate != nil {
 		binding.decorate(c, msg)
 		return

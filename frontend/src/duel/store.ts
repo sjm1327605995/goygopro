@@ -14,7 +14,7 @@
  * hint 并经总线重放该询问——服务端 analyzeRetry 只重发 RETRY 字节，不重发
  * 上一询问。
  */
-import { eventBus } from '../wails_bridge.ts';
+import { eventBus, presentationQueue } from '../wails_bridge.ts';
 import { FORWARDED_EVENTS } from '../net/events_forward.ts';
 import { createDuelStore } from '../domain/duel_state.ts';
 import { sysString } from '../domain/sys_strings.ts';
@@ -55,8 +55,9 @@ let lastSelectHint: number | null = null;
 
 for (const name of FORWARDED_EVENTS) {
   eventBus.on(name, (data) => {
-    if (name === 'duel:start') {
-      // 新局清空 retry 记录
+    // 新局/终局/断线清空 retry 记录，防上一局的询问被 stray retry 重放
+    if (name === 'duel:start' || name === 'stoc:duel_end'
+      || name === 'single:ended' || name === 'stoc:disconnected') {
       lastPrompt = null;
       lastSelectHint = null;
     }
@@ -75,7 +76,9 @@ eventBus.on('duel:retry', () => {
   if (lastSelectHint != null) duelStore.restoreSelectHint(lastSelectHint);
   if (!lastPrompt) return;
   const prompt = lastPrompt;
-  // 经总线异步重放：让当前 retry 事件先落定，再重开弹窗（原版模态 wMessage
-  // 点击后的行为等价）
-  queueMicrotask(() => eventBus.emit(prompt.name, prompt.data));
+  // 经表现队列重放（与原始询问同通道）：积压的 damage/summon 动画播完后
+  // 再重开弹窗，避免 retry 插队到待播表现之前（原版 retry 在消息循环里
+  // 按序处理）。microtask 推迟入队：drain 同步投递，当前 retry 监听器的
+  // setHint 需先落定，否则会被重放询问的 HINT_CLEARING 立刻清掉。
+  queueMicrotask(() => presentationQueue.enqueue(prompt.name, prompt.data));
 });

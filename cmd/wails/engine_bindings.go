@@ -255,10 +255,10 @@ func decorateUpdateCard(c *WailsDuelClient, _ byte, pbuf *utils.YGOBuffer, msg a
 		card = cards[0]
 	}
 	c.emit("duel:update_card", updateCardDTO{
-		Player:   m.Player,
-		Location: m.Location,
-		Sequence: m.Sequence,
-		Card:     card,
+		Player:      m.Player,
+		Location:    m.Location,
+		Sequence:    m.Sequence,
+		queryCardDTO: card,
 	})
 	return nil
 }
@@ -336,10 +336,19 @@ func decodeQueryBody(body []byte) *queryCardDTO {
 	rest := body[4:]
 	pos := 0
 	card := &queryCardDTO{}
+	// guard：字段消费越过 blob 边界即整体放弃（返回 nil 走 opaque skip）
+	failed := false
 
 	u32 := func() uint32 {
-		v := binary.LittleEndian.Uint32(rest[pos:])
-		pos += 4
+		// 闭包自带钳制：即使调用点漏写 ensure 也越界读不到（返回 0 并标记
+		// failed），杜绝引擎消息 goroutine 里的切片 panic。
+		var v uint32
+		if pos+4 <= len(rest) {
+			v = binary.LittleEndian.Uint32(rest[pos:])
+			pos += 4
+		} else {
+			failed = true
+		}
 		return v
 	}
 	u32p := func() *uint32 {
@@ -347,17 +356,14 @@ func decodeQueryBody(body []byte) *queryCardDTO {
 		return &v
 	}
 	i32p := func() *int32 {
-		v := int32(binary.LittleEndian.Uint32(rest[pos:]))
-		pos += 4
+		v := int32(u32())
 		return &v
 	}
 	count := func() int {
-		n := int(int32(binary.LittleEndian.Uint32(rest[pos:])))
-		pos += 4
-		return n
+		return int(int32(u32()))
 	}
-	// guard：字段消费越过 blob 边界即整体放弃（返回 nil 走 opaque skip）
-	failed := false
+	// ensure 作为 fast-path 预检保留（提前发现截断、少做无效解析）；
+	// 越界安全性已由上面的闭包钳制保证。
 	ensure := func(n int) {
 		if pos+n > len(rest) {
 			failed = true

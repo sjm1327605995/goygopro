@@ -51,7 +51,13 @@ export class PresentationQueue {
       while (this.timer === null && this.pending.length && epoch === this.epoch) {
         const next = this.pending.shift()!;
         const delay = presentationDelay(next.name, next.data);
-        this.deliver(next.name, next.data);
+        // deliver 抛错（emit 链路外的回调异常）不阻塞队列：当前事件已出队，
+        // 记日志后继续按原定延迟调度剩余事件
+        try {
+          this.deliver(next.name, next.data);
+        } catch (err) {
+          console.error(`[presentationQueue] deliver "${next.name}" threw:`, err);
+        }
         if (delay && epoch === this.epoch) {
           this.timer = setTimeout(() => { this.timer = null; this.drain(); }, Math.ceil(delay));
         }

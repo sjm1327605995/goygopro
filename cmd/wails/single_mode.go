@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sjm1327605995/goygopro/core/duel"
@@ -32,6 +33,9 @@ type singleRun struct {
 	respCh  chan []byte
 	stopCh  chan struct{}
 	done    chan struct{} // Run goroutine 退出后关闭
+	// stopOnce 保证 stopCh 只关一次：StopSingle 是 Wails 绑定方法，不保证
+	// 跨调用串行，裸 select-default-close 有 double-close panic 竞态。
+	stopOnce sync.Once
 }
 
 // ListSingles 列出 single/ 下的全部谜题（game.cpp RefreshSingleplay 的目录遍历
@@ -250,11 +254,7 @@ func (a *App) StopSingle() {
 	if run == nil {
 		return
 	}
-	select {
-	case <-run.stopCh:
-	default:
-		close(run.stopCh)
-	}
+	run.stopOnce.Do(func() { close(run.stopCh) })
 }
 
 // finishSingleReplay 单机谜题正常完结后的录像处理（原版 single_mode.cpp:141-162）：

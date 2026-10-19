@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -633,7 +634,7 @@ func (a *App) SaveLastReplay(name string) map[string]interface{} {
 	if a.client == nil {
 		return map[string]interface{}{"success": false, "error": "not connected"}
 	}
-	a.client.replayDir = a.replayDir
+	a.client.SetReplayDir(a.replayDir)
 	saved, err := a.client.SaveReplay(name)
 	if err != nil {
 		return map[string]interface{}{"success": false, "error": err.Error()}
@@ -735,7 +736,10 @@ func (a *App) PlayReplay(name string) map[string]interface{} {
 	})
 
 	err := rm.Run(func(msg []byte) {
-		collector.handleGameMessage(msg)
+		if perr := collector.handleGameMessage(msg); perr != nil {
+			// 中途 desync 的诊断信息：录像仍照常回放已收集的事件
+			log.Printf("[App] replay %q message parse error: %v", name, perr)
+		}
 	})
 	// 中途截断的录像（underflow / desync）不视为致命：已收集的事件照常返回，
 	// truncated 标记给前端。desync 错误经过 %w 包装，必须用 errors.Is 判断。

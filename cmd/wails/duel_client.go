@@ -45,6 +45,13 @@ func NewWailsDuelClient(emitFunc func(eventName string, optionalData ...interfac
 	}
 }
 
+// SetReplayDir 注入录像落盘目录（默认 "replay"，测试用它指向临时目录）。
+func (c *WailsDuelClient) SetReplayDir(dir string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.replayDir = dir
+}
+
 func (c *WailsDuelClient) Connect(addr string, username string, pass string) error {
 	// 不要在持有 c.mu 的状态下发送 PlayerInfo：sendPacket 也需要 c.mu
 	// （sync.Mutex 不可重入，嵌套加锁会自死锁）。先完成拨号和状态更新，
@@ -64,14 +71,38 @@ func (c *WailsDuelClient) Connect(addr string, username string, pass string) err
 	c.conn = conn
 	c.isConnected = true
 	c.gen++
+	gen := c.gen
 	c.running.Store(true)
 	c.mu.Unlock()
 
 	// Start background read loop
 	go c.readLoop()
 
-	// Send PlayerInfo packet
-	return c.sendPlayerInfo(username)
+	// Send PlayerInfo packet；失败时收尾到断开态——否则 isConnected 仍为
+	// true（僵尸连接：IsConnected 误报、StartSingle 守卫被不可用连接挡住），
+	// readLoop 也会因 conn 被置 nil 而静默退出。
+	if err := c.sendPlayerInfo(username); err != nil {
+		c.abortConnect(conn, gen)
+		return err
+	}
+	return nil
+}
+
+// abortConnect 在 Connect 出错路径上把连接还原为断开态：仅当 conn 仍是
+// 当前连接时收尾（代际守卫，防重连竞态），并广播 stoc:disconnected。
+func (c *WailsDuelClient) abortConnect(conn net.Conn, gen uint64) {
+	c.mu.Lock()
+	stillCurrent := c.conn == conn && c.gen == gen
+	if stillCurrent {
+		c.running.Store(false)
+		c.isConnected = false
+		c.conn = nil
+	}
+	c.mu.Unlock()
+	if stillCurrent {
+		conn.Close()
+		c.emit("stoc:disconnected", map[string]interface{}{})
+	}
 }
 
 // IsConnected 在锁内报告连接状态（StartSingle 的守卫用）。
@@ -83,9 +114,9 @@ func (c *WailsDuelClient) IsConnected() bool {
 
 func (c *WailsDuelClient) Disconnect() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	if !c.isConnected {
+		c.mu.Unlock()
 		return
 	}
 	utils.NetLogf("client", "disconnecting (local request)")
@@ -95,6 +126,8 @@ func (c *WailsDuelClient) Disconnect() {
 		c.conn.Close()
 		c.conn = nil
 	}
+	c.mu.Unlock()
+	// emit 在锁外调用（emit 链路若反向取 c.mu 会自死锁）
 	c.emit("stoc:disconnected", map[string]interface{}{})
 }
 
@@ -130,13 +163,18 @@ func (c *WailsDuelClient) sendPacket(proto byte, payload []byte) error {
 	return err
 }
 
+// writeFixedUTF16 把 s 的 UTF-16 编码写入定长 uint16 数组，前 19 码元 +
+// NUL 终止（CTOSPlayerInfo/CTOSCreateGame/CTOSJoinGame 的名字与密码字段）。
+func writeFixedUTF16(dst []uint16, s string) {
+	encoded := utf16.Encode([]rune(s))
+	for i := 0; i < len(encoded) && i < len(dst)-1; i++ {
+		dst[i] = encoded[i]
+	}
+}
+
 func (c *WailsDuelClient) sendPlayerInfo(name string) error {
 	var pkt protocol.CTOSPlayerInfo
-	encoded := utf16.Encode([]rune(name))
-	for i := 0; i < len(encoded) && i < 19; i++ {
-		pkt.Name[i] = encoded[i]
-	}
-	pkt.Name[19] = 0
+	writeFixedUTF16(pkt.Name[:], name)
 	data, err := restruct.Pack(binary.LittleEndian, &pkt)
 	if err != nil {
 		return err
@@ -147,14 +185,8 @@ func (c *WailsDuelClient) sendPlayerInfo(name string) error {
 func (c *WailsDuelClient) CreateGame(hostInfo protocol.HostInfo, roomName string, pass string) error {
 	var pkt protocol.CTOSCreateGame
 	pkt.Info = hostInfo
-	encodedName := utf16.Encode([]rune(roomName))
-	for i := 0; i < len(encodedName) && i < 19; i++ {
-		pkt.Name[i] = encodedName[i]
-	}
-	encodedPass := utf16.Encode([]rune(pass))
-	for i := 0; i < len(encodedPass) && i < 19; i++ {
-		pkt.Pass[i] = encodedPass[i]
-	}
+	writeFixedUTF16(pkt.Name[:], roomName)
+	writeFixedUTF16(pkt.Pass[:], pass)
 	data, err := restruct.Pack(binary.LittleEndian, &pkt)
 	if err != nil {
 		return err
@@ -166,10 +198,7 @@ func (c *WailsDuelClient) JoinGame(version uint16, gameID uint32, pass string) e
 	var pkt protocol.CTOSJoinGame
 	pkt.Version = version
 	pkt.GameID = gameID
-	encodedPass := utf16.Encode([]rune(pass))
-	for i := 0; i < len(encodedPass) && i < 19; i++ {
-		pkt.Pass[i] = encodedPass[i]
-	}
+	writeFixedUTF16(pkt.Pass[:], pass)
 	data, err := restruct.Pack(binary.LittleEndian, &pkt)
 	if err != nil {
 		return err
@@ -220,14 +249,20 @@ func (c *WailsDuelClient) SendChat(msg string) error {
 func (c *WailsDuelClient) SendHandResult(res byte) error {
 	var pkt protocol.CTOSHandResult
 	pkt.Res = res
-	data, _ := restruct.Pack(binary.LittleEndian, &pkt)
+	data, err := restruct.Pack(binary.LittleEndian, &pkt)
+	if err != nil {
+		return err
+	}
 	return c.sendPacket(network.CTOS_HAND_RESULT, data)
 }
 
 func (c *WailsDuelClient) SendTPResult(res byte) error {
 	var pkt protocol.CTOSTPResult
 	pkt.Res = res
-	data, _ := restruct.Pack(binary.LittleEndian, &pkt)
+	data, err := restruct.Pack(binary.LittleEndian, &pkt)
+	if err != nil {
+		return err
+	}
 	return c.sendPacket(network.CTOS_TP_RESULT, data)
 }
 
@@ -284,10 +319,13 @@ func (c *WailsDuelClient) SaveReplay(name string) (string, error) {
 	base = strings.ReplaceAll(base, "/", "_")
 	base = strings.ReplaceAll(base, "\\", "_")
 	base = strings.TrimSuffix(base, ".yrp")
-	if err := os.MkdirAll(c.replayDir, 0755); err != nil {
+	c.mu.Lock()
+	replayDir := c.replayDir
+	c.mu.Unlock()
+	if err := os.MkdirAll(replayDir, 0755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(c.replayDir, base+".yrp")
+	path := filepath.Join(replayDir, base+".yrp")
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return "", err
 	}
@@ -338,6 +376,17 @@ func (c *WailsDuelClient) readLoop() {
 
 		proto := body[0]
 		payload := body[1:]
+
+		// 代际守卫下沉到分发点：读包期间连接被替换（重连）时，剩余包属于
+		// 旧会话，丢弃而不是混入新会话的事件流。
+		c.mu.Lock()
+		stale := c.gen != gen
+		c.mu.Unlock()
+		if stale {
+			utils.NetLogf("client", "readLoop gen mismatch, dropping %d buffered packet(s)", packetLen)
+			break
+		}
+
 		c.handleSTOCPacket(proto, payload)
 	}
 	c.teardown(conn, gen)
@@ -348,8 +397,8 @@ func (c *WailsDuelClient) readLoop() {
 // readLoop 误断新连接（Disconnect 关的是 c.conn 而非它捕获的旧 conn）。
 func (c *WailsDuelClient) teardown(conn net.Conn, gen uint64) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if gen != c.gen || c.conn != conn {
+		c.mu.Unlock()
 		return
 	}
 	c.running.Store(false)
@@ -358,5 +407,7 @@ func (c *WailsDuelClient) teardown(conn net.Conn, gen uint64) {
 		c.conn.Close()
 		c.conn = nil
 	}
+	c.mu.Unlock()
+	// emit 在锁外调用（emit 链路若反向取 c.mu 会自死锁）
 	c.emit("stoc:disconnected", map[string]interface{}{})
 }
