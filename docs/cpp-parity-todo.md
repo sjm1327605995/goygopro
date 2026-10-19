@@ -1,5 +1,59 @@
 # C++ 原版对照差距 TODO Plan
 
+## 前后端交互逻辑 CodeReview 修复（2026-10-19）
+
+对 Go 桥接层（事件生产侧）与前端事件消费侧做专项审计，修复真实行为缺陷
+与维护性炸弹（验证：Go test / tsc / 双构建 / 14 页冒烟全绿）：
+
+### Go 侧（cmd/wails）
+
+- [x] **STOC Unpack 吞错发伪造事件**（stoc_handlers.go）：截断/错位包以前
+  按零值结构体 emit（如 lp0=0 的 duel:start）；改为记日志 + 丢弃整包，与
+  handleGameMessage 错误路径一致。
+- [x] **Connect 僵尸状态**（duel_client.go）：sendPlayerInfo 失败时走
+  abortConnect（代际守卫）收尾到断开态并广播 stoc:disconnected，不再留下
+  isConnected=true 的不可用连接挡住 StartSingle 守卫。
+- [x] **重连串事件**（readLoop）：代际检查下沉到分发点——读包期间连接被
+  替换时丢弃剩余旧会话包，不混入新事件流。
+- [x] **持锁 emit**（Disconnect/teardown）：改为解锁后 emit，消除 emit 链路
+  反向取锁的自死锁隐患。
+- [x] **StopSingle double-close 竞态**：select-default-close 换 stopOnce
+  （sync.Once），Wails 绑定方法不保证跨调用串行。
+- [x] **event_dto.go 死代码**：删除 26 个零引用 DTO（含形状已漂移的
+  selectPlaceDTO/zoneRefDTO 误导性类型）；updateCardDTO 的字节拼接
+  MarshalJSON 改匿名内嵌 *queryCardDTO（json 字段提升，形状不变）。
+- [x] **decodeQueryBody 越界 panic 构造性脆弱**：u32/i32p/count 闭包自带
+  钳制（越界读不到 → failed），漏写 ensure 的新 flag 分支不再 panic。
+- [x] **PlayReplay 吞解析错误**（app.go）：desync 时记日志（录像照常回放）。
+- [x] SendHandResult/SendTPResult 的 Pack 错误不再吞；UTF-16 定长编码三处
+  重复抽 writeFixedUTF16；replayDir 跨层直改私有字段改 SetReplayDir（加锁）；
+  events_parity_test 扫描名单补 single_mode.go；STOC_ERROR_MSG 分发前重复
+  解码移除。
+- 未改（记录）：StartLocalServer 重复调用泄漏旧广播/无停服通道（需存 server
+  句柄的产品级改动）；MSG_CHAIN_NEGATED/DISABLED 合并事件语义保持（原版
+  同 case）。
+
+### 前端侧（frontend/src）
+
+- [x] **EventBus.emit 异常隔离 + 快照遍历**：单监听器抛错只 console.error
+  不再中止其余监听者/冒泡回 Wails 回调；回调里 off（dispose 链）不跳过后续。
+- [x] **PresentationQueue.drain 保护**：deliver 抛错记日志后按原定延迟继续
+  调度剩余事件，队列不再因单事件卡死到下一次 enqueue。
+- [x] **retry 重放走表现队列**（store.ts）：与原始询问同通道，不再插队到
+  积压动画之前；清理时机扩展到 duel:end/single:ended/disconnected。
+- [x] **duel:hint 过期校验**：_hintSeq 序号——await resolveDesc 期间有新
+  hint 到达时旧续体放弃写入提示条。
+- [x] **dispose() 清理补全**：hintZoneTimer、field3D 六个回调全清（解开
+  manager↔field 互相引用）、placeSelect/idleCmd/battleCmd 复位、_disposed
+  标志；draw/召唤三事件/move/chaining 的 await 续体统一早退守卫。
+- [x] **fireAndForget 统一入口**：minimise/stopSingle/toObserver/toDuelist/
+  kickPlayer/leaveGame/surrender/sendTimeConfirm/setReady/startDuel/sendChat/
+  sendHandResult/sendTPResult 的 Go 调用失败只记日志，消除 unhandledrejection。
+- [x] **getCard 失败不缓存**（与 getCardImage 的 miss 缓存语义区分）；
+  _picCache 恒假防御代码移除；chaining 双订阅合并。
+- 未改（记录）：事件载荷 any 类型的 discriminated union 化（大工程，需逐步）；
+  presentation_queue frames() 小数毫秒仅调度处 ceil 的小瑕疵。
+
 ## 战斗 UI neos-ts 风格重皮肤（2026-10-19）
 
 参考 [neos-ts](https://github.com/DarkNeos/neos-ts)（React+antd 的 YGOPro Web

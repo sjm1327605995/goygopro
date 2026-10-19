@@ -53,6 +53,10 @@ export class DuelManager {
   } | null = null;
   _resyncing = false;
   _subs: [string, (data: any) => void][] = [];
+  /** duel:hint 异步解析的序号：await 期间有新 hint 到达时旧续体放弃写入 */
+  _hintSeq = 0;
+  /** dispose 后置位：异步续体（await getCard 后）与晚触发回调据此早退 */
+  _disposed = false;
   /** HINT_ZONE 高亮的自动清除定时器（原版 WaitFrameSignal(40) 后清） */
   hintZoneTimer: ReturnType<typeof setTimeout> | null = null;
   /** store 订阅（视角交换 / select_card 选择态联动）的退订函数 */
@@ -105,6 +109,7 @@ export class DuelManager {
   }
 
   onStoreChange(): void {
+    if (this._disposed) return;
     const st = duelStore.getState();
     this.syncHands();
     if (st.viewSwapped !== this._lastViewSwapped) {
@@ -370,6 +375,7 @@ export class DuelManager {
       for (let i = 0; i < data.count; i++) {
         const cardCode = (data.cards && data.cards[i]) ? data.cards[i] : 0;
         const cardInfo = cardCode ? await WailsBridge.getCard(cardCode) : null;
+        if (this._disposed) return; // dispose 后在途续体早退
         this.field3D.animateDrawCard(data.player, cardCode, cardInfo);
       }
     });
@@ -405,6 +411,7 @@ export class DuelManager {
 
     sub('duel:summoning', async (data) => {
       const cardInfo = await WailsBridge.getCard(data.code);
+      if (this._disposed) return; // dispose 后在途续体早退
       if (data.__instant) {
         this.field3D.placeCard(data.cc, 'mzone', data.cs, data.code, cardInfo, data.cp);
         return;
@@ -414,6 +421,7 @@ export class DuelManager {
 
     sub('duel:spsummoning', async (data) => {
       const cardInfo = await WailsBridge.getCard(data.code);
+      if (this._disposed) return; // dispose 后在途续体早退
       if (data.__instant) {
         this.field3D.placeCard(data.cc, 'mzone', data.cs, data.code, cardInfo, data.cp);
         return;
@@ -423,6 +431,7 @@ export class DuelManager {
 
     sub('duel:flipsummoning', async (data) => {
       const cardInfo = await WailsBridge.getCard(data.code);
+      if (this._disposed) return; // dispose 后在途续体早退
       if (data.__instant) {
         this.field3D.placeCard(data.cc, 'mzone', data.cs, data.code, cardInfo, data.cp);
         return;
@@ -515,6 +524,7 @@ export class DuelManager {
         // 淡入（client_field.cpp:1107-1111），不再等下一次 update_data 的
         // 漂移重建。grave/banish 目标维持原样的即时堆叠。
         const cardInfo = await WailsBridge.getCard(data.code);
+        if (this._disposed) return; // dispose 后在途续体早退
         const mesh = this.field3D.placeCard(data.cc, toLoc, data.cs, data.code, cardInfo, data.cp);
         if (mesh && (toLoc === 'mzone' || toLoc === 'szone')) {
           this.field3D.fadeInMesh(mesh, !!data.__instant);
@@ -537,10 +547,14 @@ export class DuelManager {
 
     // Chain Events
     sub('duel:chaining', async (data) => {
+      // 原版应答连锁即 ClearChainSelect（client_field.cpp:404-420）：角标不残留
+      // 到 chain_end/下一阶段，引擎接受应答进入 chaining 时即清除
+      this.field3D.clearActivatable();
       // 连锁段的对象集登记（MSG_BECOME_TARGET 追加到最后一条链）——
       // 必须先于 await，否则紧随的 become_target 会找不到链
       this.chainTargets.push({ card: this.relKey({ c: data.cc, l: data.cl, s: data.cs }), targets: new Set() });
       const cardInfo = await WailsBridge.getCard(data.code);
+      if (this._disposed) return; // dispose 后在途续体早退
       // Anchor the badge on the field only for cards that are ON the field;
       // hand/deck/grave activations (e.g. hand traps) have no slot to pin to.
       if (data.cl === 0x4 || data.cl === 0x8) {
@@ -603,9 +617,6 @@ export class DuelManager {
 
     // 原版应答连锁即 ClearChainSelect（client_field.cpp:404-420）：角标不残留
     // 到 chain_end/下一阶段，引擎接受应答进入 chaining 时即清除
-    sub('duel:chaining', () => {
-      this.field3D.clearActivatable();
-    });
 
     // 新阶段/指令结束：两类角标都清除；阶段横幅音效（原版 SOUND_PHASE，
     // 在 MSG_NEW_PHASE 时与 showcard=101 横幅一起触发）
@@ -721,7 +732,10 @@ export class DuelManager {
         return;
       }
       if (data.type !== 1 && data.type !== 2) return;
+      const seq = ++this._hintSeq;
       const text = await WailsBridge.resolveDesc(data.data);
+      // 过期校验：await 期间更新的 hint（序号推进）或 dispose 后不覆盖
+      if (this._disposed || seq !== this._hintSeq) return;
       if (text) {
         duelStore.setHint(text);
         // HINT_EVENT 存 store（原版 event_string）：询问弹窗文案以它开头
@@ -768,12 +782,25 @@ export class DuelManager {
   // Unsubscribes every eventBus listener registered in initNetworkListeners.
   // Called by the hosting React component on unmount.
   dispose() {
+    this._disposed = true;
     this.endFieldSelection();
+    // field3D 可能是冒烟桩（无 clearHintZones 等方法），全部可选调用
+    this.clearHintZones();
     if (this._storeUnsub) {
       this._storeUnsub();
       this._storeUnsub = null;
     }
+    // 清掉挂在 field3D 上的全部回调：field 晚触发时不再访问已 dispose 的
+    // manager（也解开 manager↔field3D 的互相引用）
     this.field3D.onHoverChange = null;
+    this.field3D.onPlaceZoneClick = null;
+    this.field3D.onCardSelectPick = null;
+    this.field3D.onBoardRightClick = null;
+    this.field3D.onPileRightClick = null;
+    this.field3D.onPileLeftClick = null;
+    this.placeSelect = null;
+    this.idleCmd = null;
+    this.battleCmd = null;
     if (!this._subs) return;
     this._subs.forEach(([event, fn]) => eventBus.off(event, fn));
     this._subs = [];
@@ -806,6 +833,7 @@ export class DuelManager {
     if (this.hintZoneTimer) clearTimeout(this.hintZoneTimer);
     this.hintZoneTimer = setTimeout(() => {
       this.hintZoneTimer = null;
+      if (this._disposed) return;
       this.field3D.clearHintZones();
     }, 800);
   }
@@ -815,7 +843,8 @@ export class DuelManager {
       clearTimeout(this.hintZoneTimer);
       this.hintZoneTimer = null;
     }
-    this.field3D.clearHintZones();
+    // 冒烟桩 field3D 可能无此方法
+    this.field3D.clearHintZones?.();
   }
 
   placeZoneKey(zone: { player: number; loc: number; seq: number }): string {

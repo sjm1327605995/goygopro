@@ -44,6 +44,7 @@ func TestFrontendForwardsAllEmittedEvents(t *testing.T) {
 		"stoc_bindings.go",
 		"duel_client.go",
 		"app.go",
+		"single_mode.go",
 	)
 
 	tsData, err := os.ReadFile("../../frontend/src/net/events_forward.ts")

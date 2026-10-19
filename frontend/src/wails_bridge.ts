@@ -160,8 +160,16 @@ class EventBus {
     if (idx > -1) list.splice(idx, 1);
   }
   emit(event: string, data: any) {
-    if (this.listeners[event]) {
-      this.listeners[event].forEach(cb => cb(data));
+    const list = this.listeners[event];
+    if (!list || !list.length) return;
+    // 快照遍历：listener 在回调里 off（dispose 链）不会跳过其余监听者；
+    // 单监听器抛错只 console.error，不中止其余监听者、不冒泡回 Wails 回调。
+    for (const cb of [...list]) {
+      try {
+        cb(data);
+      } catch (err) {
+        console.error(`[eventBus] listener for "${event}" threw:`, err);
+      }
     }
   }
 }
@@ -195,6 +203,15 @@ export const isWails = !!(wailsCall && wailsCall.ByName);
 const WAILS_FQN_PREFIX = "main.App.";
 function callWails(method: string, ...args: any[]) {
   return wailsCall.ByName(WAILS_FQN_PREFIX + method, ...args);
+}
+
+// 发后即忘的 Go 调用统一入口：Go 侧报错（未连接/房间不存在等）只记日志，
+// 不产生 unhandledrejection 打断事件流。
+function fireAndForget(method: string, ...args: any[]): void {
+  if (!isWails) return;
+  callWails(method, ...args).catch((err: unknown) => {
+    console.error(`[wails] ${method} failed:`, err);
+  });
 }
 
 if (wailsEvents && wailsEvents.On) {
@@ -238,7 +255,7 @@ export const WailsBridge = {
     }
   },
 
-  minimise() { if (isWails) return callWails('Minimise'); },
+  minimise() { fireAndForget('Minimise'); },
   async getCounterName(counter:number):Promise<string> {
     if(isWails)return (await callWails('GetCounterName',counter))||'？？？';
     return counter===1?'魔力指示物':'？？？';
@@ -270,7 +287,7 @@ export const WailsBridge = {
 
   stopSingle() {
     presentationQueue.clear();
-    if (isWails) callWails("StopSingle");
+    if (isWails) fireAndForget("StopSingle");
     else console.log("[MockBridge] StopSingle");
   },
 
@@ -291,34 +308,34 @@ export const WailsBridge = {
   // 等候区身份切换（CTOS_HS_TOOBSERVER / CTOS_HS_TODUELIST）。观战者只能
   // CTOS_LEAVE_GAME 离开（single_duel.cpp:328-331），由服务端裁决。
   toObserver() {
-    if (isWails) callWails("ToObserver");
+    if (isWails) fireAndForget("ToObserver");
     // selftype=7 即观战（network.h NETPLAYER_TYPE_OBSERVER=7），低 4 位=座位
     else eventBus.emit("stoc:type_change", { type: 7, isHost: false, pos: 7 });
   },
 
   toDuelist() {
-    if (isWails) callWails("ToDuelist");
+    if (isWails) fireAndForget("ToDuelist");
     else eventBus.emit("stoc:type_change", { type: 0x01, isHost: false, pos: 1 });
   },
 
   // 宿主踢人：CTOS_HS_KICK + 座位号（netserver.cpp:355-365 仅准备阶段有效）
   kickPlayer(pos: number) {
-    if (isWails) callWails("KickPlayer", pos);
+    if (isWails) fireAndForget("KickPlayer", pos);
     else console.log("[MockBridge] KickPlayer:", pos);
   },
 
   leaveGame() {
-    if (isWails) callWails("LeaveGame");
+    fireAndForget("LeaveGame");
   },
 
   surrender() {
-    if (isWails) callWails("Surrender");
+    if (isWails) fireAndForget("Surrender");
     else console.log("[MockBridge] Surrender");
   },
 
   // STOC_TIME_LIMIT 轮到自己时立即确认（gframe duelclient.cpp:783-784）
   sendTimeConfirm() {
-    if (isWails) callWails("SendTimeConfirm");
+    if (isWails) fireAndForget("SendTimeConfirm");
     else console.log("[MockBridge] SendTimeConfirm");
   },
 
@@ -333,29 +350,29 @@ export const WailsBridge = {
   },
 
   setReady(ready: boolean) {
-    if (isWails) callWails("SetReady", ready);
+    if (isWails) fireAndForget("SetReady", ready);
     else {
       eventBus.emit("stoc:player_change", { pos: 0, ready, status: ready ? 9 : 0 });
     }
   },
 
   startDuel() {
-    if (isWails) callWails("StartDuel");
+    if (isWails) fireAndForget("StartDuel");
   },
 
   sendChat(msg: string) {
-    if (isWails) callWails("SendChat", msg);
+    if (isWails) fireAndForget("SendChat", msg);
     else {
       eventBus.emit("stoc:chat", { player: 0, msg });
     }
   },
 
   sendHandResult(res: number) {
-    if (isWails) callWails("SendHandResult", res);
+    if (isWails) fireAndForget("SendHandResult", res);
   },
 
   sendTPResult(res: number) {
-    if (isWails) callWails("SendTPResult", res);
+    if (isWails) fireAndForget("SendTPResult", res);
   },
 
   sendResponseI(val: number) {
@@ -440,7 +457,9 @@ export const WailsBridge = {
         desc: "Card details."
       };
     }
-    WailsBridge._cardCache.set(code, info);
+    // 取数失败（临时错误）不缓存：与 getCardImage 的 miss 缓存不同，一次
+    // 失败不应让该卡永远拿不到数据
+    if (info) WailsBridge._cardCache.set(code, info);
     // reducer 写日志要用卡名 — 谁解析到卡名谁登记（card_names.ts）
     registerCardName(code, info && info.name);
     return info;
@@ -452,7 +471,6 @@ export const WailsBridge = {
   // Results (including misses) are cached per code.
   async getCardImage(code: number) {
     if (!code) return null;
-    if (!WailsBridge._picCache) WailsBridge._picCache = new Map();
     const cached = WailsBridge._picCache.get(code);
     if (cached !== undefined) return cached;
     let result: { url: string } | null = null;
