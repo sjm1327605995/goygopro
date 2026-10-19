@@ -1,5 +1,41 @@
 # C++ 原版对照差距 TODO Plan
 
+## 战斗 UI neos-ts 风格重皮肤（2026-10-19）
+
+参考 [neos-ts](https://github.com/DarkNeos/neos-ts)（React+antd 的 YGOPro Web
+复刻）的决斗界面风格，对战斗场景 2D HUD 做整体重皮肤：**布局几何全部保持**
+（stage_smoke 的原版坐标断言不改语义），只换视觉皮。
+
+- [x] 新增 `frontend/css/duel-neos.css` 覆盖层（在 duel-original.css 与
+  cpp-parity.css 之后加载）：neos 设计变量（深海军蓝底 #0d1522、玻璃面板
+  rgba(13,21,34,.86)、蓝色点缀 #4aa3ff、圆角 10-14px、柔阴影、backdrop blur）。
+  所有选择器带 `:is(#app,#root)` 前缀 + 元素选择器抬特异性，压过
+  cpp-parity 的 Irrlicht 灰斜面层（其 `.duel-stage button:not()` 规则
+  (1,2,1) 需 `button.xx` (1,3,1) 或同特异性后加载胜出）。
+- [x] **按钮总闸**：`.duel-stage button:not(.hand-card-item)` 统一回暗色
+  胶囊；阶段钮/连锁键/投降键/页签/弹窗钮各自细化（当前阶段蓝底、可行动
+  蓝描边、pressed 蓝高光）。
+- [x] **玩家面板**：去 lpf.png 木框 → 暗色圆角轨道（fill 仍用 lp.png 彩条
+  保留分层语义）；LP 数字黄字描边 → 大白字；回合高亮红描边 → 蓝色高光；
+  时限条 10px 灰条 → 6px 圆条（y=34 几何不动）；计时/堆区计数改 neos
+  文字层级（数值蓝字）。
+- [x] **左预览面板**：浅灰原型 → 深色玻璃，页签暗色（激活蓝），卡名白字 /
+  类型蓝字 / 描述灰字。
+- [x] **提示/浮条**：stHintMsg 白底黑字 → 顶部暗色胶囊；stTip 白底 →
+  neos 暗色卡提示（JSX 内联样式迁出为 class）；ACMessage 浅蓝白底 →
+  暗色圆条；阶段/胜利横幅去硬描边改柔光；胜利原因行改暗色胶囊。
+- [x] **弹窗/菜单**：决斗作用域 .modal-box/.wcs-window 深色玻璃圆角；
+  金钮 → 蓝主钮；动作弹出菜单/堆区列表/投降确认/场形态选择条/聊天输入/
+  手牌坞统一暗色皮。LP 浮动字保留红/绿/蓝语义色。
+- [x] CardTooltip/SpecOverlay 的内联配色迁为 class（几何内联保留）。
+- [x] 断言更新：stage_smoke 的 lpf 纹理/红描边/黄字/名字内缩/时限条高度
+  5 断言改新设计值（几何断言不动）；spec_smoke 的 stTip 白底断言改暗色。
+- [x] 接齐用户 5074e2a 的单人录像窗流程：ReplaySavePrompt 单人模式
+  取消/保存/自动保存均经 finishSingle() 回主菜单（net 模式不变）。
+- 验证：14 页冒烟全绿（stage 76、prompts 174、single 22、spec 36、
+  widgets 71、ui_parity 75 等）；tsc + 双 vite 构建 + Go test 全绿。
+  前后截图：tmp_dbg/duel-before.png / duel-final.png。
+
 ## 全仓残留差距批（2026-10-16，五路审计后实施）
 
 对照审计（duelclient/event_handler/drawing/game/menu/deck_con/replay_mode +

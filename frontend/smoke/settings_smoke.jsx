@@ -16,6 +16,7 @@ import React from 'react';
 import { eventBus, WailsBridge } from '../src/wails_bridge.ts';
 import '../css/gframe-window.css';
 import '../css/duel-original.css';
+import '../css/duel-neos.css';
 import App from '../src/App.tsx';
 import Lobby from '../src/components/Lobby.tsx';
 import ChatOverlay from '../src/components/ChatOverlay.tsx';

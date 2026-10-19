@@ -8,6 +8,7 @@ import { WailsBridge, eventBus } from '../src/wails_bridge.ts';
 import { duelStore } from '../src/duel/store.ts';
 import '../css/style.css';
 import '../css/duel-original.css';
+import '../css/duel-neos.css';
 import SpecOverlay from '../src/components/SpecOverlay.tsx';
 import CardTooltip from '../src/components/CardTooltip.tsx';
 import { drawSpecFrame, cardHintRect, rpsOffset } from '../src/duel/draw_spec.ts';
@@ -203,7 +204,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     canvas.dispatchEvent(new CustomEvent('ygo:cardhover', { detail: { code: 89631139, info: blueEyes, x: 400, y: 300 } }));
     await waitFor(() => !!$('#st-tip'));
     record('tooltip-shows-on-hover', $('#st-tip').textContent.includes('青眼白龙'));
-    record('tooltip-original-white-block', $('#st-tip').style.background==='rgba(255, 255, 255, 0.75)'&&!$('#st-tip').style.borderLeft);
+    record('tooltip-neos-dark-block', getComputedStyle($('#st-tip')).backgroundColor==='rgba(13, 21, 34, 0.94)' && !$('#st-tip').style.background);
     const tipRect=$('#st-tip').getBoundingClientRect();
     record('tooltip-original-upper-left-position',Math.abs(tipRect.right-390)<1&&Math.abs(tipRect.bottom-290)<1);
     record('tooltip-stat-lines', $('#st-tip').textContent.includes('3000/2500')

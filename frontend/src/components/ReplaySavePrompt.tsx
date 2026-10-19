@@ -51,6 +51,7 @@ export default function ReplaySavePrompt() {
       if (data && data.autoSaved) {
         setSuggested(null);
         setStatus(`已自动保存录像 ${suggestedName}`);
+        finishSingle();
         return;
       }
       setName(suggestedName);
@@ -85,6 +86,7 @@ export default function ReplaySavePrompt() {
     if (res && res.success) {
       setStatus(`已保存录像 ${res.name}`);
       setSuggested(null);
+      if (mode === 'single') finishSingle();
     } else {
       setStatus(`保存失败：${res && res.error}`);
     }
@@ -140,7 +142,7 @@ export default function ReplaySavePrompt() {
             id="replay-save-cancel"
             className="btn btn-secondary"
             style={{ width: '70px', height: '25px', padding: 0, order: swap ? 1 : 2 }}
-            onClick={() => setSuggested(null)}
+            onClick={() => { setSuggested(null); if (mode === 'single') finishSingle(); }}
           >取消</button>
         </div>
       </div>
