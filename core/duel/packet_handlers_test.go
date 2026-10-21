@@ -5,6 +5,7 @@ import (
 	"testing"
 	"unicode/utf16"
 
+	"github.com/sjm1327605995/goygopro/core/packet"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
@@ -22,7 +23,7 @@ func TestJoinGameWrongPasswordReportsCode1(t *testing.T) {
 
 	conn := &recordConn{}
 	dp := &DuelPlayer{Conn: conn}
-	c := NewPacketContext(dp, []byte{network.CTOS_JOIN_GAME})
+	c := packet.NewPacketContext(dp, []byte{network.CTOS_JOIN_GAME})
 	var pkt protocol.CTOSJoinGame
 	copy(pkt.Pass[:], utf16.Encode([]rune("wrongpass")))
 	pkt.Version = PRO_VERSION

@@ -1,4 +1,4 @@
-package duel
+package data
 
 import "github.com/sjm1327605995/goygopro/ocgcore"
 
@@ -13,15 +13,16 @@ type CardDataC struct {
 }
 
 // DuelCode 对应原版 CardDataC::get_duel_code()（data_manager.h:60-62）。
-func (c *CardDataC) DuelCode() uint32 {
-	if c.RuleCode != 0 {
-		return c.RuleCode
+func (card *CardDataC) DuelCode() uint32 {
+	if card.RuleCode != 0 {
+		return card.RuleCode
 	}
-	if c.Alias != 0 {
-		return c.Alias
+	if card.Alias != 0 {
+		return card.Alias
 	}
-	return c.Code
+	return card.Code
 }
+
 type CardString struct {
 	Name string
 	Text string

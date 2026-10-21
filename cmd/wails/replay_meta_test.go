@@ -1,7 +1,7 @@
 package main
 
 // 波 I：ReplayInfo / ExportReplayDeck 绑定测试。
-// 手工合成 .yrp（YRP1 头 + LZMA1 裸流，格式对齐 core/duel/replay.go）：
+// 手工合成 .yrp（YRP1 头 + LZMA1 裸流，格式对齐 core/replay/replay.go）：
 // 标准对局含双方卡组（非 UNIFORM → 录像时间取 seed 字段）、单机录像各一盘，
 // 验证元信息读取与卡组导出（menu_handler.cpp:293-319 / 519-559 的 Go 对应面）。
 
@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/sjm1327605995/goygopro/core/duel"
+	"github.com/sjm1327605995/goygopro/core/replay"
 	"github.com/ulikunitz/xz/lzma"
 )
 
@@ -54,9 +54,9 @@ func writeYRP1File(t *testing.T, path string, version, flag, seed uint32, replay
 		t.Fatal("lzma output too short")
 	}
 	hdr := make([]byte, 32)
-	binary.LittleEndian.PutUint32(hdr[0:], duel.REPLAY_ID_YRP1)
+	binary.LittleEndian.PutUint32(hdr[0:], replay.REPLAY_ID_YRP1)
 	binary.LittleEndian.PutUint32(hdr[4:], version)
-	binary.LittleEndian.PutUint32(hdr[8:], flag|duel.REPLAY_COMPRESSED)
+	binary.LittleEndian.PutUint32(hdr[8:], flag|replay.REPLAY_COMPRESSED)
 	binary.LittleEndian.PutUint32(hdr[12:], seed)
 	binary.LittleEndian.PutUint32(hdr[16:], uint32(len(replayData)))
 	copy(hdr[24:29], out[0:5])
@@ -179,7 +179,7 @@ func TestExportReplayDeckBinding(t *testing.T) {
 	d = append(d, lbuf...)
 	d = append(d, script...)
 	smDir := t.TempDir()
-	writeYRP1File(t, filepath.Join(smDir, "single_test.yrp"), 0x12d0, duel.REPLAY_SINGLE_MODE, 1, d)
+	writeYRP1File(t, filepath.Join(smDir, "single_test.yrp"), 0x12d0, replay.REPLAY_SINGLE_MODE, 1, d)
 	a2 := &App{replayDir: smDir, deckDir: t.TempDir()}
 	if res := a2.ExportReplayDeck("single_test.yrp"); res["success"] != false {
 		t.Fatalf("single-mode export should fail: %v", res)

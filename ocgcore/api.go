@@ -120,9 +120,8 @@ func Init(opts ...Option) error {
 	ocgApi.scriptReader = ocgApi.defaultScriptReader
 	ocgApi.cardReader = ocgApi.defaultCardReader
 	ocgApi.messageHandler = ocgApi.defaultOnMessageHandler
-	API = ocgApi
 	for _, opt := range opts {
-		opt(API)
+		opt(ocgApi)
 	}
 
 	var err error
@@ -134,11 +133,19 @@ func Init(opts ...Option) error {
 		}
 	}
 	if err != nil {
+		// 加载失败时不发布 API：此时所有函数字段都是 nil，调用方若拿全局
+		// API 继续用会在 purego 回调里 nil 解引用。保持 API == nil 让
+		// "未初始化"一目了然（Init 的返回值也会报告错误）。
+		API = nil
 		return fmt.Errorf("failed to load ocgcore library: %w", err)
 	}
 
 	registerFunctions(ocgApi, ocgApi.handle)
 	ocgApi.SetCallback()
+	// 动态库加载与回调注册完成后再发布全局 API——纯 go 回调
+	// （scriptReaderCallback 等）运行期通过全局 API 分派，提前赋值会让
+	// 一次失败的 Init 留下一批 nil 函数字段的半成品实例。
+	API = ocgApi
 	return nil
 }
 
@@ -159,6 +166,20 @@ func (o *OCGApi) Dispose() {
 // Internal C-compatible callbacks (invoked by the ocgcore .so/.dll)
 // ------------------------------------------------------------------
 
+// scriptReaderKeepAlive 保住 scriptReaderCallback 最近一次返回给 C 的脚本
+// 缓冲区：回调返回后切片在 Go 侧再无引用，GC 随时可回收那块内存，而 C 端
+// 拿到的指针在其完成脚本内容拷贝之前都是悬垂指针（当前 ocgcore 在调用
+// 当次内拷贝，但这对引擎实现是未写明的假设）。串行保留上一份即可满足
+// "拷贝完成前内存有效"——引擎同一时间只处理一个脚本读取请求。
+//
+// 并发前提（当前成立，改动前必须重新评估）：本变量无同步，读写发生在
+// purego 回调线程；它线程安全当且仅当脚本读取回调全局串行——ocgcore
+// 每个 duel 单线程处理脚本加载，且本项目的使用形态（单房间服务器 / 单
+// 会话单人模式）不会并发驱动多个 duel 初始化。若未来支持多 duel 并发
+// 加载脚本，必须为 keepAlive 加锁（或对每个返回缓冲单独注册 runtime
+// finalizer 保活），否则即 data race。
+var scriptReaderKeepAlive []byte
+
 // C signature: unsigned char* script_reader(const char* name, int* len)
 func scriptReaderCallback(scriptName *byte, length *int32) uintptr {
 	name := cStringToGoString(scriptName)
@@ -168,6 +189,7 @@ func scriptReaderCallback(scriptName *byte, length *int32) uintptr {
 		return 0
 	}
 	*length = int32(len(data))
+	scriptReaderKeepAlive = data
 	return uintptr(unsafe.Pointer(&data[0]))
 }
 
@@ -233,13 +255,11 @@ func cStringToGoString(p *byte) string {
 	if p == nil {
 		return ""
 	}
-	var s []byte
-	for {
-		if *p == 0 {
-			break
-		}
-		s = append(s, *p)
-		p = (*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(p)) + 1))
+	// 先扫描 NUL 定界（strlen），再一次分配拷贝——比逐字节 append 少
+	// O(n²) 的扩容与复制。C 字符串内存只读，unsafe 块不越界访问。
+	n := 0
+	for q := p; *q != 0; q = (*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(q)) + 1)) {
+		n++
 	}
-	return string(s)
+	return unsafe.String(p, n)
 }

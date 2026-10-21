@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sjm1327605995/goygopro/core/data"
+	"github.com/sjm1327605995/goygopro/core/replay"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
@@ -24,7 +26,7 @@ func TestTagUpdateDeckAllocatesPDeck(t *testing.T) {
 		t.Fatalf("空卡组不应报错：DeckError=%d", td.DeckError[0])
 	}
 	// 重复上传必须清空重载（原版 LoadDeck 入口即 deck.clear()），不得叠加。
-	td.pDeck[0].Main = append(td.pDeck[0].Main, &CardDataC{})
+	td.pDeck[0].Main = append(td.pDeck[0].Main, &data.CardDataC{})
 	td.UpdateDeck(dp, make([]byte, 8))
 	if len(td.pDeck[0].Main) != 0 {
 		t.Fatal("重复 UpdateDeck 未清空旧卡组（原版 deck.clear() 语义缺失）")
@@ -49,7 +51,7 @@ func TestTagGetResponseTruncatesOversize(t *testing.T) {
 		t.Fatal("create_duel returned nil")
 	}
 	defer td.Duel.End()
-	td.lastReplay = NewReplay()
+	td.lastReplay = replay.NewReplay()
 
 	dp := td.players[0]
 	dp.Type = 0

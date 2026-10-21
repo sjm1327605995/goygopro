@@ -8,7 +8,6 @@ package main
 import (
 	"crypto/rand"
 	"encoding/binary"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -103,29 +102,29 @@ func parseSingleMessage(path string) string {
 // select_* 提示 → 玩家响应 → …… → single:ended）。
 func (a *App) StartSingle(name string, returnDeckTop bool) map[string]interface{} {
 	if a.client != nil && a.client.IsConnected() {
-		return map[string]interface{}{"success": false, "error": "在线对局进行中，无法启动单人模式"}
+		return failResultf("在线对局进行中，无法启动单人模式")
 	}
 	a.singleMu.Lock()
 	if a.single != nil {
 		a.singleMu.Unlock()
-		return map[string]interface{}{"success": false, "error": "单人模式已在进行中"}
+		return failResultf("单人模式已在进行中")
 	}
 	a.singleMu.Unlock()
 
 	// ocgcore 需要先初始化卡数据库/脚本根（与 PlayReplay/StartLocalServer 相同）
 	if err := duel.InitServerData(a.dbPath, a.scriptPath, "."); err != nil {
-		return map[string]interface{}{"success": false, "error": fmt.Sprintf("init error: %v", err)}
+		return failResultf("init error: %v", err)
 	}
 
 	name = filepath.Base(name)
 	if _, err := os.Stat(filepath.Join(a.singleDir, name)); err != nil {
-		return map[string]interface{}{"success": false, "error": "找不到谜题脚本：" + name}
+		return failResultf("找不到谜题脚本：%s", name)
 	}
 
 	// 随机种子（SinglePlayThread 的 std::seed_seq）
 	var seedBytes [32]byte
 	if _, err := rand.Read(seedBytes[:]); err != nil {
-		return map[string]interface{}{"success": false, "error": err.Error()}
+		return failResult(err)
 	}
 	var seed [8]uint32
 	for i := range seed {
@@ -147,7 +146,7 @@ func (a *App) StartSingle(name string, returnDeckTop bool) map[string]interface{
 		if ss.Duel != nil {
 			ss.Duel.End()
 		}
-		return map[string]interface{}{"success": false, "error": err.Error()}
+		return failResult(err)
 	}
 
 	run := &singleRun{
@@ -163,9 +162,11 @@ func (a *App) StartSingle(name string, returnDeckTop bool) map[string]interface{
 		if ss.Duel != nil {
 			ss.Duel.End()
 		}
-		return map[string]interface{}{"success": false, "error": "单人模式已在进行中"}
+		return failResultf("单人模式已在进行中")
 	}
 	a.single = run
+	// 新谜题开始，上一场留存的待保存录像作废（防旧确认弹窗在新局中误存）
+	a.lastSingleReplay = nil
 	a.singleMu.Unlock()
 
 	emit := func(eventName string, data interface{}) {
@@ -191,9 +192,14 @@ func (a *App) StartSingle(name string, returnDeckTop bool) map[string]interface{
 
 		// 谜题布场后的权威快照：query_field_info 直接产出一条完整的
 		// MSG_RELOAD_FIELD 消息（ocgapi.cpp:319-338）；info[0] 是 opcode，
-		// body 从 rule 字节开始。缓冲尾部是残留，按 consumed+1 截断。
+		// body 从 rule 字节开始。切片长度 = 引擎实际写入值（输出随连锁数
+		// 变化，见 ocgcore.Duel.QueryFieldInfo 的契约说明），不再含残留尾部。
 		info := ss.Duel.QueryFieldInfo()
-		fields, consumed, infoOK := parseReloadFieldBody(info[1:])
+		var fields map[string]interface{}
+		consumed, infoOK := 0, false
+		if len(info) > 1 {
+			fields, consumed, infoOK = parseReloadFieldBody(info[1:])
+		}
 
 		// 开场事件（在线路径由服务器 MSG_START 合成；键名与 PlayReplay 一致）
 		startPayload := map[string]interface{}{
@@ -242,7 +248,7 @@ func (a *App) StartSingle(name string, returnDeckTop bool) map[string]interface{
 		}
 	}()
 
-	return map[string]interface{}{"success": true, "name": name}
+	return okResult("name", name)
 }
 
 // StopSingle 结束进行中的谜题（原版 btnLeaveGame → SingleMode::StopPlay：
@@ -280,15 +286,21 @@ func (a *App) SaveSingleReplay(name string) map[string]interface{} {
 	rp := a.lastSingleReplay
 	a.singleMu.Unlock()
 	if rp == nil {
-		return map[string]interface{}{"success": false, "error": "没有可保存的单机录像"}
+		return failResultf("没有可保存的单机录像")
 	}
 	if strings.TrimSpace(name) == "" {
 		name = time.Now().Format("2006-01-02 15-04-05")
 	}
 	if !rp.SaveReplay(name) {
-		return map[string]interface{}{"success": false, "error": "保存录像失败"}
+		return failResultf("保存录像失败")
 	}
-	return map[string]interface{}{"success": true, "name": name + ".yrp"}
+	// 保存成功后清掉句柄：同一录像不应被重复落盘覆盖
+	a.singleMu.Lock()
+	if a.lastSingleReplay == rp {
+		a.lastSingleReplay = nil
+	}
+	a.singleMu.Unlock()
+	return okResult("name", name+".yrp")
 }
 
 // refreshLocations 把双方 mzone/szone/hand 同步成 MSG_UPDATE_DATA 事件

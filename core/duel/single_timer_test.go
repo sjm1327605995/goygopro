@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sjm1327605995/goygopro/core/replay"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
@@ -32,7 +33,7 @@ func TestSingleGetResponseDeductsTimeBank(t *testing.T) {
 			sd.Duel.End()
 		}
 	}()
-	sd.lastReplay = NewReplay()
+	sd.lastReplay = replay.NewReplay()
 	sd.HostInfo.TimeLimit = 180
 	sd.timeLimit = [2]int16{100, 100}
 	sd.lastResponse = 0

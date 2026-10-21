@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/go-restruct/restruct"
+	"github.com/sjm1327605995/goygopro/core/codec"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
@@ -15,7 +15,7 @@ import (
 // ------------------------------------------------------------------
 
 // handleSTOCPacket 按 stocBindings 表分发一个 STOC 包：
-// 查表 → restruct.Unpack(包结构体) → decorate 组前端 map → emit。
+// 查表 → codec.Unmarshal(包结构体) → decorate 组前端 map → emit。
 // 表内没有的类型记日志后丢弃（以前静默丢弃，便于发现协议偏差）。
 func (c *WailsDuelClient) handleSTOCPacket(proto byte, payload []byte) {
 	utils.NetLogf("client", "recv STOC %s (0x%02x) len=%d", network.STOCName(proto), proto, len(payload))
@@ -39,8 +39,9 @@ func (c *WailsDuelClient) handleSTOCPacket(proto byte, payload []byte) {
 	msg := binding.newMsg()
 	// Unpack 失败（包体截断/协议偏移错位）时丢弃整包并记日志：零值/半解析
 	// 结构体 emit 出去会给前端伪造事件（如 lp0=0 的 duel:start），比丢包更糟。
-	// 与 handleGameMessage 的错误路径一致。
-	if err := restruct.Unpack(payload, binary.LittleEndian, msg); err != nil {
+	// 与 handleGameMessage 的错误路径一致。codec.Unmarshal 容忍尾部多余字节
+	// （与旧 restruct.Unpack 同语义），截断/类型不符才报错。
+	if err := codec.Unmarshal(payload, msg); err != nil {
 		log.Printf("[WailsDuelClient] STOC %s (0x%02x) unpack failed (%d bytes): %v — packet dropped",
 			binding.name, proto, len(payload), err)
 		return

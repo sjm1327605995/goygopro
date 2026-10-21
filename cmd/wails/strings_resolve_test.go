@@ -35,9 +35,10 @@ func TestResolveDescCardStrings(t *testing.T) {
 		t.Fatalf("card desc resolved to empty text")
 	}
 
-	// 39015(任意 code≥4000 且带 str1 的卡)：desc id = (39015<<4)|1 → texts.str1。
-	// 注意 code<4000 的卡 ((code<<4)|1) < 64000 会落进系统字符串分支（与原版
-	// GetDesc 一致的已知歧义），所以测试必须用大卡号。
+	// 39015(任意 code≥128 且带 str1 的卡)：desc id = (39015<<4)|1 → texts.str1。
+	// 注意 code<128 的卡 ((code<<4)|1) < 2048 会落进系统字符串分支——与原版
+	// GetDesc 的 MIN_CARD_ID<<4(=2048) 阈值一致（data_manager.cpp:263）；
+	// 测试用大卡号确保走卡库分支。
 	const withStr = uint32(39015)
 	res = a.ResolveDesc((withStr << 4) | 1)
 	if !res["success"].(bool) || res["text"].(string) == "" {
@@ -49,10 +50,10 @@ func TestResolveDescCardStrings(t *testing.T) {
 }
 
 // TestResolveDescSystemStringAndMisses covers the two non-card branches:
-// system strings (< 64000) resolve against the embedded common subset
-// (strings.conf excerpt shared with frontend domain/sys_strings.ts); ids
-// outside the subset still come back empty so the frontend can fall back;
-// plus unknown codes / bad offsets.
+// system strings (< MIN_CARD_ID<<4 = 2048, per data_manager.cpp:263) resolve
+// against the embedded common subset (strings.conf excerpt shared with
+// frontend domain/sys_strings.ts); ids outside the subset still come back
+// empty so the frontend can fall back; plus unknown codes / bad offsets.
 func TestResolveDescSystemStringAndMisses(t *testing.T) {
 	a := &App{cardDB: openTestCardDB(t)}
 
@@ -77,7 +78,7 @@ func TestResolveDescSystemStringAndMisses(t *testing.T) {
 		t.Fatalf("unknown card must not return text: %+v", res)
 	}
 
-	res = a.ResolveDesc(0) // 边界：恰好等于 64000 之下
+	res = a.ResolveDesc(0) // 边界：最小的系统字符串 id
 	if !res["success"].(bool) || res["text"].(string) != "" {
 		t.Fatalf("desc 0 must be treated as system string: %+v", res)
 	}

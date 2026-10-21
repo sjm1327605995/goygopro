@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf16"
 
+	"github.com/sjm1327605995/goygopro/core/data"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
@@ -174,8 +175,8 @@ func TestTwoClientsCreateJoinAndDuel(t *testing.T) {
 // ensureTwoClientEngine 加载卡库与 ocgcore（幂等，整个测试进程只初始化一次）。
 func ensureTwoClientEngine(t *testing.T, root string) {
 	t.Helper()
-	if DefaultDataManager.GetData(89631139) == nil {
-		if err := DefaultDataManager.LoadDB(filepath.Join(root, "cards.cdb")); err != nil {
+	if data.DefaultDataManager.GetData(89631139) == nil {
+		if err := data.DefaultDataManager.LoadDB(filepath.Join(root, "cards.cdb")); err != nil {
 			t.Fatalf("load cards.cdb: %v", err)
 		}
 	}
@@ -184,7 +185,7 @@ func ensureTwoClientEngine(t *testing.T, root string) {
 			ocgcore.WithRootPath(root),
 			ocgcore.WithScriptDirectory(filepath.Join(root, "script")),
 			ocgcore.WithCardReader(func(cardId uint32) *ocgcore.CardData {
-				return DefaultDataManager.GetData(cardId)
+				return data.DefaultDataManager.GetData(cardId)
 			}),
 		); err != nil {
 			t.Skipf("ocgcore library not available: %v", err)

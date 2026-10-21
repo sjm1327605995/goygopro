@@ -49,13 +49,13 @@ func NetLogf(module string, format string, args ...any) {
 
 // WideString 把 UTF-16 数组解码为 Go 字符串（截断到首个 NUL）。
 // 供日志埋点打印玩家名/房间名等协议字符串字段。
-func WideString(s []uint16) string {
-	end := len(s)
-	for i, v := range s {
-		if v == 0 {
-			end = i
+func WideString(chars []uint16) string {
+	end := len(chars)
+	for idx, ch := range chars {
+		if ch == 0 {
+			end = idx
 			break
 		}
 	}
-	return string(utf16.Decode(s[:end]))
+	return string(utf16.Decode(chars[:end]))
 }

@@ -10,10 +10,10 @@ import (
 // OnMessage 的日志分级：默认写 stderr；SetLogOutput 重定向；
 // SetDebugLogging(false) 静默（引擎脚本消息量大有噪音，需可关）。
 func TestLogEngineMessage(t *testing.T) {
-	savedDebug := debugLog
+	savedDebug := debugLog.Load()
 	t.Cleanup(func() {
-		logWriter = os.Stderr
-		debugLog = savedDebug
+		SetLogOutput(os.Stderr)
+		debugLog.Store(savedDebug)
 	})
 
 	var buf bytes.Buffer
@@ -33,7 +33,10 @@ func TestLogEngineMessage(t *testing.T) {
 	}
 
 	SetLogOutput(nil)
-	if logWriter != os.Stderr {
+	logWriterMu.RLock()
+	cur := logWriter
+	logWriterMu.RUnlock()
+	if cur != os.Stderr {
 		t.Fatal("SetLogOutput(nil) must restore stderr")
 	}
 }

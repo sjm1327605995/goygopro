@@ -7,6 +7,7 @@ import (
 
 	"github.com/panjf2000/gnet/v2"
 	"github.com/panjf2000/gnet/v2/pkg/logging"
+	"github.com/sjm1327605995/goygopro/core/packet"
 	"github.com/sjm1327605995/goygopro/core/utils"
 )
 
@@ -38,14 +39,15 @@ func (s *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	}
 	utils.NetLogf("server", "accept connection from %s", c.RemoteAddr().String())
 	atomic.AddInt32(&s.connected, 1)
-	codec := new(SimpleCodec)
-	codec.Player = &DuelPlayer{
+	// 连接上下文直接存 *DuelPlayer（SimpleCodec 只做帧解码、不持有玩家，
+	// 见 core/packet/proto.go）。
+	player := &DuelPlayer{
 		ID:    time.Now().Format(time.RFC3339Nano),
 		Game:  nil,
 		Conn:  c,
 		State: 0,
 	}
-	c.SetContext(codec)
+	c.SetContext(player)
 	return
 }
 
@@ -57,10 +59,10 @@ func (s *Server) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 	atomic.AddInt32(&s.connected, -1)
 	// TCP 断线（未发送 CTOS_LEAVE_GAME）也要把玩家移出房间，
 	// 否则房间会一直等待一个永远不会再响应的玩家。
-	if codec, ok := c.Context().(*SimpleCodec); ok && codec != nil && codec.Player != nil {
+	if player, ok := c.Context().(*DuelPlayer); ok && player != nil {
 		utils.NetLogf("server", "connection closed: remote=%s player=%q err=%v",
-			c.RemoteAddr().String(), utils.WideString(codec.Player.Name[:]), err)
-		codec.Player.leaveGameOnce()
+			c.RemoteAddr().String(), player.LogName(), err)
+		player.leaveGameOnce()
 	}
 	// Note: we do NOT shut down the server when all connections close,
 	// because this is an embedded server that should stay alive until
@@ -69,7 +71,8 @@ func (s *Server) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 }
 
 func (s *Server) OnTraffic(c gnet.Conn) (action gnet.Action) {
-	codec := c.Context().(*SimpleCodec)
+	var codec packet.SimpleCodec
+	player := c.Context().(*DuelPlayer)
 	for {
 		data, finish, err := codec.Decode(c)
 		if err != nil {
@@ -79,9 +82,12 @@ func (s *Server) OnTraffic(c gnet.Conn) (action gnet.Action) {
 			break
 		}
 		if len(data) == 0 {
-			return gnet.None
+			// 零长度包（Decode 已消耗其长度头）：跳过并继续解析同一缓冲区
+			// 的后续包。不得 return——gnet 只在新的可读事件再次回调
+			// OnTraffic，return 会把已到达的后续包滞留到客户端下次发包。
+			continue
 		}
-		codec.Player.HandleCTOSPacket(data)
+		player.HandleCTOSPacket(data)
 	}
 	return
 }

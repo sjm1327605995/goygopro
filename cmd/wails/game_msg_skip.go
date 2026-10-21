@@ -9,8 +9,8 @@ import (
 
 // skipEngineMessageBody advances pbuf past the body of an engine message that
 // has no entry in engineBindings (engine_bindings.go). Most message layouts now
-// live in that table as restruct structs; this residual switch only covers
-// messages whose body restruct cannot express and that have no UI consumer。
+// live in that table as codec-decoded structs; this residual switch only covers
+// messages whose body codec cannot express and that have no UI consumer。
 // It mirrors the skip offsets of the C++ ReplayMode::ReplayAnalyze
 // (source/ygopro/gframe/replay_mode.cpp) so the parser never loses message
 // alignment, even for messages the UI ignores.

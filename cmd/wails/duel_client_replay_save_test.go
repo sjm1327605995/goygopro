@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sjm1327605995/goygopro/core/duel"
+	"github.com/sjm1327605995/goygopro/core/replay"
 )
 
 // buildReplayPayload 按服务器实际发送的字节布局构造 STOC_REPLAY 包体：
@@ -38,7 +38,7 @@ func TestSTOCReplayCachedAndNamed(t *testing.T) {
 	// 2020-01-02 03:04:05 UTC（文件名按本地时区格式化，与 gframe 一致）
 	ts := uint32(time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC).Unix())
 	wantName := time.Unix(int64(ts), 0).Format("2006-01-02 15-04-05")
-	payload := buildReplayPayload(duel.REPLAY_ID_YRP2, duel.REPLAY_UNIFORM, 42, ts, []byte{0xde, 0xad})
+	payload := buildReplayPayload(replay.REPLAY_ID_YRP2, replay.REPLAY_UNIFORM, 42, ts, []byte{0xde, 0xad})
 
 	c.handleSTOCPacket(byte(0x17) /*STOC_REPLAY*/, payload)
 
@@ -54,7 +54,7 @@ func TestSTOCReplayCachedAndNamed(t *testing.T) {
 
 	// 非 UNIFORM 的旧录像：Seed 即开始时间
 	emitted = nil
-	payload2 := buildReplayPayload(duel.REPLAY_ID_YRP1, 0, ts, 0, []byte{0x01})
+	payload2 := buildReplayPayload(replay.REPLAY_ID_YRP1, 0, ts, 0, []byte{0x01})
 	c.handleSTOCPacket(0x17, payload2)
 	if emitted == nil || emitted["name"] != wantName {
 		t.Errorf("non-uniform replay should derive name from seed, got %v", emitted)
@@ -80,7 +80,7 @@ func TestSaveReplayWritesFile(t *testing.T) {
 		t.Fatal("saving without a received replay must fail")
 	}
 
-	payload := buildReplayPayload(duel.REPLAY_ID_YRP2, duel.REPLAY_UNIFORM, 1, 2, []byte{0xaa, 0xbb, 0xcc})
+	payload := buildReplayPayload(replay.REPLAY_ID_YRP2, replay.REPLAY_UNIFORM, 1, 2, []byte{0xaa, 0xbb, 0xcc})
 	c.handleSTOCPacket(0x17, payload)
 
 	saved, err := c.SaveReplay("my duel")

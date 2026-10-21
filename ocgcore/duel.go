@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"sync/atomic"
 )
 
 // ErrorHandler 错误处理器函数类型
@@ -14,39 +15,49 @@ type ErrorHandler func(message string)
 // 引擎日志（OnMessage 收到的 ocgcore 脚本/引擎消息）输出配置。
 // 默认写到 stderr（原版 ygocore 打 stdout，服务化后归并进 stderr 一路），
 // DebugLog=false 时静默——这些消息多为脚本 warn，量大有噪音。
+// 读写者与引擎回调线程（message_handler 在引擎 goroutine 上触发
+// logEngineMessage）并发，两个配置项分别用互斥锁/原子位保护。
 var (
-	logWriter io.Writer = os.Stderr
-	debugLog              = true
+	logWriterMu sync.RWMutex
+	logWriter   io.Writer = os.Stderr
+	debugLog    atomic.Bool
 )
+
+func init() {
+	debugLog.Store(true)
+}
 
 // SetLogOutput 重定向引擎日志输出（传 nil 恢复默认 stderr）。
 func SetLogOutput(w io.Writer) {
 	if w == nil {
 		w = os.Stderr
 	}
+	logWriterMu.Lock()
 	logWriter = w
+	logWriterMu.Unlock()
 }
 
 // SetDebugLogging 开关引擎日志输出（默认开，保持原有"总是打印"的行为）。
 func SetDebugLogging(on bool) {
-	debugLog = on
+	debugLog.Store(on)
 }
 
-var engineLogger = log.New(logWriter, "[ocgcore] ", log.LstdFlags|log.Lmsgprefix)
+var engineLogger = log.New(os.Stderr, "[ocgcore] ", log.LstdFlags|log.Lmsgprefix)
 
 func logEngineMessage(message string) {
-	if !debugLog {
+	if !debugLog.Load() {
 		return
 	}
-	// logWriter 可能被 SetLogOutput 替换，惰性同步输出目标。
+	// logWriter 可能被 SetLogOutput 替换，输出前在锁内同步一次目标。
+	logWriterMu.RLock()
 	engineLogger.SetOutput(logWriter)
+	logWriterMu.RUnlock()
 	engineLogger.Print(message)
 }
 
 // Duel 决斗结构体
 type Duel struct {
 	duelPtr      uintptr
-	buffer       []byte
 	errorMu      sync.Mutex
 	errorHandler ErrorHandler
 }
@@ -121,7 +132,6 @@ func newDuel(duelPtr uintptr) *Duel {
 	}
 	d := &Duel{
 		duelPtr: duelPtr,
-		buffer:  make([]byte, 4096),
 	}
 
 	duelLock.Lock()
@@ -198,12 +208,22 @@ func (d *Duel) QueryCard(player uint8, location uint8, sequence uint8, flag int3
 
 }
 
-// QueryFieldInfo 查询场地信息
+// QueryFieldInfo 查询场地信息，返回引擎实际写入的字节（新分配，调用方可
+// 长期持有；info[0] 是 MSG_RELOAD_FIELD opcode）。
+//
+// 缓冲契约：ocgcore 的 query_field_info（ocgapi.cpp）输出随
+// core.current_chain 线性增长（基础约 94 字节，每条连锁再 +15 字节：
+// code4 + info_location4 + controler1 + location1 + sequence1 + desc4），
+// C 实现自身不做长度截断。因此这里用 4096 字节缓冲中转（引擎常规输出
+// 远小于此），再按返回值截断——调用方不可假设定长，也不得把本函数返回
+// 的切片连同容量一起交给 C 再写。
 func (d *Duel) QueryFieldInfo() []byte {
-	API.QueryFieldInfo(d.duelPtr, d.buffer)
-	result := make([]byte, 256)
-	copy(result, d.buffer[:256])
-	return result
+	buf := make([]byte, 4096)
+	n := API.QueryFieldInfo(d.duelPtr, buf)
+	if n < 0 || int(n) > len(buf) {
+		n = 0
+	}
+	return buf[:n]
 }
 
 // End 结束决斗
@@ -219,7 +239,6 @@ func (d *Duel) GetNativePtr() uintptr {
 
 // Dispose 释放资源
 func (d *Duel) Dispose() {
-	d.buffer = nil
 	duelLock.Lock()
 	delete(duels, d.duelPtr)
 	duelLock.Unlock()
@@ -229,9 +248,10 @@ func (d *Duel) Dispose() {
 // 调用，可能与 SetErrorHandler 并发，故 errorHandler 读写都加 errorMu；
 // handler 在锁外调用，避免其在回调里再次触碰 Duel 造成死锁）。
 func (d *Duel) OnMessage(size uint32) {
-	arr := make([]byte, 256)
-	API.GetLogMessage(d.duelPtr, arr)
-	message := string(bytes.TrimRight(arr, "\x00"))
+	// 引擎消息量大（脚本 warn 全走这里），用栈上数组避免每条一次堆分配。
+	var arr [256]byte
+	API.GetLogMessage(d.duelPtr, arr[:])
+	message := string(bytes.TrimRight(arr[:], "\x00"))
 	logEngineMessage(message)
 	d.errorMu.Lock()
 	handler := d.errorHandler

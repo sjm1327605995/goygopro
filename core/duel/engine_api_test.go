@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sjm1327605995/goygopro/core/data"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 )
 
@@ -24,14 +25,14 @@ func TestEngineAPIMatchesVendoredSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := DefaultDataManager.LoadDB(filepath.Join(root, "cards.cdb")); err != nil {
+	if err := data.DefaultDataManager.LoadDB(filepath.Join(root, "cards.cdb")); err != nil {
 		t.Fatal(err)
 	}
 	if err := ocgcore.Init(
 		ocgcore.WithRootPath(root),
 		ocgcore.WithScriptDirectory(filepath.Join(root, "script")),
 		ocgcore.WithCardReader(func(cardId uint32) *ocgcore.CardData {
-			return DefaultDataManager.GetData(cardId)
+			return data.DefaultDataManager.GetData(cardId)
 		}),
 	); err != nil {
 		t.Skipf("ocgcore library not available: %v", err)
