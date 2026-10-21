@@ -7,20 +7,24 @@ import (
 	"testing"
 
 	"github.com/panjf2000/gnet/v2"
+	"github.com/sjm1327605995/goygopro/core/enginemsg"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
 
-// stubConn 满足 gnet.Conn：嵌入空接口以补齐全部方法，仅覆盖 Write 为吞掉写。
+// stubConn 满足 gnet.Conn：嵌入空接口以补齐全部方法，仅覆盖写为吞掉写。
 // 本测试只断言 handler 消费的字节数，写路径一律 no-op，避免真实连接依赖。
+// DuelPlayer.Write 走 AsyncWrite（异步出站），此处 emulate 为同步丢弃。
 type stubConn struct{ gnet.Conn }
 
-func (stubConn) Write(p []byte) (int, error) { return len(p), nil }
+func (stubConn) AsyncWrite(p []byte, _ gnet.AsyncCallback) error { return nil }
+
+func (stubConn) OutboundBuffered() int { return 0 }
 
 // analyzeFakeRoom 用带桩玩家的 SingleDuel 满足 duelRoom 接口，
 // 刷新/胜负/结束钩子全部置空 —— 本测试只断言「handler 消费的字节数
-// 与 engineMsgLayouts 布局一致」，不断言路由内容。
+// 与 enginemsg.EngineMsgLayouts 布局一致」，不断言路由内容。
 type analyzeFakeRoom struct {
 	*SingleDuel
 }
@@ -72,9 +76,9 @@ func TestAnalyzeLayoutMatchesBatchWalker(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/0x%02x", grp.name, msgType), func(t *testing.T) {
 				payload := make([]byte, 64)
 				payload[0] = msgType
-				end, _, win, ok := walkEngineMessage(payload, 1)
+				end, _, win, ok := enginemsg.WalkEngineMessage(payload, 1)
 				if !ok {
-					t.Fatal("walker 不识别该消息（engineMsgLayouts 缺少条目）")
+					t.Fatal("walker 不识别该消息（enginemsg.EngineMsgLayouts 缺少条目）")
 				}
 				want := end - 1
 				if win {
@@ -168,9 +172,9 @@ func TestNewlyRegisteredMessageLayouts(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			payload := append([]byte{tc.typ}, tc.body...)
-			end, _, _, ok := walkEngineMessage(payload, 1)
+			end, _, _, ok := enginemsg.WalkEngineMessage(payload, 1)
 			if !ok {
-				t.Fatal("walker 不识别该消息（engineMsgLayouts 缺少条目）")
+				t.Fatal("walker 不识别该消息（enginemsg.EngineMsgLayouts 缺少条目）")
 			}
 			if got := end - 1; got != len(tc.body) {
 				t.Fatalf("walker 消费 %d 字节，期望 %d（布局登记漂移？）", got, len(tc.body))

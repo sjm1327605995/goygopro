@@ -32,7 +32,7 @@ func main() {
 	if err != nil {
 		logging.Infof("failed to start broadcast: %v", err)
 	} else {
-		duel.BroadcastInstance = bs
+		duel.SetBroadcast(bs)
 		defer bs.Stop()
 	}
 

@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"log"
 
+	"github.com/sjm1327605995/goygopro/core/codec"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol"
@@ -104,7 +106,7 @@ func decorateSelectChain(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any
 	}
 	c.emit("duel:select_chain", selectChainDTO{
 		Player: m.Player,
-		Count:  m.Count,
+		Count:  uint8(m.Count), // codec.Count8 → DTO 的 uint8
 		Forced: anyForced,
 		Chains: chains,
 	})
@@ -174,7 +176,7 @@ func decorateDraw(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) error
 	}
 	c.emit("duel:draw", drawDTO{
 		Player: m.Player,
-		Count:  m.Count,
+		Count:  uint8(m.Count), // codec.Count8 → DTO 的 uint8
 		Cards:  cards,
 	})
 	return nil
@@ -218,16 +220,16 @@ func decorateBattle(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any) err
 }
 
 // updateDataMsg / updateCardMsg 的消息体后面跟 ocgcore 的变长 query blob，
-// restruct 表达不了，decorate 里用 decodeQueryBlobList 消费。
+// 声明式布局表达不了，decorate 里用 decodeQueryBlobList 消费。
 type updateDataMsg struct {
-	Player   uint8 `struct:"uint8"`
-	Location uint8 `struct:"uint8"`
+	Player   uint8
+	Location uint8
 }
 
 type updateCardMsg struct {
-	Player   uint8 `struct:"uint8"`
-	Location uint8 `struct:"uint8"`
-	Sequence uint8 `struct:"uint8"`
+	Player   uint8
+	Location uint8
+	Sequence uint8
 }
 
 func decorateUpdateData(c *WailsDuelClient, _ byte, pbuf *utils.YGOBuffer, msg any) error {
@@ -255,25 +257,25 @@ func decorateUpdateCard(c *WailsDuelClient, _ byte, pbuf *utils.YGOBuffer, msg a
 		card = cards[0]
 	}
 	c.emit("duel:update_card", updateCardDTO{
-		Player:      m.Player,
-		Location:    m.Location,
-		Sequence:    m.Sequence,
+		Player:       m.Player,
+		Location:     m.Location,
+		Sequence:     m.Sequence,
 		queryCardDTO: card,
 	})
 	return nil
 }
 
 // tagSwapMsg 的消息体 = player/mcount/ecount/pcount/hcount 五字节 +
-// topcode(4) + hcount*4 手牌码 + ecount*4 额外码（变长，restruct 表达不了，
-// decorate 里用 pbuf 消费）。布局依据原版 duelclient.cpp:3782-3788 与
+// topcode(4) + hcount*4 手牌码 + ecount*4 额外码（变长，声明式布局表达
+// 不了，decorate 里用 pbuf 消费）。布局依据原版 duelclient.cpp:3782-3788 与
 // tag_duel.cpp 的 RefreshExtra 段。
 type tagSwapMsg struct {
-	Player  uint8 `struct:"uint8"`
-	MCount  uint8 `struct:"uint8"`
-	ECount  uint8 `struct:"uint8"`
-	PCount  uint8 `struct:"uint8"`
-	HCount  uint8 `struct:"uint8"`
-	TopCode int32 `struct:"int32"`
+	Player  uint8
+	MCount  uint8
+	ECount  uint8
+	PCount  uint8
+	HCount  uint8
+	TopCode int32
 }
 
 // decorateTagSwap 转换 MSG_TAG_SWAP（TAG 队友换手）。手牌码/额外码对非当前
@@ -325,232 +327,113 @@ func decorateTagSwap(c *WailsDuelClient, _ byte, pbuf *utils.YGOBuffer, msg any)
 // （引擎缓存命中时会把未变化的字段从 flag 中剔除）。
 // ------------------------------------------------------------------
 
-// query 布局：{flag 位, 消费动作}。顺序即 get_infos 的 if 顺序，不可变。
-// 返回 *queryCardDTO：字段是否出现由 flag 决定（指针 nil → json 省略），
-// 解码越过 blob 边界即整体放弃（返回 nil 走 opaque skip）。
+// queryCardWire 是单个 query blob 体的声明式布局（core/codec），替代原先
+// 的闭包钳制逐字段解析。Flag 之后每个字段用 bit:"N" 声明占用条件（谓词 = 向前的 Flag 字段第 N 位，位号对照各字段注释的 ocgcore QUERY_* 常量），
+// 计数列表（TARGET/OVERLAY/COUNTERS）按引擎布局拆成长度字段 + count 列表。
+// 字段顺序即 get_infos 的 if 顺序，不可变。与 queryCardDTO 的差异：位置类
+// 字段先按原始 uint32 解，toDTO 里再展开成 locPosRefDTO。
+//go:generate codecgen
+type queryCardWire struct {
+	Flag uint32
+
+	Code        *uint32 `bit:"0"` // QUERY_CODE
+	Position    *uint32 `bit:"1"` // QUERY_POSITION（get_info_location，含灵摆覆盖形态）
+	Alias       *uint32 `bit:"2"` // QUERY_ALIAS
+	Type        *uint32 `bit:"3"` // QUERY_TYPE
+	Level       *uint32 `bit:"4"` // 低 16 位等级，高位含灵摆刻度
+	Rank        *uint32 `bit:"5"` // QUERY_RANK
+	Attribute   *uint32 `bit:"6"` // QUERY_ATTRIBUTE
+	Race        *uint32 `bit:"7"` // QUERY_RACE
+	Attack      *int32  `bit:"8"`
+	Defense     *int32  `bit:"9"`
+	BaseAttack  *int32  `bit:"10"`
+	BaseDefense *int32  `bit:"11"`
+	Reason      *uint32 `bit:"12"`
+	ReasonCard  *uint32 `bit:"13"` // 打包 info_location
+	EquipCard   *uint32 `bit:"14"` // 无装备时引擎剔除该位
+
+	TargetCount *uint32   `bit:"15"`                     // QUERY_TARGET_CARD 计数
+	Targets     *[]uint32 `bit:"15" count:"TargetCount"` // 打包 info_location 列表
+	OvlCount    *uint32   `bit:"16"`                    // QUERY_OVERLAY_CARD 计数
+	Overlays    *[]uint32 `bit:"16" count:"OvlCount"`   // 卡号列表
+	CtrCount    *uint32   `bit:"17"`                    // QUERY_COUNTERS 计数
+	Counters    *[]uint32 `bit:"17" count:"CtrCount"`   // 每条 type | count<<16
+
+	Owner  *int32  `bit:"18"`
+	Status *uint32 `bit:"19"`
+	LScale *uint32 `bit:"21"`
+	RScale *uint32 `bit:"22"`
+	Link   *uint32 `bit:"23"` // QUERY_LINK 占两个 u32
+	Marker *uint32 `bit:"23"`
+}
+
+// toDTO 把 wire 解码结果映射成对外 DTO：位置字段展开成 locPosRefDTO，
+// 计数器拆 type/count 两半；谓词未置位的字段保持 nil（json omitempty 省略）。
+func (w *queryCardWire) toDTO() *queryCardDTO {
+	d := &queryCardDTO{
+		Code:        w.Code,
+		Alias:       w.Alias,
+		Type:        w.Type,
+		Level:       w.Level,
+		Rank:        w.Rank,
+		Attribute:   w.Attribute,
+		Race:        w.Race,
+		Attack:      w.Attack,
+		Defense:     w.Defense,
+		BaseAttack:  w.BaseAttack,
+		BaseDefense: w.BaseDefense,
+		Reason:      w.Reason,
+		Owner:       w.Owner,
+		Status:      w.Status,
+		LScale:      w.LScale,
+		RScale:      w.RScale,
+		Link:        w.Link,
+		LinkMarker:  w.Marker,
+	}
+	locPosRefp := func(loc *uint32) *locPosRefDTO {
+		if loc == nil {
+			return nil
+		}
+		v := newLocPosRef(*loc)
+		return &v
+	}
+	d.Position = locPosRefp(w.Position)
+	d.ReasonCard = locPosRefp(w.ReasonCard)
+	d.EquipCard = locPosRefp(w.EquipCard)
+	if w.Targets != nil {
+		entries := make([]*locPosRefDTO, len(*w.Targets))
+		for i, loc := range *w.Targets {
+			v := newLocPosRef(loc)
+			entries[i] = &v
+		}
+		d.Targets = entries
+	}
+	if w.Overlays != nil {
+		d.Overlays = *w.Overlays
+	}
+	if w.Counters != nil {
+		counters := make([]*counterDTO, len(*w.Counters))
+		for i, raw := range *w.Counters {
+			counters[i] = &counterDTO{Type: raw & 0xffff, Count: raw >> 16}
+		}
+		d.Counters = counters
+	}
+	return d
+}
+
+// decodeQueryBody 用 codec 解码单个 query blob 体（flag 起）。
+// 截断/越界（codec 返回带字段定位的 *codec.Error）记录日志并返回 nil，
+// 调用方走 opaque skip；负长度、超长计数等损坏数据同样落到这里而不是 panic。
 func decodeQueryBody(body []byte) *queryCardDTO {
 	if len(body) < 4 {
 		return nil
 	}
-	flag := binary.LittleEndian.Uint32(body[0:4])
-	rest := body[4:]
-	pos := 0
-	card := &queryCardDTO{}
-	// guard：字段消费越过 blob 边界即整体放弃（返回 nil 走 opaque skip）
-	failed := false
-
-	u32 := func() uint32 {
-		// 闭包自带钳制：即使调用点漏写 ensure 也越界读不到（返回 0 并标记
-		// failed），杜绝引擎消息 goroutine 里的切片 panic。
-		var v uint32
-		if pos+4 <= len(rest) {
-			v = binary.LittleEndian.Uint32(rest[pos:])
-			pos += 4
-		} else {
-			failed = true
-		}
-		return v
-	}
-	u32p := func() *uint32 {
-		v := u32()
-		return &v
-	}
-	i32p := func() *int32 {
-		v := int32(u32())
-		return &v
-	}
-	count := func() int {
-		return int(int32(u32()))
-	}
-	// ensure 作为 fast-path 预检保留（提前发现截断、少做无效解析）；
-	// 越界安全性已由上面的闭包钳制保证。
-	ensure := func(n int) {
-		if pos+n > len(rest) {
-			failed = true
-		}
-	}
-	locPosRefp := func() *locPosRefDTO {
-		v := newLocPosRef(u32())
-		return &v
-	}
-
-	if flag&0x01 != 0 { // QUERY_CODE
-		ensure(4)
-		if !failed {
-			card.Code = u32p()
-		}
-	}
-	if !failed && flag&0x02 != 0 { // QUERY_POSITION（get_info_location，含灵摆覆盖形态）
-		ensure(4)
-		if !failed {
-			card.Position = locPosRefp()
-		}
-	}
-	if !failed && flag&0x04 != 0 { // QUERY_ALIAS
-		ensure(4)
-		if !failed {
-			card.Alias = u32p()
-		}
-	}
-	if !failed && flag&0x08 != 0 { // QUERY_TYPE
-		ensure(4)
-		if !failed {
-			card.Type = u32p()
-		}
-	}
-	if !failed && flag&0x10 != 0 { // QUERY_LEVEL（低 16 位等级，高位含灵摆刻度）
-		ensure(4)
-		if !failed {
-			card.Level = u32p()
-		}
-	}
-	if !failed && flag&0x20 != 0 { // QUERY_RANK
-		ensure(4)
-		if !failed {
-			card.Rank = u32p()
-		}
-	}
-	if !failed && flag&0x40 != 0 { // QUERY_ATTRIBUTE
-		ensure(4)
-		if !failed {
-			card.Attribute = u32p()
-		}
-	}
-	if !failed && flag&0x80 != 0 { // QUERY_RACE
-		ensure(4)
-		if !failed {
-			card.Race = u32p()
-		}
-	}
-	if !failed && flag&0x100 != 0 { // QUERY_ATTACK
-		ensure(4)
-		if !failed {
-			card.Attack = i32p()
-		}
-	}
-	if !failed && flag&0x200 != 0 { // QUERY_DEFENSE
-		ensure(4)
-		if !failed {
-			card.Defense = i32p()
-		}
-	}
-	if !failed && flag&0x400 != 0 { // QUERY_BASE_ATTACK
-		ensure(4)
-		if !failed {
-			card.BaseAttack = i32p()
-		}
-	}
-	if !failed && flag&0x800 != 0 { // QUERY_BASE_DEFENSE
-		ensure(4)
-		if !failed {
-			card.BaseDefense = i32p()
-		}
-	}
-	if !failed && flag&0x1000 != 0 { // QUERY_REASON
-		ensure(4)
-		if !failed {
-			card.Reason = u32p()
-		}
-	}
-	if !failed && flag&0x2000 != 0 { // QUERY_REASON_CARD
-		ensure(4)
-		if !failed {
-			card.ReasonCard = locPosRefp()
-		}
-	}
-	if !failed && flag&0x4000 != 0 { // QUERY_EQUIP_CARD（无装备时引擎剔除该位）
-		ensure(4)
-		if !failed {
-			card.EquipCard = locPosRefp()
-		}
-	}
-	if !failed && flag&0x8000 != 0 { // QUERY_TARGET_CARD
-		ensure(4)
-		if !failed {
-			n := count()
-			entries := make([]*locPosRefDTO, 0, n)
-			for i := 0; i < n; i++ {
-				ensure(4)
-				if failed {
-					break
-				}
-				entries = append(entries, locPosRefp())
-			}
-			if !failed {
-				card.Targets = entries
-			}
-		}
-	}
-	if !failed && flag&0x10000 != 0 { // QUERY_OVERLAY_CARD
-		ensure(4)
-		if !failed {
-			n := count()
-			codes := make([]uint32, 0, n)
-			for i := 0; i < n; i++ {
-				ensure(4)
-				if failed {
-					break
-				}
-				codes = append(codes, u32())
-			}
-			if !failed {
-				card.Overlays = codes
-			}
-		}
-	}
-	if !failed && flag&0x20000 != 0 { // QUERY_COUNTERS（每条 type | count<<16）
-		ensure(4)
-		if !failed {
-			n := count()
-			counters := make([]*counterDTO, 0, n)
-			for i := 0; i < n; i++ {
-				ensure(4)
-				if failed {
-					break
-				}
-				raw := u32()
-				counters = append(counters, &counterDTO{Type: raw & 0xffff, Count: raw >> 16})
-			}
-			if !failed {
-				card.Counters = counters
-			}
-		}
-	}
-	if !failed && flag&0x40000 != 0 { // QUERY_OWNER
-		ensure(4)
-		if !failed {
-			card.Owner = i32p()
-		}
-	}
-	if !failed && flag&0x80000 != 0 { // QUERY_STATUS
-		ensure(4)
-		if !failed {
-			card.Status = u32p()
-		}
-	}
-	if !failed && flag&0x200000 != 0 { // QUERY_LSCALE
-		ensure(4)
-		if !failed {
-			card.LScale = u32p()
-		}
-	}
-	if !failed && flag&0x400000 != 0 { // QUERY_RSCALE
-		ensure(4)
-		if !failed {
-			card.RScale = u32p()
-		}
-	}
-	if !failed && flag&0x800000 != 0 { // QUERY_LINK（link + link_marker 各 4 字节）
-		ensure(8)
-		if !failed {
-			card.Link = u32p()
-			card.LinkMarker = u32p()
-		}
-	}
-	if failed {
+	var w queryCardWire
+	if err := codec.Unmarshal(body, &w); err != nil {
+		log.Printf("[decodeQueryBody] 丢弃损坏的 query blob: %v", err)
 		return nil
 	}
-	return card
+	return w.toDTO()
 }
 
 // decodeQueryBlobList 解码 ocgcore query blob 列表；maxBlobs 限制最大解码
@@ -1015,7 +898,7 @@ var engineBindings = map[byte]engineBinding{
 	ocgcore.MSG_UPDATE_DATA:          {name: "UPDATE_DATA", newMsg: func() any { return &updateDataMsg{} }, event: "duel:update_data", decorate: decorateUpdateData},
 	ocgcore.MSG_UPDATE_CARD:          {name: "UPDATE_CARD", newMsg: func() any { return &updateCardMsg{} }, event: "duel:update_card", decorate: decorateUpdateCard},
 	// TAG 队友换手（变长体：5 字节计数 + topcode + hcount*4 手牌码 + ecount*4 额外码）
-	ocgcore.MSG_TAG_SWAP:             {name: "TAG_SWAP", newMsg: func() any { return &tagSwapMsg{} }, event: "duel:tag_swap", decorate: decorateTagSwap},
+	ocgcore.MSG_TAG_SWAP: {name: "TAG_SWAP", newMsg: func() any { return &tagSwapMsg{} }, event: "duel:tag_swap", decorate: decorateTagSwap},
 
 	// ---- 交互提示（结构体直接 emit）----
 	ocgcore.MSG_SELECT_EFFECTYN: {name: "SELECT_EFFECTYN", newMsg: func() any { return &protocol.SelectEffectYNMsg{} }, event: "duel:select_effectyn"},
@@ -1046,8 +929,8 @@ var engineBindings = map[byte]engineBinding{
 	// MSG_RETRY：服务端只重发 RETRY 字节（analyze_shared.go analyzeRetry 不重发
 	// 上一询问），由前端按已记录的最近询问重放（原版 duelclient.cpp:990-1043
 	// 用 last_successful_msg 重跑 ClientAnalyze）。
-	ocgcore.MSG_RETRY:         {name: "RETRY", event: "duel:retry"},
-	ocgcore.MSG_REVERSE_DECK:  {name: "REVERSE_DECK", event: "duel:reverse_deck"},
+	ocgcore.MSG_RETRY:        {name: "RETRY", event: "duel:retry"},
+	ocgcore.MSG_REVERSE_DECK: {name: "REVERSE_DECK", event: "duel:reverse_deck"},
 
 	// ---- 展示/标记消息（波 B：原先只对齐字节流，现在完整 emit）----
 	ocgcore.MSG_HINT:             {name: "HINT", newMsg: func() any { return &protocol.HintMsg{} }, event: "duel:hint"},

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sjm1327605995/goygopro/core/duel"
+	"github.com/sjm1327605995/goygopro/core/data"
 )
 
 // TestLFListContent：卡组编辑器的禁限数据接口。写入带 禁/限/准限 三档的
@@ -18,13 +18,13 @@ func TestLFListContent(t *testing.T) {
 	if err := os.WriteFile(conf, []byte(body), 0o644); err != nil {
 		t.Fatalf("write conf: %v", err)
 	}
-	duel.DeckManager.LoadLFListSingle(conf)
-	duel.DeckManager.LoadLFList()
+	data.DeckManager.LoadLFListSingle(conf)
+	data.DeckManager.LoadLFList()
 
-	var testList *duel.LFList
-	for i := range duel.DeckManager.LFList {
-		if duel.DeckManager.LFList[i].ListName == "Test List" {
-			testList = &duel.DeckManager.LFList[i]
+	var testList *data.LFList
+	for i := range data.DeckManager.LFList {
+		if data.DeckManager.LFList[i].ListName == "Test List" {
+			testList = &data.DeckManager.LFList[i]
 		}
 	}
 	if testList == nil {

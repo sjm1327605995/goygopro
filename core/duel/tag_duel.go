@@ -5,11 +5,21 @@ import (
 	"slices"
 	"time"
 
+	"github.com/sjm1327605995/goygopro/core/data"
+	"github.com/sjm1327605995/goygopro/core/replay"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
+
+// 卡查询数据第 4 字节的「公开」标记：原版 tag_duel.cpp:1484/1490 的
+// pbufw[3] & 0x80，未公开的卡码就地抹零后才转发给其他玩家。
+const cardCodePublicFlag = 0x80
+
+// 需要向其余座位重发刷新数据的区域掩码：原版 tag_duel.cpp:1707 的字面量
+// 0x90，即 LOCATION_GRAVE|LOCATION_OVERLAY（ocgcore common.h:51/54）。
+const locationPublicResendMask = 0x90
 
 func newTagDuel() *TagDuel {
 	td := &TagDuel{DuelMode: DuelMode{
@@ -31,203 +41,121 @@ type TagDuel struct {
 	turnCount uint8
 }
 
-func (s *TagDuel) JoinGame(dp *DuelPlayer, pkt *protocol.CTOSJoinGame, isCreator bool) {
-	if !checkJoinAllowed(s, dp, pkt, isCreator) {
-		return
-	}
-	dp.Game = s
-	if s.players[0] == nil && s.players[1] == nil && s.players[2] == nil && s.players[3] == nil && len(s.Observers) == 0 {
-		s.HostPlayer = dp
-	}
-	var joinGamePkt protocol.STOCJoinGame
-	joinGamePkt.Info = s.HostInfo
-	var typeChangePkt protocol.STOCTypeChange
-	if s.HostPlayer == dp {
-		typeChangePkt.Type = 0x10
-	} else {
-		typeChangePkt.Type = 0
-	}
-	if s.players[0] == nil || s.players[1] == nil || s.players[2] == nil || s.players[3] == nil {
-		var playerEnterPkt protocol.STOCHsPlayerEnter
-		copy(playerEnterPkt.Name[:], dp.Name[:])
-		var pos uint8
-		if s.players[0] == nil {
-			pos = 0
-		} else if s.players[1] == nil {
-			pos = 1
-		} else if s.players[2] == nil {
-			pos = 2
-		} else {
-			pos = 3
-		}
-		playerEnterPkt.Pos = pos
-		for i := 0; i < 4; i++ {
-			if s.players[i] != nil {
-				s.SendPacketDataToPlayer(s.players[i], network.STOC_HS_PLAYER_ENTER, playerEnterPkt)
-			}
-		}
-		for _, v := range s.Observers {
-			s.SendPacketDataToPlayer(v, network.STOC_HS_PLAYER_ENTER, playerEnterPkt)
-		}
-		s.players[pos] = dp
-		dp.Type = pos
-		typeChangePkt.Type |= pos
-	} else {
-		s.Observers[dp.ID] = dp
-		dp.Type = network.NETPLAYER_TYPE_OBSERVER
-		typeChangePkt.Type |= network.NETPLAYER_TYPE_OBSERVER
-		var watchChangePkt protocol.STOCHsWatchChange
-		watchChangePkt.WatchCount = uint16(len(s.Observers))
-		for i := 0; i < 4; i++ {
-			if s.players[i] != nil {
-				s.SendPacketDataToPlayer(s.players[i], network.STOC_HS_WATCH_CHANGE, watchChangePkt)
-			}
-		}
-		for _, v := range s.Observers {
-			s.SendPacketDataToPlayer(v, network.STOC_HS_WATCH_CHANGE, watchChangePkt)
-		}
-	}
-	s.SendPacketDataToPlayer(dp, network.STOC_JOIN_GAME, joinGamePkt)
-	s.SendPacketDataToPlayer(dp, network.STOC_TYPE_CHANGE, typeChangePkt)
-	for i := 0; i < 4; i++ {
-		if s.players[i] != nil {
-			var playerEnterPkt protocol.STOCHsPlayerEnter
-			copy(playerEnterPkt.Name[:], s.players[i].Name[:])
-			playerEnterPkt.Pos = uint8(i)
-			s.SendPacketDataToPlayer(dp, network.STOC_HS_PLAYER_ENTER, playerEnterPkt)
-			if s.ready[i] {
-				var playerChangePkt protocol.STOCHsPlayerChange
-				playerChangePkt.Status = uint8(i<<4) | network.PLAYERCHANGE_READY
-				s.SendPacketDataToPlayer(dp, network.STOC_HS_PLAYER_CHANGE, playerChangePkt)
-			}
-		}
-	}
-	if len(s.Observers) > 0 {
-		var watchChangePkt protocol.STOCHsWatchChange
-		watchChangePkt.WatchCount = uint16(len(s.Observers))
-		s.SendPacketDataToPlayer(dp, network.STOC_HS_WATCH_CHANGE, watchChangePkt)
-	}
-	utils.NetLogf("server", "JOIN_GAME ok: player=%q seated as type=%d (tag, room=%q)",
-		utils.WideString(dp.Name[:]), dp.Type, utils.WideString(s.Name[:]))
+// JoinGame 的全部逻辑在 joinGameCommon：tag 与 single 的 JoinGame 除座位数
+// 外逐字节一致（对照原版 tag_duel.cpp:38-112 / single_duel.cpp:25-100），
+// 已用 duelRoom 钩子（firstFreeSeat/assignSeat/seatCount/allPlayers）泛化。
+func (tag *TagDuel) JoinGame(player *DuelPlayer, pkt *protocol.CTOSJoinGame, isCreator bool) {
+	joinGameCommon(tag, player, pkt, isCreator, "tag")
 }
 
-func (s *TagDuel) leaveAsPlayer(dp *DuelPlayer) {
-	if s.DuelStage == network.DUEL_STAGE_BEGIN {
+func (tag *TagDuel) leaveAsPlayer(player *DuelPlayer) {
+	if tag.DuelStage == network.DUEL_STAGE_BEGIN {
 		var playerChangePkt protocol.STOCHsPlayerChange
-		s.players[dp.Type] = nil
-		s.ready[dp.Type] = false
-		playerChangePkt.Status = uint8(dp.Type<<4) | network.PLAYERCHANGE_LEAVE
-		sendHsPlayerChangeAll(s, playerChangePkt)
-	} else if s.DuelStage != network.DUEL_STAGE_END {
-		s.EndDuel()
-		s.DuelEndProc()
+		tag.players[player.Type] = nil
+		tag.ready[player.Type] = false
+		playerChangePkt.Status = uint8(player.Type<<4) | network.PLAYERCHANGE_LEAVE
+		sendHsPlayerChangeAll(tag, playerChangePkt)
+	} else if tag.DuelStage != network.DUEL_STAGE_END {
+		tag.EndDuel()
+		tag.DuelEndProc()
 	}
-	s.DisconnectPlayer(dp)
+	tag.DisconnectPlayer(player)
 }
 
-func (s *TagDuel) ToDuelList(dp *DuelPlayer) {
-	if s.players[0] != nil && s.players[1] != nil && s.players[2] != nil && s.players[3] != nil {
-		return
+func (tag *TagDuel) ToDuelList(player *DuelPlayer) {
+	for _, seat := range tag.players {
+		if seat != nil {
+			return
+		}
 	}
-	if dp.Type == network.NETPLAYER_TYPE_OBSERVER {
-		toDuelListObserver(s, dp)
+	if player.Type == network.NETPLAYER_TYPE_OBSERVER {
+		toDuelListObserver(tag, player)
 		return
 	}
 	// 以下为本模式特有的换座逻辑（观战者之外的大厅玩家移到下一个空位）。
-	if s.ready[dp.Type] {
+	if tag.ready[player.Type] {
 		return
 	}
-	dptype := (dp.Type + 1) % 4
-	for s.players[dptype] != nil {
-		dptype = (dptype + 1) % 4
+	nextSeat := (player.Type + 1) % uint8(tag.seatCount())
+	for tag.players[nextSeat] != nil {
+		nextSeat = (nextSeat + 1) % uint8(tag.seatCount())
 	}
 	var playerChangePkt protocol.STOCHsPlayerChange
-	playerChangePkt.Status = uint8(dp.Type<<4) | uint8(dptype)
-	for i := 0; i < 4; i++ {
-		if s.players[i] != nil {
-			s.SendPacketDataToPlayer(s.players[i], network.STOC_HS_PLAYER_CHANGE, playerChangePkt)
+	playerChangePkt.Status = uint8(player.Type<<4) | uint8(nextSeat)
+	for i := 0; i < tag.seatCount(); i++ {
+		if tag.players[i] != nil {
+			tag.SendPacketDataToPlayer(tag.players[i], network.STOC_HS_PLAYER_CHANGE, playerChangePkt)
 		}
 	}
-	for _, v := range s.Observers {
-		s.SendPacketDataToPlayer(v, network.STOC_HS_PLAYER_CHANGE, playerChangePkt)
+	for _, observer := range tag.Observers {
+		tag.SendPacketDataToPlayer(observer, network.STOC_HS_PLAYER_CHANGE, playerChangePkt)
 	}
 	var typeChangePkt protocol.STOCTypeChange
 	typeChangePkt.Type = 0
-	if dp == s.HostPlayer {
+	if player == tag.HostPlayer {
 		typeChangePkt.Type = 0x10
 	}
-	typeChangePkt.Type |= uint8(dptype)
-	s.SendPacketDataToPlayer(dp, network.STOC_TYPE_CHANGE, typeChangePkt)
-	s.players[dp.Type] = nil
-	s.players[dptype] = dp
-	dp.Type = dptype
+	typeChangePkt.Type |= uint8(nextSeat)
+	tag.SendPacketDataToPlayer(player, network.STOC_TYPE_CHANGE, typeChangePkt)
+	tag.players[player.Type] = nil
+	tag.players[nextSeat] = player
+	player.Type = nextSeat
 }
 
-func (s *TagDuel) UpdateDeck(dp *DuelPlayer, pData []byte) {
-	if dp.Type > 3 || s.ready[dp.Type] {
-		return
-	}
-	deckBuf, ok := unpackDeckData(&s.DuelMode, dp, pData)
+func (tag *TagDuel) UpdateDeck(player *DuelPlayer, pData []byte) {
+	deckBuf, ok := updateDeckSlot(tag, player, pData)
 	if !ok {
 		return
 	}
-	// pDeck 是指针数组、初值为 nil（原版 tag_duel.cpp:281 的 pdeck 是值成员，
-	// 永远存在）；与 single 同样兜底分配，重复上传时清空重载（原版 LoadDeck
-	// 入口即 deck.clear()）。
-	if s.pDeck[dp.Type] == nil {
-		s.pDeck[dp.Type] = &Deck{}
-	} else {
-		s.pDeck[dp.Type].Clear()
-	}
-	s.DeckError[dp.Type] = DeckManager.LoadDeck(s.pDeck[dp.Type], deckBuf.List[:], deckBuf.MainC, deckBuf.SideC, false)
+	tag.DeckError[player.Type] = data.DeckManager.LoadDeck(tag.pDeck[player.Type], deckBuf.List[:], deckBuf.MainC, deckBuf.SideC, false)
 }
 
-func (s *TagDuel) StartDuel(dp *DuelPlayer) {
-	startDuelCommon(s, dp)
+func (tag *TagDuel) StartDuel(player *DuelPlayer) {
+	startDuelCommon(tag, player)
 }
 
-func (s *TagDuel) TPResult(dp *DuelPlayer, tp byte) {
-	if dp.State != network.CTOS_TP_RESULT {
+func (tag *TagDuel) TPResult(player *DuelPlayer, tp byte) {
+	if player.State != network.CTOS_TP_RESULT {
 		return
 	}
-	s.DuelStage = network.DUEL_STAGE_DUELING
+	tag.DuelStage = network.DUEL_STAGE_DUELING
 	var swapped bool
-	s.pplayer[0] = s.players[0]
-	s.pplayer[1] = s.players[1]
-	s.pplayer[2] = s.players[2]
-	s.pplayer[3] = s.players[3]
-	if (tp != 0 && dp.Type == 2) || (tp == 0 && dp.Type == 0) {
-		s.players[0], s.players[2] = s.players[2], s.players[0]
-		s.players[1], s.players[3] = s.players[3], s.players[1]
-		s.players[0].Type, s.players[1].Type, s.players[2].Type, s.players[3].Type = 0, 1, 2, 3
-		s.pDeck[0], s.pDeck[2] = s.pDeck[2], s.pDeck[0]
-		s.pDeck[1], s.pDeck[3] = s.pDeck[3], s.pDeck[1]
+	tag.pplayer[0] = tag.players[0]
+	tag.pplayer[1] = tag.players[1]
+	tag.pplayer[2] = tag.players[2]
+	tag.pplayer[3] = tag.players[3]
+	if (tp != 0 && player.Type == 2) || (tp == 0 && player.Type == 0) {
+		tag.players[0], tag.players[2] = tag.players[2], tag.players[0]
+		tag.players[1], tag.players[3] = tag.players[3], tag.players[1]
+		tag.players[0].Type, tag.players[1].Type, tag.players[2].Type, tag.players[3].Type = 0, 1, 2, 3
+		tag.pDeck[0], tag.pDeck[2] = tag.pDeck[2], tag.pDeck[0]
+		tag.pDeck[1], tag.pDeck[3] = tag.pDeck[3], tag.pDeck[1]
 		swapped = true
 	}
-	s.turnCount = 0
-	s.curPlayer[0] = s.players[0]
-	s.curPlayer[1] = s.players[3]
-	beginDuel(s, dp, swapped)
+	tag.turnCount = 0
+	tag.curPlayer[0] = tag.players[0]
+	tag.curPlayer[1] = tag.players[3]
+	beginDuel(tag, player, swapped)
 }
 
-func (s *TagDuel) DuelEndProc() {
-	duelEndProcSimple(s)
+func (tag *TagDuel) DuelEndProc() {
+	duelEndProcSimple(tag)
 }
 
-func (s *TagDuel) Surrender(dp *DuelPlayer) {
-	if dp.Type > 3 || s.Duel == nil {
+func (tag *TagDuel) Surrender(surrenderer *DuelPlayer) {
+	if surrenderer.Type > 3 || tag.Duel == nil {
 		return
 	}
-	player := dp.Type
-	if s.surrender[player] {
+	player := surrenderer.Type
+	if tag.surrender[player] {
 		return
 	}
 	teammateMap := [4]uint8{1, 0, 3, 2}
 	teammate := teammateMap[player]
-	if !s.surrender[teammate] {
-		s.surrender[player] = true
-		s.SendPacketToPlayer(s.players[player], network.STOC_TEAMMATE_SURRENDER)
-		s.SendPacketToPlayer(s.players[teammate], network.STOC_TEAMMATE_SURRENDER)
+	if !tag.surrender[teammate] {
+		tag.surrender[player] = true
+		tag.SendPacketToPlayer(tag.players[player], network.STOC_TEAMMATE_SURRENDER)
+		tag.SendPacketToPlayer(tag.players[teammate], network.STOC_TEAMMATE_SURRENDER)
 		return
 	}
 	winPlayerMap := [4]uint8{1, 1, 0, 0}
@@ -235,67 +163,77 @@ func (s *TagDuel) Surrender(dp *DuelPlayer) {
 	wbuf[0] = ocgcore.MSG_WIN
 	wbuf[1] = winPlayerMap[player]
 	wbuf[2] = 0
-	broadcastData(s, network.STOC_GAME_MSG, wbuf[:])
-	s.EndDuel()
-	s.DuelEndProc()
-	if s.ETimer != nil {
-		s.ETimer.Stop()
+	broadcastData(tag, network.STOC_GAME_MSG, wbuf[:])
+	tag.EndDuel()
+	tag.DuelEndProc()
+	if tag.ETimer != nil {
+		tag.ETimer.Stop()
 	}
 }
 
 // tagAnalyzeTable 在共享表之上追加 tag 特有的消息
 // （MSG_TAG_SWAP 为 tag 独有；MSG_NEW_TURN / MSG_MATCH_KILL 两模式行为不同）。
 var tagAnalyzeTable = copyAnalyzeTable(map[uint8]analyzeHandler{
-	ocgcore.MSG_NEW_TURN: func(m duelRoom, _ uint8, pbuf, offset *utils.YGOBuffer) int {
-		return m.(*TagDuel).analyzeNewTurn(pbuf, offset)
+	ocgcore.MSG_NEW_TURN: func(room duelRoom, _ uint8, pbuf, offset *utils.YGOBuffer) int {
+		return room.(*TagDuel).analyzeNewTurn(pbuf, offset)
 	},
-	ocgcore.MSG_TAG_SWAP: func(m duelRoom, _ uint8, pbuf, offset *utils.YGOBuffer) int {
-		return m.(*TagDuel).analyzeTagSwap(pbuf, offset)
+	ocgcore.MSG_TAG_SWAP: func(room duelRoom, _ uint8, pbuf, offset *utils.YGOBuffer) int {
+		return room.(*TagDuel).analyzeTagSwap(pbuf, offset)
 	},
 	ocgcore.MSG_MATCH_KILL: func(_ duelRoom, _ uint8, pbuf, _ *utils.YGOBuffer) int {
-		pbuf.Next(4)
+		_ = mustReadMsg[protocol.MatchKillMsg](pbuf)
 		return 0
 	},
 })
 
-func (s *TagDuel) Analyze(msgBuffer []byte) int {
-	return runAnalyze(s, tagAnalyzeTable, msgBuffer)
+func (tag *TagDuel) Analyze(msgBuffer []byte) int {
+	return runAnalyze(tag, tagAnalyzeTable, msgBuffer)
 }
 
 // analyzeNewTurn 新回合开始：广播、重置时间限制，并按回合数奇偶轮换
 // 双方的当前操作者（curPlayer）。
-func (s *TagDuel) analyzeNewTurn(pbuf, offset *utils.YGOBuffer) int {
-	pbuf.Next(1)
-	s.timeLimit[0] = int16(s.HostInfo.TimeLimit)
-	s.timeLimit[1] = int16(s.HostInfo.TimeLimit)
-	broadcastData(s, network.STOC_GAME_MSG, offset.SubSlices(pbuf))
-	if s.turnCount > 0 {
-		if s.turnCount%2 == 0 {
-			if s.curPlayer[0] == s.players[0] {
-				s.curPlayer[0] = s.players[1]
-			} else {
-				s.curPlayer[0] = s.players[0]
-			}
-		} else {
-			if s.curPlayer[1] == s.players[2] {
-				s.curPlayer[1] = s.players[3]
-			} else {
-				s.curPlayer[1] = s.players[2]
-			}
-		}
+func (tag *TagDuel) analyzeNewTurn(pbuf, offset *utils.YGOBuffer) int {
+	_ = mustReadMsg[protocol.NewTurnMsg](pbuf)
+	tag.timeLimit[0] = int16(tag.HostInfo.TimeLimit)
+	tag.timeLimit[1] = int16(tag.HostInfo.TimeLimit)
+	broadcastData(tag, network.STOC_GAME_MSG, offset.SubSlices(pbuf))
+	if tag.turnCount > 0 {
+		tag.rotateCurPlayers()
 	}
-	s.turnCount++
+	tag.turnCount++
 	// 原版 tag_duel.cpp:920-922：每次 MSG_NEW_TURN 清空全部投降标记，
 	// 「队友两人投降判负」只在同一回合内累积，跨回合重新计数。
-	for i := range s.surrender {
-		s.surrender[i] = false
+	for i := range tag.surrender {
+		tag.surrender[i] = false
 	}
 	return 0
 }
 
+// rotateCurPlayers 按回合数奇偶轮换双方的当前操作者：偶数回合轮换
+// 0 号队的两人，奇数回合轮换 1 号队的两人（原版 tag_duel.cpp:908-917）。
+func (tag *TagDuel) rotateCurPlayers() {
+	if tag.turnCount%2 == 0 {
+		if tag.curPlayer[0] == tag.players[0] {
+			tag.curPlayer[0] = tag.players[1]
+		} else {
+			tag.curPlayer[0] = tag.players[0]
+		}
+	} else {
+		if tag.curPlayer[1] == tag.players[2] {
+			tag.curPlayer[1] = tag.players[3]
+		} else {
+			tag.curPlayer[1] = tag.players[2]
+		}
+	}
+}
+
 // analyzeTagSwap 队友交换（TAG_SWAP）：当前操作者收完整手牌/额外信息，
-// 未公开（0x80 标记）的卡码对其他人就地抹零后转发，然后整区刷新。
-func (s *TagDuel) analyzeTagSwap(pbuf, offset *utils.YGOBuffer) int {
+// 未公开（cardCodePublicFlag 标记）的卡码对其他人就地抹零后转发，然后整区刷新。
+// 保留游标走查：消息体是五计数字节 + topcode + 两段变长码表（ LayTagSwap
+// 布局），且抹码直接改写书签区间内的原始字节（maskHiddenCodes 就地写），
+// 走「解码 → 掩码 → 重打包」会让转发字节经 codec 重编码，无对应定长
+// protocol 结构体可一次解码。
+func (tag *TagDuel) analyzeTagSwap(pbuf, offset *utils.YGOBuffer) int {
 	var player uint8
 	_ = pbuf.Read(&player)
 	pbuf.Next(1) // skip main_size
@@ -307,203 +245,211 @@ func (s *TagDuel) analyzeTagSwap(pbuf, offset *utils.YGOBuffer) int {
 	pbufw := pbuf.Clone()
 	pbufw.Next(4)
 	pbuf.Next(int(hcount)*4 + int(ecount)*4 + 4)
-	s.SendPacketDataToPlayer(s.curPlayer[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
-	for i := uint8(0); i < hcount; i++ {
-		if pbufw.At(3)&0x80 == 0 {
-			binary.LittleEndian.PutUint32(pbufw.ReadNext(4), 0)
-		} else {
-			pbufw.Next(4)
+	tag.SendPacketDataToPlayer(tag.curPlayer[player], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
+	maskHiddenCodes(pbufw, hcount)
+	maskHiddenCodes(pbufw, ecount)
+	for i := 0; i < tag.seatCount(); i++ {
+		if tag.players[i] != tag.curPlayer[player] {
+			tag.SendPacketDataToPlayer(tag.players[i], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
 		}
 	}
-	for i := uint8(0); i < ecount; i++ {
-		if pbufw.At(3)&0x80 == 0 {
-			binary.LittleEndian.PutUint32(pbufw.ReadNext(4), 0)
-		} else {
-			pbufw.Next(4)
-		}
-	}
-	for i := 0; i < 4; i++ {
-		if s.players[i] != s.curPlayer[player] {
-			s.SendPacketDataToPlayer(s.players[i], network.STOC_GAME_MSG, offset.SubSlices(pbuf))
-		}
-	}
-	for _, v := range s.Observers {
-		s.ReSendToPlayer(v)
-	}
-	s.RefreshExtra(int(player), 0xe81fff, 1)
-	s.RefreshMzone(0, 0x81fff, 0)
-	s.RefreshMzone(1, 0x81fff, 0)
-	s.RefreshSzone(0, 0x681fff, 0)
-	s.RefreshSzone(1, 0x681fff, 0)
-	s.RefreshHand(0, 0x781fff, 0)
-	s.RefreshHand(1, 0x781fff, 0)
+	tag.ReSendToObservers()
+	tag.RefreshExtra(int(player), 0xe81fff, 1)
+	tag.RefreshMzone(0, 0x81fff, 0)
+	tag.RefreshMzone(1, 0x81fff, 0)
+	tag.RefreshSzone(0, 0x681fff, 0)
+	tag.RefreshSzone(1, 0x681fff, 0)
+	tag.RefreshHand(0, 0x781fff, 0)
+	tag.RefreshHand(1, 0x781fff, 0)
 	return 0
 }
 
-func (s *TagDuel) GetResponse(dp *DuelPlayer, msgBuffer []byte) {
-	if dp.State != network.CTOS_RESPONSE {
+// maskHiddenCodes 就地抹除 count 张卡查询数据里未公开的卡码（每张 4 字节，
+// 第 4 字节的 cardCodePublicFlag 标记是否公开），与原版 tag_duel.cpp:
+// 1483-1494 的手牌/额外两段循环逐字节一致。
+func maskHiddenCodes(pbufw *utils.YGOBuffer, count uint8) {
+	for i := uint8(0); i < count; i++ {
+		if pbufw.At(3)&cardCodePublicFlag == 0 {
+			binary.LittleEndian.PutUint32(pbufw.ReadNext(4), 0)
+		} else {
+			pbufw.Next(4)
+		}
+	}
+}
+
+// GetResponse 保留 tag 独立实现、不与 single 合并：原版两端逻辑不同——
+// tag_duel.cpp:1517-1533 在写回引擎后多一步 players[type].state = 0xff，
+// 计时银行按下标 resp_type = type/2（按队伍）而非按座位扣减，守卫条件也
+// 不同（tag 依赖路由层的响应者校验，Go 侧补了 Duel/阶段校验）。合并需要
+// 新增 duelRoom 钩子且收益不抵风险，故保留两份；仅截断段共用
+// truncateResponse。
+func (tag *TagDuel) GetResponse(player *DuelPlayer, msgBuffer []byte) {
+	if player.State != network.CTOS_RESPONSE {
 		return
 	}
-	if s.Duel == nil {
+	if tag.Duel == nil {
 		return
 	}
-	if s.DuelStage != network.DUEL_STAGE_DUELING {
+	if tag.DuelStage != network.DUEL_STAGE_DUELING {
 		return
 	}
-	if dp != s.curPlayer[s.lastResponse] {
+	if player != tag.curPlayer[tag.lastResponse] {
 		return
 	}
 	// 原版 tag_duel.cpp:1519-1520：响应长度先截断到 SIZE_RETURN_VALUE，
 	// 超过定长缓冲的响应直接写回放缓冲区会越界。
-	length := len(msgBuffer)
-	if length > ocgcore.SIZE_RETURN_VALUE {
-		length = ocgcore.SIZE_RETURN_VALUE
-	}
-	recordResponseAndSet(&s.DuelMode, msgBuffer[:length])
-	s.players[dp.Type].State = 0xff
-	if s.HostInfo.TimeLimit != 0 {
+	recordResponseAndSet(&tag.DuelMode, truncateResponse(msgBuffer))
+	tag.players[player.Type].State = 0xff
+	if tag.HostInfo.TimeLimit != 0 {
 		respType := 0
-		if dp.Type >= 2 {
+		if player.Type >= 2 {
 			respType = 1
 		}
-		if s.timeLimit[respType] >= s.timeElapsed {
-			s.timeLimit[respType] -= s.timeElapsed
+		if tag.timeLimit[respType] >= tag.timeElapsed {
+			tag.timeLimit[respType] -= tag.timeElapsed
 		} else {
-			s.timeLimit[respType] = 0
+			tag.timeLimit[respType] = 0
 		}
-		s.timeElapsed = 0
+		tag.timeElapsed = 0
 	}
-	s.Process()
+	tag.Process()
 }
 
 // duelRoom 接口实现（差异点钩子）。
 
-func (s *TagDuel) allPlayers() []*DuelPlayer { return s.players[:] }
+func (tag *TagDuel) allPlayers() []*DuelPlayer { return tag.players[:] }
 
-func (s *TagDuel) currentPlayer(player int) *DuelPlayer { return s.curPlayer[player] }
+func (tag *TagDuel) currentPlayer(player int) *DuelPlayer { return tag.curPlayer[player] }
 
-func (s *TagDuel) zonePair(player int) (int, int) {
+func (tag *TagDuel) zonePair(player int) (int, int) {
 	if player == 0 {
 		return 0, 2
 	}
 	return 2, 0
 }
 
-func (s *TagDuel) zoneFullPair(player int) (*DuelPlayer, *DuelPlayer) {
-	pid, _ := s.zonePair(player)
-	return s.players[pid], s.players[pid+1]
+func (tag *TagDuel) zoneFullPair(player int) (*DuelPlayer, *DuelPlayer) {
+	baseSeat, _ := tag.zonePair(player)
+	return tag.players[baseSeat], tag.players[baseSeat+1]
 }
 
-func (s *TagDuel) zoneMaskedPair(player int) (*DuelPlayer, *DuelPlayer) {
-	_, pid := s.zonePair(player)
-	return s.players[pid], s.players[pid+1]
+func (tag *TagDuel) zoneMaskedPair(player int) (*DuelPlayer, *DuelPlayer) {
+	_, baseSeat := tag.zonePair(player)
+	return tag.players[baseSeat], tag.players[baseSeat+1]
 }
 
-func (s *TagDuel) handMaskedRecipients(player int) []*DuelPlayer {
+// otherPlayersThanCurPlayer 返回除当前操作者外的全部在席玩家
+// （handMaskedRecipients 与 waitingNotifyRecipients 的共同实现）。
+func (tag *TagDuel) otherPlayersThanCurPlayer(player int) []*DuelPlayer {
 	recipients := make([]*DuelPlayer, 0, 3)
-	for i := 0; i < 4; i++ {
-		if s.players[i] != s.curPlayer[player] {
-			recipients = append(recipients, s.players[i])
+	for i := 0; i < tag.seatCount(); i++ {
+		if tag.players[i] != tag.curPlayer[player] {
+			recipients = append(recipients, tag.players[i])
 		}
 	}
 	return recipients
 }
 
-func (s *TagDuel) waitingNotifyRecipients(player byte) []*DuelPlayer {
-	recipients := make([]*DuelPlayer, 0, 3)
-	for i := 0; i < 4; i++ {
-		if s.players[i] != s.curPlayer[player] {
-			recipients = append(recipients, s.players[i])
-		}
-	}
-	return recipients
+func (tag *TagDuel) handMaskedRecipients(player int) []*DuelPlayer {
+	return tag.otherPlayersThanCurPlayer(player)
 }
 
-func (s *TagDuel) timeLimitToObservers() bool { return false }
+func (tag *TagDuel) waitingNotifyRecipients(player byte) []*DuelPlayer {
+	return tag.otherPlayersThanCurPlayer(int(player))
+}
 
-func (s *TagDuel) isResponder(dp *DuelPlayer) bool { return dp == s.curPlayer[s.lastResponse] }
+func (tag *TagDuel) timeLimitToObservers() bool { return false }
 
-func (s *TagDuel) firstFreeSeat() int {
+func (tag *TagDuel) isResponder(player *DuelPlayer) bool {
+	return player == tag.curPlayer[tag.lastResponse]
+}
+
+func (tag *TagDuel) firstFreeSeat() int {
 	for i := 0; i < 4; i++ {
-		if s.players[i] == nil {
+		if tag.players[i] == nil {
 			return i
 		}
 	}
 	return 3
 }
 
-func (s *TagDuel) assignSeat(pos int, dp *DuelPlayer) { s.players[pos] = dp }
+func (tag *TagDuel) assignSeat(pos int, player *DuelPlayer) { tag.players[pos] = player }
 
-func (s *TagDuel) removeFromSeat(seat int) { s.players[seat] = nil }
+func (tag *TagDuel) removeFromSeat(seat int) { tag.players[seat] = nil }
 
-func (s *TagDuel) handResultIndex(seat uint8) int {
+func (tag *TagDuel) handResultIndex(seat uint8) int {
 	if seat == 0 {
 		return 0
 	}
 	return 1
 }
 
-func (s *TagDuel) handSeats() (a, a2, b, b2 *DuelPlayer) {
-	return s.players[0], s.players[1], s.players[2], s.players[3]
+// handSeats 返回猜拳双方的代表座位与各自队友：host 为先手队代表、
+// hostPartner 为其队友，guest 为后手队代表、guestPartner 为其队友。
+// tag：host=players[0]、hostPartner=players[1]（0 号队），
+// guest=players[2]、guestPartner=players[3]（1 号队）；
+// single 无队友概念，hostPartner/guestPartner 为 nil。
+func (tag *TagDuel) handSeats() (host, hostPartner, guest, guestPartner *DuelPlayer) {
+	return tag.players[0], tag.players[1], tag.players[2], tag.players[3]
 }
 
-func (s *TagDuel) recordTpPlayer(bWins bool) {}
+func (tag *TagDuel) recordTpPlayer(bWins bool) {}
 
-func (s *TagDuel) onJoinPassDenied(dp *DuelPlayer) {}
+func (tag *TagDuel) onJoinPassDenied(player *DuelPlayer) {}
 
-func (s *TagDuel) onEngineWin(player uint8) {}
+func (tag *TagDuel) onEngineWin(player uint8) {}
 
-func (s *TagDuel) seatCount() int { return 4 }
+func (tag *TagDuel) seatCount() int { return 4 }
 
-func (s *TagDuel) replayFlag() uint32 { return REPLAY_UNIFORM | REPLAY_TAG }
+func (tag *TagDuel) replayFlag() uint32 { return replay.REPLAY_UNIFORM | replay.REPLAY_TAG }
 
-func (s *TagDuel) extraDuelOpt() uint32 { return ocgcore.DUEL_TAG_MODE }
+func (tag *TagDuel) extraDuelOpt() uint32 { return ocgcore.DUEL_TAG_MODE }
 
 // loadDecksToEngine 把四个座位的卡组按原版顺序装入引擎并写入回放：
 // 各座位 Main 先整体 Reverse，再按「0 号主队 AddCard、1 号队tag AddTagCard、
 // 3 号主队 AddCard、2 号队tag AddTagCard」的固定序列装载
-//（tag_duel.cpp TPResult 的 loadSingle/loadTag 调用序列；curPlayer 已在
+// （tag_duel.cpp TPResult 的 loadSingle/loadTag 调用序列；curPlayer 已在
 // TPResult 换位后归位，0 号队即 players[0]/players[1]，1 号队即 players[2]/players[3]）。
-func (s *TagDuel) loadDecksToEngine(d *ocgcore.Duel, rp *Replay) {
-	loadSingle := func(deckContainer []*CardDataC, p uint8, location uint8) {
-		rp.WriteInt32(int32(len(deckContainer)), false)
-		for _, v := range deckContainer {
-			d.AddCard(v.Code, int(p), location)
-			rp.WriteInt32(int32(v.Code), false)
+func (tag *TagDuel) loadDecksToEngine(engine *ocgcore.Duel, rec *replay.Replay) {
+	loadSingle := func(deckContainer []*data.CardDataC, player uint8, location uint8) {
+		rec.WriteInt32(int32(len(deckContainer)), false)
+		for _, card := range deckContainer {
+			engine.AddCard(card.Code, int(player), location)
+			rec.WriteInt32(int32(card.Code), false)
 		}
 	}
-	loadTag := func(deckContainer []*CardDataC, p uint8, location uint8) {
-		rp.WriteInt32(int32(len(deckContainer)), false)
-		for _, v := range deckContainer {
-			d.AddTagCard(v.Code, p, location)
-			rp.WriteInt32(int32(v.Code), false)
+	loadTag := func(deckContainer []*data.CardDataC, player uint8, location uint8) {
+		rec.WriteInt32(int32(len(deckContainer)), false)
+		for _, card := range deckContainer {
+			engine.AddTagCard(card.Code, player, location)
+			rec.WriteInt32(int32(card.Code), false)
 		}
 	}
-	slices.Reverse(s.pDeck[0].Main)
-	slices.Reverse(s.pDeck[1].Main)
-	slices.Reverse(s.pDeck[2].Main)
-	slices.Reverse(s.pDeck[3].Main)
-	loadSingle(s.pDeck[0].Main, 0, ocgcore.LOCATION_DECK)
-	loadSingle(s.pDeck[0].Extra, 0, ocgcore.LOCATION_EXTRA)
-	loadTag(s.pDeck[1].Main, 0, ocgcore.LOCATION_DECK)
-	loadTag(s.pDeck[1].Extra, 0, ocgcore.LOCATION_EXTRA)
-	loadSingle(s.pDeck[3].Main, 1, ocgcore.LOCATION_DECK)
-	loadSingle(s.pDeck[3].Extra, 1, ocgcore.LOCATION_EXTRA)
-	loadTag(s.pDeck[2].Main, 1, ocgcore.LOCATION_DECK)
-	loadTag(s.pDeck[2].Extra, 1, ocgcore.LOCATION_EXTRA)
+	slices.Reverse(tag.pDeck[0].Main)
+	slices.Reverse(tag.pDeck[1].Main)
+	slices.Reverse(tag.pDeck[2].Main)
+	slices.Reverse(tag.pDeck[3].Main)
+	loadSingle(tag.pDeck[0].Main, 0, ocgcore.LOCATION_DECK)
+	loadSingle(tag.pDeck[0].Extra, 0, ocgcore.LOCATION_EXTRA)
+	loadTag(tag.pDeck[1].Main, 0, ocgcore.LOCATION_DECK)
+	loadTag(tag.pDeck[1].Extra, 0, ocgcore.LOCATION_EXTRA)
+	loadSingle(tag.pDeck[3].Main, 1, ocgcore.LOCATION_DECK)
+	loadSingle(tag.pDeck[3].Extra, 1, ocgcore.LOCATION_EXTRA)
+	loadTag(tag.pDeck[2].Main, 1, ocgcore.LOCATION_DECK)
+	loadTag(tag.pDeck[2].Extra, 1, ocgcore.LOCATION_EXTRA)
 }
 
 // refreshOnDuelStart 是开局额外卡组刷新（原版 tag_duel.cpp:467-468 的
 // 裸 RefreshExtra(0)/(1)，即默认参数 0xe81fff/缓存，与 single 相同）。
-func (s *TagDuel) refreshOnDuelStart() {
-	s.RefreshExtraDef(0)
-	s.RefreshExtraDef(1)
+func (tag *TagDuel) refreshOnDuelStart() {
+	tag.RefreshExtraDef(0)
+	tag.RefreshExtraDef(1)
 }
 
 // armDuelTimer 武装决斗秒表：TagTimer 非超时路径每秒自行重新武装
-//（与原版 TagTimer 一致，见 TagTimer 方法注释）。
-func (s *TagDuel) armDuelTimer() {
-	s.ETimer = timerWheel.AfterFunc(time.Second, s.TagTimer)
+// （与原版 TagTimer 一致，见 TagTimer 方法注释）。
+func (tag *TagDuel) armDuelTimer() {
+	tag.ETimer = timerWheel.AfterFunc(time.Second, tag.TagTimer)
 }
 
 // refreshGraveAfterSwap / refreshAfterSummon / refreshAfterChain /
@@ -512,89 +458,75 @@ func (s *TagDuel) armDuelTimer() {
 // 参数表（构造时填写，两模式取值一致），统一由 DuelMode 基类读表实现
 //（见 duel_refresh.go）。
 
-func (s *TagDuel) onDuelEnded() {
-	for i := 0; i < 4; i++ {
-		if s.players[i] != nil {
-			s.players[i].State = 0xff
+func (tag *TagDuel) onDuelEnded() {
+	for i := 0; i < tag.seatCount(); i++ {
+		if tag.players[i] != nil {
+			tag.players[i].State = 0xff
 		}
 	}
 }
 
-func (s *TagDuel) RefreshSingle(player uint8, location uint8, sequence uint8, flag int32) {
-	flag |= int32(ocgcore.QUERY_CODE | ocgcore.QUERY_POSITION)
-	var queryBuffer = make([]byte, 0x1000)
-	var qbuf = utils.NewYGOBuffer(queryBuffer, binary.LittleEndian)
-	qbuf.Write([]byte{ocgcore.MSG_UPDATE_CARD, player, location, sequence})
-	length := s.Duel.QueryCard(player, location, sequence, int32(flag), qbuf.Bytes(), false)
-	position := network.GetPosition(qbuf.Bytes(), 12)
+// tagTeamBaseSeat 返回引擎视角玩家(0/1)所属队伍的基座位
+// （0 号队 players[0]/[1]，1 号队 players[2]/[3]；原版 tag_duel.cpp:1691
+// 的 pid = (player == 0) ? 0 : 2）。
+func tagTeamBaseSeat(player uint8) int {
+	if player == 0 {
+		return 0
+	}
+	return 2
+}
+
+func (tag *TagDuel) RefreshSingle(player uint8, location uint8, sequence uint8, flag int32) {
+	queryBuffer, length, position := querySingleCard(&tag.DuelMode, player, location, sequence, flag)
+	baseSeat := tagTeamBaseSeat(player)
+	tag.SendPacketDataToPlayer(tag.players[baseSeat], network.STOC_GAME_MSG, queryBuffer[:int(length)+4])
+	tag.ReSendToPlayer(tag.players[baseSeat+1])
 	if location&uint8(ocgcore.LOCATION_ONFIELD) != 0 {
-		pid := 0
-		if player == 0 {
-			pid = 0
-		} else {
-			pid = 2
-		}
-		s.SendPacketDataToPlayer(s.players[pid], network.STOC_GAME_MSG, queryBuffer[:int(length)+4])
-		s.ReSendToPlayer(s.players[pid+1])
 		if position&ocgcore.POS_FACEUP != 0 {
-			pid = 2 - pid
-			s.SendPacketDataToPlayer(s.players[pid], network.STOC_GAME_MSG, queryBuffer[:int(length)+4])
-			s.ReSendToPlayer(s.players[pid+1])
-			for _, v := range s.Observers {
-				s.ReSendToPlayer(v)
+			baseSeat = 2 - baseSeat
+			tag.SendPacketDataToPlayer(tag.players[baseSeat], network.STOC_GAME_MSG, queryBuffer[:int(length)+4])
+			tag.ReSendToPlayer(tag.players[baseSeat+1])
+			tag.ReSendToObservers()
+		}
+		return
+	}
+	if location == uint8(ocgcore.LOCATION_REMOVED) && (position&ocgcore.POS_FACEDOWN) != 0 {
+		return
+	}
+	if location&locationPublicResendMask != 0 {
+		for i := 0; i < tag.seatCount(); i++ {
+			if tag.players[i] != tag.curPlayer[int(player)] {
+				tag.ReSendToPlayer(tag.players[i])
 			}
 		}
-	} else {
-		pid := 0
-		if player == 0 {
-			pid = 0
-		} else {
-			pid = 2
-		}
-		s.SendPacketDataToPlayer(s.players[pid], network.STOC_GAME_MSG, queryBuffer[:int(length)+4])
-		s.ReSendToPlayer(s.players[pid+1])
-		if location == uint8(ocgcore.LOCATION_REMOVED) && (position&ocgcore.POS_FACEDOWN) != 0 {
-			return
-		}
-		if location&0x90 != 0 {
-			for i := 0; i < 4; i++ {
-				if s.players[i] != s.curPlayer[int(player)] {
-					s.ReSendToPlayer(s.players[i])
-				}
-			}
-			for _, v := range s.Observers {
-				s.ReSendToPlayer(v)
-			}
-		}
+		tag.ReSendToObservers()
 	}
 }
 
-func (s *TagDuel) TagTimer() {
-	s.Mu.Lock()
-	defer s.Mu.Unlock()
-	running, timeout := tickDuelTimerLocked(&s.DuelMode)
+func (tag *TagDuel) TagTimer() {
+	tag.Mu.Lock()
+	defer tag.Mu.Unlock()
+	running, timeout := tickDuelTimerLocked(&tag.DuelMode)
 	if !running {
 		if !timeout {
 			return
 		}
 		var wbuf [3]byte
-		player := s.lastResponse
+		player := tag.lastResponse
 		wbuf[0] = ocgcore.MSG_WIN
 		wbuf[1] = 1 - player
 		wbuf[2] = 0x3
-		s.SendPacketDataToPlayer(s.players[0], network.STOC_GAME_MSG, wbuf[:])
-		s.ReSendToPlayer(s.players[1])
-		s.ReSendToPlayer(s.players[2])
-		s.ReSendToPlayer(s.players[3])
-		s.EndDuel()
-		s.DuelEndProc()
-		if s.ETimer != nil {
-			s.ETimer.Stop()
+		tag.SendPacketDataToPlayer(tag.players[0], network.STOC_GAME_MSG, wbuf[:])
+		tag.ReSendToPlayers(tag.players[1:]...)
+		tag.EndDuel()
+		tag.DuelEndProc()
+		if tag.ETimer != nil {
+			tag.ETimer.Stop()
 		}
 		return
 	}
 	// 原版 TagTimer 非超时路径每秒 event_add 重新武装定时器
 	//（source/ygopro/gframe/tag_duel.cpp:1740-1741）；漏掉这行会让
 	// tag 计时器走一秒后停走，超时判负永不触发。
-	s.ETimer = timerWheel.AfterFunc(time.Second, s.TagTimer)
+	tag.ETimer = timerWheel.AfterFunc(time.Second, tag.TagTimer)
 }

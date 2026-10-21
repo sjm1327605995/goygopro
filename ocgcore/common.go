@@ -1,9 +1,5 @@
 package ocgcore
 
-func checkPlayerId(playerId int32) bool {
-	return playerId >= 0 && playerId <= 1
-}
-
 // MatchAll 检查x是否包含y的所有位
 func MatchAll(x, y uint32) bool {
 	return (x & y) == y

@@ -48,8 +48,6 @@ type eventRecorder struct {
 	mu     sync.Mutex
 	names  []string
 	byName map[string][]interface{}
-	ended  bool
-	end    map[string]interface{}
 }
 
 func newEventRecorder() *eventRecorder {

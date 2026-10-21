@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sjm1327605995/goygopro/core/replay"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
@@ -25,7 +26,7 @@ func newTimedTagDuelForTest(t *testing.T) (*TagDuel, []*recordConn) {
 	td.curPlayer[0] = td.players[0]
 	td.curPlayer[1] = td.players[2]
 	td.Observers = map[string]*DuelPlayer{}
-	td.lastReplay = NewReplay()
+	td.lastReplay = replay.NewReplay()
 	return td, conns
 }
 

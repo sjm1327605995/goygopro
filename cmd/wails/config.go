@@ -3,11 +3,14 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // AppConfig：原版 gframe system.conf 配置项的完整翻译。
@@ -18,13 +21,13 @@ import (
 // 原版中仅 conf 无 UI 的键也一并提供默认值，保持语义完整。
 type AppConfig struct {
 	// ---- 决斗辅助（原版 tabHelper 复选框） ----
-	AutoMonsterPos  int `conf:"automonsterpos"` // 怪兽自动放置（原版默认 0）
-	AutoSpellPos    int `conf:"autospellpos"`   // 魔陷自动放置（原版默认 1）
-	RandomPos       int `conf:"randompos"`      // 放置位置随机
-	AutoChain       int `conf:"autochain"`      // 自动连锁（不询问）
-	WaitChain       int `conf:"waitchain"`      // 有可连锁时等待
-	ShowChain       int `conf:"showchain"`      // 默认显示连锁
-	QuickAnimation  int `conf:"quick_animation"`
+	AutoMonsterPos int `conf:"automonsterpos"` // 怪兽自动放置（原版默认 0）
+	AutoSpellPos   int `conf:"autospellpos"`   // 魔陷自动放置（原版默认 1）
+	RandomPos      int `conf:"randompos"`      // 放置位置随机
+	AutoChain      int `conf:"autochain"`      // 自动连锁（不询问）
+	WaitChain      int `conf:"waitchain"`      // 有可连锁时等待
+	ShowChain      int `conf:"showchain"`      // 默认显示连锁
+	QuickAnimation int `conf:"quick_animation"`
 	// 动画速度（neos-ts animation 设置的等价物；原版无此键，项目扩展）：
 	// 百分比 10-200，100=原速；前端按 100/value 缩放 tween 时长
 	AnimationSpeed  int `conf:"animation_speed"`
@@ -95,11 +98,30 @@ func defaultConfig() AppConfig {
 // configFilePath：工作目录下的 system.conf（与原版一致）。
 func (a *App) configFilePath() string { return "system.conf" }
 
+// configSnapshot 是 loadConfig 的缓存条目：按文件 mtime+size 判活——文件被
+// 外部修改（用户手改 system.conf）后下一次 loadConfig 自然失效重读。
+type configSnapshot struct {
+	cfg     AppConfig
+	modTime time.Time
+	size    int64
+}
+
 // loadConfig 读取 system.conf；文件不存在或个别行解析失败都按默认值兜底。
 // 解析语义照抄原版：先按 "key = value" 严格匹配，键名小写比对。
+// 命中缓存（文件 mtime+size 未变）时直接返回缓存，避免每次调用都重读重解析。
 func (a *App) loadConfig() AppConfig {
+	path := a.configFilePath()
+	if v := a.cfgCache.Load(); v != nil {
+		if snap, ok := v.(*configSnapshot); ok {
+			if fi, err := os.Stat(path); err == nil &&
+				fi.ModTime().Equal(snap.modTime) && fi.Size() == snap.size {
+				return snap.cfg
+			}
+		}
+	}
+
 	cfg := defaultConfig()
-	f, err := os.Open(a.configFilePath())
+	f, err := os.Open(path)
 	if err != nil {
 		return cfg
 	}
@@ -118,6 +140,9 @@ func (a *App) loadConfig() AppConfig {
 		key := strings.ToLower(strings.TrimSpace(line[:eq]))
 		val := strings.TrimSpace(line[eq+1:])
 		applyConfigLine(&cfg, key, val)
+	}
+	if fi, err := os.Stat(path); err == nil {
+		a.cfgCache.Store(&configSnapshot{cfg: cfg, modTime: fi.ModTime(), size: fi.Size()})
 	}
 	return cfg
 }
@@ -196,15 +221,33 @@ var clampedFields = map[string]string{
 	"music_volume": "MusicVolume",
 }
 
+// configMu 串行化 SaveConfig 的「读-合并-写盘-写缓存」全过程。两个并发
+// SaveConfig 若交错（A write → B write → B store → A store），A 的 cfg
+// 会配着 B 写盘的文件 mtime 进缓存，此后 loadConfig 把 B 的磁盘内容
+// 解析成 A 的配置（mtime+size 未变，缓存持续命中）。loadConfig 自身
+// 不需要此锁：它的快照判活（mtime+size）是自愈合的。
+var configMu sync.Mutex
+
 // SaveConfig 用补丁合并当前配置并写回 system.conf（键名即 conf 键）。
 // 返回合并后的完整配置。未知键忽略；roompass 等原版只读不写的键不在本表内。
 func (a *App) SaveConfig(patch map[string]interface{}) AppConfig {
+	configMu.Lock()
+	defer configMu.Unlock()
+
 	cfg := a.loadConfig()
 	for k, v := range patch {
 		s := fmt.Sprintf("%v", v)
 		applyConfigLine(&cfg, strings.ToLower(strings.TrimSpace(k)), s)
 	}
-	_ = a.writeConfig(cfg)
+	if err := a.writeConfig(cfg); err != nil {
+		// 写失败：返回内存中的合并结果并记日志，但不更新缓存——下次
+		// loadConfig 仍按磁盘内容解析，避免缓存与磁盘漂移后互相覆盖。
+		log.Printf("[App] SaveConfig: 写 %s 失败: %v", a.configFilePath(), err)
+		return cfg
+	}
+	if fi, err := os.Stat(a.configFilePath()); err == nil {
+		a.cfgCache.Store(&configSnapshot{cfg: cfg, modTime: fi.ModTime(), size: fi.Size()})
+	}
 	return cfg
 }
 

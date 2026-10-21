@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/go-restruct/restruct"
+	"github.com/sjm1327605995/goygopro/core/codec"
 )
 
 type YGOBuffer struct {
@@ -24,105 +24,99 @@ func NewYGOBuffer(buff []byte, order binary.ByteOrder) *YGOBuffer {
 		order: order,
 	}
 }
-func (y *YGOBuffer) Offset() int {
-	return y.offset
+func (buf *YGOBuffer) Offset() int {
+	return buf.offset
 }
-func (y *YGOBuffer) Read(list ...any) error {
+func (buf *YGOBuffer) Read(list ...any) error {
 	for i := range list {
 
-		n, err := binary.Decode(y.buff[y.offset:], y.order, list[i])
+		n, err := binary.Decode(buf.buff[buf.offset:], buf.order, list[i])
 		if err != nil {
-			y.overflow = true
+			buf.overflow = true
 			return err
 		}
-		y.offset += n
+		buf.offset += n
 	}
 	return nil
 }
+
 // Overflowed 报告缓冲区自构造/克隆以来是否发生过越界访问。
-func (y *YGOBuffer) Overflowed() bool {
-	return y.overflow
+func (buf *YGOBuffer) Overflowed() bool {
+	return buf.overflow
 }
 
 // At 返回当前 offset 后第 pos 个字节；越界时置粘性越界标记并返回 0
-//（不 panic），由调用方在解析结束后统一检查 Overflowed。
-func (y *YGOBuffer) At(pos int) byte {
-	idx := y.offset + pos
-	if idx < 0 || idx >= len(y.buff) {
-		y.overflow = true
+// （不 panic），由调用方在解析结束后统一检查 Overflowed。
+func (buf *YGOBuffer) At(pos int) byte {
+	idx := buf.offset + pos
+	if idx < 0 || idx >= len(buf.buff) {
+		buf.overflow = true
 		return 0
 	}
-	return y.buff[idx]
+	return buf.buff[idx]
 }
-func (y *YGOBuffer) Write(list ...any) error {
+func (buf *YGOBuffer) Write(list ...any) error {
 	for i := range list {
-		n, err := binary.Encode(y.buff[y.offset:], y.order, list[i])
+		n, err := binary.Encode(buf.buff[buf.offset:], buf.order, list[i])
 		if err != nil {
 			return err
 		}
-		y.offset += n
+		buf.offset += n
 	}
 	return nil
 }
-func (y *YGOBuffer) Len() int {
-	return len(y.buff[y.offset:])
+func (buf *YGOBuffer) Len() int {
+	return len(buf.buff[buf.offset:])
 }
 
-func (y *YGOBuffer) Bytes() []byte {
-	return y.buff[y.offset:]
+func (buf *YGOBuffer) Bytes() []byte {
+	return buf.buff[buf.offset:]
 }
 
-func (y *YGOBuffer) Next(n int) error {
-	if y.offset+n > len(y.buff) {
-		y.overflow = true
+func (buf *YGOBuffer) Next(n int) error {
+	if buf.offset+n > len(buf.buff) {
+		buf.overflow = true
 		return fmt.Errorf("out of range")
 	}
-	y.offset += n
+	buf.offset += n
 	return nil
 }
-func (y *YGOBuffer) Clone() *YGOBuffer {
+func (buf *YGOBuffer) Clone() *YGOBuffer {
 	return &YGOBuffer{
-		buff:     y.buff,
-		order:    y.order,
-		offset:   y.offset,
-		overflow: y.overflow,
+		buff:     buf.buff,
+		order:    buf.order,
+		offset:   buf.offset,
+		overflow: buf.overflow,
 	}
 }
 
-// Unpack 用 restruct 从当前 offset 解析二进制到 struct，并自动推进 offset
-func (y *YGOBuffer) Unpack(v interface{}) error {
-	err := restruct.Unpack(y.buff[y.offset:], binary.LittleEndian, v)
+// Unpack 用 codec 计划链（零反射）从当前 offset 解析二进制到 struct 并
+// 自动推进 offset；count/greedy 结构体按实际消费推进。解析失败置粘性
+// 越界标记。字节序固定 LittleEndian——codec 的既定语义，现有调用点
+// 全部如此（NewYGOBuffer 的 order 参数仅 Read/Write 游标 API 使用）。
+func (buf *YGOBuffer) Unpack(v interface{}) error {
+	n, err := codec.DecodePrefix(buf.buff[buf.offset:], v)
 	if err != nil {
-		y.overflow = true
+		buf.overflow = true
 		return err
 	}
-	size, err := restruct.SizeOf(v)
-	if err != nil {
-		return err
-	}
-	y.offset += size
+	buf.offset += n
 	return nil
-}
-
-// Pack 用 restruct 将 struct 打包为字节数组
-func PackGameMsg(v interface{}) []byte {
-	data, _ := restruct.Pack(binary.LittleEndian, v)
-	return data
 }
 
 // SubSlices 返回从当前 buffer 位置到 clone buffer 位置的切片
-func (y *YGOBuffer) SubSlices(clone *YGOBuffer) []byte {
-	if y.offset >= clone.offset {
+func (buf *YGOBuffer) SubSlices(clone *YGOBuffer) []byte {
+	if buf.offset >= clone.offset {
 		return nil
 	}
-	return y.buff[y.offset:clone.offset]
+	return buf.buff[buf.offset:clone.offset]
 }
-func (y *YGOBuffer) ReadNext(n int) []byte {
-	if y.offset+n > len(y.buff) {
-		y.overflow = true
+func (buf *YGOBuffer) ReadNext(n int) []byte {
+	if buf.offset+n > len(buf.buff) {
+		buf.overflow = true
 		return nil
 	}
-	res := y.buff[y.offset : y.offset+n]
-	y.offset += n
+	res := buf.buff[buf.offset : buf.offset+n]
+	buf.offset += n
 	return res
 }

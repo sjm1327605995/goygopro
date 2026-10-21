@@ -7,7 +7,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/sjm1327605995/goygopro/core/duel"
+	"github.com/sjm1327605995/goygopro/core/data"
+	"github.com/sjm1327605995/goygopro/core/replay"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 )
 
@@ -62,14 +63,14 @@ func TestWailsClientParsesReplayMessageStreams(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := duel.DefaultDataManager.LoadDB(filepath.Join(root, "cards.cdb")); err != nil {
+	if err := data.DefaultDataManager.LoadDB(filepath.Join(root, "cards.cdb")); err != nil {
 		t.Fatalf("load cards.cdb: %v", err)
 	}
 	if err := ocgcore.Init(
 		ocgcore.WithRootPath(root),
 		ocgcore.WithScriptDirectory(filepath.Join(root, "script")),
 		ocgcore.WithCardReader(func(cardId uint32) *ocgcore.CardData {
-			return duel.DefaultDataManager.GetData(cardId)
+			return data.DefaultDataManager.GetData(cardId)
 		}),
 	); err != nil {
 		t.Skipf("ocgcore library not available: %v", err)
@@ -85,7 +86,7 @@ func TestWailsClientParsesReplayMessageStreams(t *testing.T) {
 	for _, f := range files {
 		name := filepath.Base(f)
 
-		rm := duel.NewReplayMode()
+		rm := replay.NewReplayMode()
 		if err := rm.Load(f); err != nil {
 			t.Fatalf("%s: load: %v", name, err)
 		}

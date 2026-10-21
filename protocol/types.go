@@ -2,13 +2,17 @@ package protocol
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 )
 
-// 以下结构体使用 go-restruct/restruct 标签进行二进制序列化/反序列化
-// 安装: go get github.com/go-restruct/restruct
-// 使用方式: restruct.Unpack(data, binary.LittleEndian, &v)
-//           restruct.Pack(binary.LittleEndian, &v)
+//go:generate codecgen
+
+// 以下结构体是 CTOS/STOC 线协议的内存表示，由 core/codec 按字段顺序
+// 定长编解码（LittleEndian）：无 tag 的整型/定长数组字段直接按线宽读写；
+// 变长列表用 codec.Count8/16/32 标记字段作计数前缀（编码自动回填
+// len(slice)）；填充字节用导出的 Pad 字段（codec 跳过未导出字段）。
+// 使用方式: codec.Marshal(&v) / codec.Unmarshal(data, &v)
 
 const (
 	SIZE_NETWORK_BUFFER = 0x20000
@@ -24,35 +28,38 @@ const (
 // HostPacket — 主控广播包
 // C++: struct HostPacket { uint16_t identifier, version, port, padding; uint32_t ipaddr; uint16_t name[20]; HostInfo host; };
 type HostPacket struct {
-	Identifier uint16     `struct:"uint16"`
-	Version    uint16     `struct:"uint16"`
-	Port       uint16     `struct:"uint16"`
-	_          uint16     `struct:"uint16"` // padding
-	IPAddr     uint32     `struct:"uint32"`
-	Name       [20]uint16 `struct:"[20]uint16"`
-	Host       HostInfo
+	Identifier uint16
+	Version    uint16
+	Port       uint16
+	// Pad 对应 C++ padding（uint16），线上恒为零（同上，codec 要求导出）。请勿赋值。
+	Pad    uint16 `json:"-"`
+	IPAddr uint32
+	Name   [20]uint16
+	Host   HostInfo
 }
 
 // HostInfo — 房间配置
 // C++: struct HostInfo { uint32_t lflist; uint8_t rule, mode, duel_rule, no_check_deck, no_shuffle_deck; byte padding[3]; int32_t start_lp; uint8_t start_hand, draw_count; uint16_t time_limit; };
 type HostInfo struct {
-	LFList        uint32  `struct:"uint32"`
-	Rule          uint8   `struct:"uint8"`
-	Mode          uint8   `struct:"uint8"`
-	DuelRule      uint8   `struct:"uint8"`
-	NoCheckDeck   uint8   `struct:"uint8"`
-	NoShuffleDeck uint8   `struct:"uint8"`
-	_             [3]byte `struct:"[3]byte"` // padding
-	StartLp       int32   `struct:"int32"`
-	StartHand     uint8   `struct:"uint8"`
-	DrawCount     uint8   `struct:"uint8"`
-	TimeLimit     uint16  `struct:"uint16"`
+	LFList        uint32
+	Rule          uint8
+	Mode          uint8
+	DuelRule      uint8
+	NoCheckDeck   uint8
+	NoShuffleDeck uint8
+	// Pad 对应 C++ padding[3]，线上恒为零：codec 与 encoding/binary 都写零值，
+	// 但 codec 跳过未导出字段，故必须导出（buff 编码走 codec 的前提）。请勿赋值。
+	Pad       [3]byte
+	StartLp   int32
+	StartHand uint8
+	DrawCount uint8
+	TimeLimit uint16
 }
 
 // HostRequest — 查询请求
 // C++: struct HostRequest { uint16_t identifier; };
 type HostRequest struct {
-	Identifier uint16 `struct:"uint16"`
+	Identifier uint16
 }
 
 // CTOSDeckData — 卡组数据（自定义 Unpacker/Packer，因为 List 长度 = MainC + SideC）
@@ -85,6 +92,9 @@ func (c *CTOSDeckData) Unpack(buf []byte, order binary.ByteOrder) ([]byte, error
 }
 
 func (c *CTOSDeckData) Pack(buf []byte, order binary.ByteOrder) ([]byte, error) {
+	if len(c.List) != int(c.MainC+c.SideC) {
+		return nil, fmt.Errorf("CTOSDeckData: len(List)=%d, MainC+SideC=%d", len(c.List), int(c.MainC+c.SideC))
+	}
 	size := c.SizeOf()
 	if len(buf) < size {
 		return nil, io.ErrShortBuffer
@@ -104,63 +114,65 @@ func (c *CTOSDeckData) SizeOf() int {
 // CTOSHandResult — 猜拳结果
 // C++: struct CTOS_HandResult { uint8_t res; };
 type CTOSHandResult struct {
-	Res uint8 `struct:"uint8"`
+	Res uint8
 }
 
 // CTOSTPResult — 先后攻选择
 // C++: struct CTOS_TPResult { uint8_t res; };
 type CTOSTPResult struct {
-	Res uint8 `struct:"uint8"`
+	Res uint8
 }
 
 // CTOSPlayerInfo — 玩家信息
 // C++: struct CTOS_PlayerInfo { uint16_t name[20]; };
 type CTOSPlayerInfo struct {
-	Name [20]uint16 `struct:"[20]uint16"`
+	Name [20]uint16
 }
 
 // CTOSCreateGame — 创建房间
 // C++: struct CTOS_CreateGame { HostInfo info; uint16_t name[20]; uint16_t pass[20]; };
 type CTOSCreateGame struct {
 	Info HostInfo
-	Name [20]uint16 `struct:"[20]uint16"`
-	Pass [20]uint16 `struct:"[20]uint16"`
+	Name [20]uint16
+	Pass [20]uint16
 }
 
 // CTOSJoinGame — 加入房间
 // C++: struct CTOS_JoinGame { uint16_t version; uint8_t padding[2]; uint32_t gameid; uint16_t pass[20]; };
 type CTOSJoinGame struct {
-	Version uint16     `struct:"uint16"`
-	_       [2]byte    `struct:"[2]byte"` // padding
-	GameID  uint32     `struct:"uint32"`
-	Pass    [20]uint16 `struct:"[20]uint16"`
+	Version uint16
+	// Pad 对应 C++ padding[2]，线上恒为零（同上，codec 要求导出）。请勿赋值。
+	Pad    [2]byte
+	GameID uint32
+	Pass   [20]uint16
 }
 
 // CTOSKick — 踢人
 // C++: struct CTOS_Kick { uint8_t pos; };
 type CTOSKick struct {
-	Pos uint8 `struct:"uint8"`
+	Pos uint8
 }
 
 // STOCErrorMsg — 错误消息
 // C++: struct STOC_ErrorMsg { uint8_t msg; uint8_t padding[3]; uint32_t code; };
 type STOCErrorMsg struct {
-	Msg  uint8   `struct:"uint8"`
-	_    [3]byte `struct:"[3]byte"` // padding
-	Code uint32  `struct:"uint32"`
+	Msg uint8
+	// Pad 对应 C++ padding[3]，线上恒为零（同上，codec 要求导出）。请勿赋值。
+	Pad  [3]byte
+	Code uint32
 }
 
 // STOCHandResult — 猜拳结果通知
 // C++: struct STOC_HandResult { uint8_t res1, res2; };
 type STOCHandResult struct {
-	Res1 uint8 `struct:"uint8"`
-	Res2 uint8 `struct:"uint8"`
+	Res1 uint8
+	Res2 uint8
 }
 
 // STOCCreateGame — 创建房间响应
 // C++: struct STOC_CreateGame { uint32_t gameid; };
 type STOCCreateGame struct {
-	GameID uint32 `struct:"uint32"`
+	GameID uint32
 }
 
 // STOCJoinGame — 加入房间响应
@@ -172,21 +184,22 @@ type STOCJoinGame struct {
 // STOCTypeChange — 身份变更
 // C++: struct STOC_TypeChange { uint8_t type; };
 type STOCTypeChange struct {
-	Type uint8 `struct:"uint8"`
+	Type uint8
 }
 
 // STOCExitGame — 退出游戏
 // C++: struct STOC_ExitGame { uint8_t pos; };
 type STOCExitGame struct {
-	Pos uint8 `struct:"uint8"`
+	Pos uint8
 }
 
 // STOCTimeLimit — 时间限制
 // C++: struct STOC_TimeLimit { uint8_t player; uint8_t padding; uint16_t left_time; };
 type STOCTimeLimit struct {
-	Player   uint8  `struct:"uint8"`
-	_        byte   `struct:"uint8"` // padding
-	LeftTime uint16 `struct:"uint16"`
+	Player uint8
+	// Pad 对应 C++ padding 字节，线上恒为零：codec 跳过未导出字段，故必须导出（buff 编码走 codec 的前提）。请勿赋值。
+	Pad      byte
+	LeftTime uint16
 }
 
 // STOCChat — 聊天消息
@@ -194,27 +207,27 @@ type STOCTimeLimit struct {
 // player 字段实际只占 1 字节（uint8），但 C++ 中常按 uint16 解析
 // 这里保留与原版一致的定义
 type STOCChat struct {
-	Player uint16      `struct:"uint16"`
-	Msg    [256]uint16 `struct:"[256]uint16"`
+	Player uint16
+	Msg    [256]uint16
 }
 
 // STOCHsPlayerEnter — 玩家进入大厅
 // C++: struct STOC_HS_PlayerEnter { uint16_t name[20]; uint8_t pos; };
 type STOCHsPlayerEnter struct {
-	Name [20]uint16 `struct:"[20]uint16"`
-	Pos  uint8      `struct:"uint8"`
+	Name [20]uint16
+	Pos  uint8
 }
 
 // STOCHsPlayerChange — 玩家状态变更
 // C++: struct STOC_HS_PlayerChange { uint8_t status; };
 type STOCHsPlayerChange struct {
-	Status uint8 `struct:"uint8"`
+	Status uint8
 }
 
 // STOCHsWatchChange — 观战人数变更
 // C++: struct STOC_HS_WatchChange { uint16_t watch_count; };
 type STOCHsWatchChange struct {
-	WatchCount uint16 `struct:"uint16"`
+	WatchCount uint16
 }
 
 // STOCDeckCount — 卡组数量通知
@@ -222,10 +235,10 @@ type STOCHsWatchChange struct {
 // 服务器发送前按玩家交换前后 6 字节（single_duel.cpp:340-345、tag_duel.cpp:304-310），
 // 所以每位玩家收到的 12 字节都已是"自己在前"的相对序。
 type STOCDeckCount struct {
-	Deck0  uint16 `struct:"uint16" json:"deck0"`
-	Extra0 uint16 `struct:"uint16" json:"extra0"`
-	Side0  uint16 `struct:"uint16" json:"side0"`
-	Deck1  uint16 `struct:"uint16" json:"deck1"`
-	Extra1 uint16 `struct:"uint16" json:"extra1"`
-	Side1  uint16 `struct:"uint16" json:"side1"`
+	Deck0  uint16 `json:"deck0"`
+	Extra0 uint16 `json:"extra0"`
+	Side0  uint16 `json:"side0"`
+	Deck1  uint16 `json:"deck1"`
+	Extra1 uint16 `json:"extra1"`
+	Side1  uint16 `json:"side1"`
 }

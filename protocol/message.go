@@ -1,14 +1,17 @@
 package protocol
 
 import (
-	"encoding/binary"
+	"fmt"
 
-	"github.com/go-restruct/restruct"
+	"github.com/sjm1327605995/goygopro/core/codec"
 )
 
 // 本文件是引擎游戏消息（STOC_GAME_MSG 载荷，不含开头 1 字节消息类型）的
-// restruct 结构体定义。所有布局的权威依据是本仓库自带的引擎源码
-// source/ygopro/ocgcore/（编译进 ocgcore.dll 的那一套）：
+// 结构体定义，由 core/codec 按字段顺序编解码（LittleEndian）：定长字段
+// 直接按线宽读写；变长列表用 codec.Count8 标记字段作计数前缀（编码自动
+// 回填 len(slice)，Count 字段须声明在目标 slice 之前）。所有布局的权威
+// 依据是本仓库自带的引擎源码 source/ygopro/ocgcore/（编译进 ocgcore.dll
+// 的那一套）：
 //
 //   - processor.cpp / operations.cpp / playerop.cpp / field.cpp / libduel.cpp
 //     中的 write_buffer 序列；
@@ -25,14 +28,14 @@ import (
 // （该消息由服务端而非引擎拼装，双打时 playertype 另有 0x9/0x1a 等值）
 // ------------------------------------------------------------------
 type StartMsg struct {
-	PlayerType uint8  `struct:"uint8" json:"playerType"`
-	DuelRule   uint8  `struct:"uint8" json:"duelRule"`
-	LP0        int32  `struct:"int32" json:"lp0"`
-	LP1        int32  `struct:"int32" json:"lp1"`
-	Deck0      uint16 `struct:"uint16" json:"deck0"`
-	Extra0     uint16 `struct:"uint16" json:"extra0"`
-	Deck1      uint16 `struct:"uint16" json:"deck1"`
-	Extra1     uint16 `struct:"uint16" json:"extra1"`
+	PlayerType uint8  `json:"playerType"`
+	DuelRule   uint8  `json:"duelRule"`
+	LP0        int32  `json:"lp0"`
+	LP1        int32  `json:"lp1"`
+	Deck0      uint16 `json:"deck0"`
+	Extra0     uint16 `json:"extra0"`
+	Deck1      uint16 `json:"deck1"`
+	Extra1     uint16 `json:"extra1"`
 }
 
 // ------------------------------------------------------------------
@@ -65,38 +68,38 @@ func PackPackedLoc(c, l, s, pos uint8) uint32 {
 
 // CmdActivateEntry 可发动效果的条目（BATTLECMD/IDLECMD 通用）
 type CmdActivateEntry struct {
-	Code        uint32 `struct:"uint32" json:"code"`
-	CC          uint8  `struct:"uint8" json:"cc"`
-	CL          uint8  `struct:"uint8" json:"cl"`
-	CS          uint8  `struct:"uint8" json:"cs"`
-	Description uint32 `struct:"uint32" json:"desc"`
+	Code        uint32 `json:"code"`
+	CC          uint8  `json:"cc"`
+	CL          uint8  `json:"cl"`
+	CS          uint8  `json:"cs"`
+	Description uint32 `json:"desc"`
 }
 
 // CmdCardEntry 卡片操作条目（召唤/特殊召唤/改变表示形式/盖放等）
 type CmdCardEntry struct {
-	Code uint32 `struct:"uint32" json:"code"`
-	CC   uint8  `struct:"uint8" json:"cc"`
-	CL   uint8  `struct:"uint8" json:"cl"`
-	CS   uint8  `struct:"uint8" json:"cs"`
+	Code uint32 `json:"code"`
+	CC   uint8  `json:"cc"`
+	CL   uint8  `json:"cl"`
+	CS   uint8  `json:"cs"`
 }
 
 // CmdAttackEntry 可攻击宣言的条目
 type CmdAttackEntry struct {
-	Code             uint32 `struct:"uint32" json:"code"`
-	CC               uint8  `struct:"uint8" json:"cc"`
-	CL               uint8  `struct:"uint8" json:"cl"`
-	CS               uint8  `struct:"uint8" json:"cs"`
-	DirectAttackable uint8  `struct:"uint8" json:"direct"`
+	Code             uint32 `json:"code"`
+	CC               uint8  `json:"cc"`
+	CL               uint8  `json:"cl"`
+	CS               uint8  `json:"cs"`
+	DirectAttackable uint8  `json:"direct"`
 }
 
 type SelectBattleCmdMsg struct {
-	Player uint8              `struct:"uint8" json:"player"`
-	CountA uint8              `struct:"uint8,sizeof=CmdsA" json:"-"`
+	Player uint8              `json:"player"`
+	CountA codec.Count8       `json:"-"`
 	CmdsA  []CmdActivateEntry `json:"activate"`
-	CountB uint8              `struct:"uint8,sizeof=CmdsB" json:"-"`
+	CountB codec.Count8       `json:"-"`
 	CmdsB  []CmdAttackEntry   `json:"attack"`
-	ToM2   uint8              `struct:"uint8" json:"toM2"`
-	ToEP   uint8              `struct:"uint8" json:"toEP"`
+	ToM2   uint8              `json:"toM2"`
+	ToEP   uint8              `json:"toEP"`
 }
 
 // ------------------------------------------------------------------
@@ -106,22 +109,22 @@ type SelectBattleCmdMsg struct {
 // 激活组 [count(1) + 激活条目(11B: code4+c+l+s+desc4)]，toBP(1) + toEP(1) + shuffle(1)
 // ------------------------------------------------------------------
 type SelectIdleCmdMsg struct {
-	Player     uint8              `struct:"uint8" json:"player"`
-	CountA     uint8              `struct:"uint8,sizeof=CmdsA" json:"-"`
+	Player     uint8              `json:"player"`
+	CountA     codec.Count8       `json:"-"`
 	CmdsA      []CmdCardEntry     `json:"summon"`
-	CountB     uint8              `struct:"uint8,sizeof=CmdsB" json:"-"`
+	CountB     codec.Count8       `json:"-"`
 	CmdsB      []CmdCardEntry     `json:"spsummon"`
-	CountC     uint8              `struct:"uint8,sizeof=CmdsC" json:"-"`
+	CountC     codec.Count8       `json:"-"`
 	CmdsC      []CmdCardEntry     `json:"repos"`
-	CountD     uint8              `struct:"uint8,sizeof=CmdsD" json:"-"`
+	CountD     codec.Count8       `json:"-"`
 	CmdsD      []CmdCardEntry     `json:"mset"`
-	CountE     uint8              `struct:"uint8,sizeof=CmdsE" json:"-"`
+	CountE     codec.Count8       `json:"-"`
 	CmdsE      []CmdCardEntry     `json:"sset"`
-	CountF     uint8              `struct:"uint8,sizeof=CmdsF" json:"-"`
+	CountF     codec.Count8       `json:"-"`
 	CmdsF      []CmdActivateEntry `json:"activate"`
-	ToBP       uint8              `struct:"uint8" json:"toBP"`
-	ToEP       uint8              `struct:"uint8" json:"toEP"`
-	CanShuffle uint8              `struct:"uint8" json:"shuffle"`
+	ToBP       uint8              `json:"toBP"`
+	ToEP       uint8              `json:"toEP"`
+	CanShuffle uint8              `json:"shuffle"`
 }
 
 // ------------------------------------------------------------------
@@ -129,10 +132,10 @@ type SelectIdleCmdMsg struct {
 // per playerop.cpp: player(1), code(4), get_info_location(4), description(4)
 // ------------------------------------------------------------------
 type SelectEffectYNMsg struct {
-	Player       uint8  `struct:"uint8" json:"player"`
-	Code         uint32 `struct:"uint32" json:"code"`
-	InfoLocation uint32 `struct:"uint32" json:"loc"`
-	Description  uint32 `struct:"uint32" json:"desc"`
+	Player       uint8  `json:"player"`
+	Code         uint32 `json:"code"`
+	InfoLocation uint32 `json:"loc"`
+	Description  uint32 `json:"desc"`
 }
 
 // ------------------------------------------------------------------
@@ -140,8 +143,8 @@ type SelectEffectYNMsg struct {
 // per playerop.cpp: player(1), description(4)
 // ------------------------------------------------------------------
 type SelectYesNoMsg struct {
-	Player      uint8  `struct:"uint8" json:"player"`
-	Description uint32 `struct:"uint32" json:"desc"`
+	Player      uint8  `json:"player"`
+	Description uint32 `json:"desc"`
 }
 
 // ------------------------------------------------------------------
@@ -149,9 +152,9 @@ type SelectYesNoMsg struct {
 // per playerop.cpp: player(1), count(1), int32[count] options
 // ------------------------------------------------------------------
 type SelectOptionMsg struct {
-	Player  uint8   `struct:"uint8" json:"player"`
-	Count   uint8   `struct:"uint8,sizeof=Options" json:"-"`
-	Options []int32 `struct:"[]int32" json:"options"`
+	Player  uint8        `json:"player"`
+	Count   codec.Count8 `json:"-"`
+	Options []int32      `json:"options"`
 }
 
 // ------------------------------------------------------------------
@@ -161,19 +164,19 @@ type SelectOptionMsg struct {
 // （位置 4 字节依次为 c, l, s, 选择序号/pos）
 // ------------------------------------------------------------------
 type SelectCardEntry struct {
-	Code       int32 `struct:"int32" json:"code"`
-	Controller uint8 `struct:"uint8" json:"c"`
-	Location   uint8 `struct:"uint8" json:"l"`
-	Sequence   uint8 `struct:"uint8" json:"s"`
-	Position   uint8 `struct:"uint8" json:"p"`
+	Code       int32 `json:"code"`
+	Controller uint8 `json:"c"`
+	Location   uint8 `json:"l"`
+	Sequence   uint8 `json:"s"`
+	Position   uint8 `json:"p"`
 }
 
 type SelectCardMsg struct {
-	Player     uint8             `struct:"uint8" json:"player"`
-	Cancelable uint8             `struct:"uint8" json:"cancelable"`
-	Min        uint8             `struct:"uint8" json:"min"`
-	Max        uint8             `struct:"uint8" json:"max"`
-	Count      uint8             `struct:"uint8,sizeof=Cards" json:"-"`
+	Player     uint8             `json:"player"`
+	Cancelable uint8             `json:"cancelable"`
+	Min        uint8             `json:"min"`
+	Max        uint8             `json:"max"`
+	Count      codec.Count8      `json:"-"`
 	Cards      []SelectCardEntry `json:"cards"`
 }
 
@@ -188,7 +191,12 @@ func (m *SelectCardMsg) HideCodesForPlayer(player uint8) {
 
 // Pack 将消息打包为字节数组（注意不包含开头的消息类型字节）
 func (m *SelectCardMsg) Pack() []byte {
-	data, _ := restruct.Pack(binary.LittleEndian, m)
+	data, err := codec.Marshal(m)
+	if err != nil {
+		// 布局错误属于静态 bug（由 message_test.go 锁定），静默返回
+		// nil 会让调用方发出空帧且无任何线索，宁可直接 panic
+		panic(fmt.Sprintf("codec.Marshal(%T): %v", m, err))
+	}
 	return data
 }
 
@@ -198,14 +206,14 @@ func (m *SelectCardMsg) Pack() []byte {
 // countA(1) + 条目(8B)，countB(1) + 条目(8B)；条目与 SELECT_CARD 相同
 // ------------------------------------------------------------------
 type SelectUnselectCardMsg struct {
-	Player     uint8             `struct:"uint8" json:"player"`
-	Finishable uint8             `struct:"uint8" json:"finishable"`
-	Cancelable uint8             `struct:"uint8" json:"cancelable"`
-	Min        uint8             `struct:"uint8" json:"min"`
-	Max        uint8             `struct:"uint8" json:"max"`
-	Count1     uint8             `struct:"uint8,sizeof=Cards1" json:"-"`
+	Player     uint8             `json:"player"`
+	Finishable uint8             `json:"finishable"`
+	Cancelable uint8             `json:"cancelable"`
+	Min        uint8             `json:"min"`
+	Max        uint8             `json:"max"`
+	Count1     codec.Count8      `json:"-"`
 	Cards1     []SelectCardEntry `json:"cards"`
-	Count2     uint8             `struct:"uint8,sizeof=Cards2" json:"-"`
+	Count2     codec.Count8      `json:"-"`
 	Cards2     []SelectCardEntry `json:"unselectList"`
 }
 
@@ -223,7 +231,12 @@ func (m *SelectUnselectCardMsg) HideCodesForPlayer(player uint8) {
 }
 
 func (m *SelectUnselectCardMsg) Pack() []byte {
-	data, _ := restruct.Pack(binary.LittleEndian, m)
+	data, err := codec.Marshal(m)
+	if err != nil {
+		// 布局错误属于静态 bug（由 message_test.go 锁定），静默返回
+		// nil 会让调用方发出空帧且无任何线索，宁可直接 panic
+		panic(fmt.Sprintf("codec.Marshal(%T): %v", m, err))
+	}
 	return data
 }
 
@@ -234,19 +247,19 @@ func (m *SelectUnselectCardMsg) Pack() []byte {
 // forced 是每个条目内的字节，不在头部
 // ------------------------------------------------------------------
 type ChainEntry struct {
-	DescFlag     uint8  `struct:"uint8" json:"flag"`
-	Forced       uint8  `struct:"uint8" json:"forced"`
-	Code         uint32 `struct:"uint32" json:"code"`
-	InfoLocation uint32 `struct:"uint32" json:"-"`
-	Description  uint32 `struct:"uint32" json:"desc"`
+	DescFlag     uint8  `json:"flag"`
+	Forced       uint8  `json:"forced"`
+	Code         uint32 `json:"code"`
+	InfoLocation uint32 `json:"-"`
+	Description  uint32 `json:"desc"`
 }
 
 type SelectChainMsg struct {
-	Player   uint8        `struct:"uint8" json:"player"`
-	Count    uint8        `struct:"uint8,sizeof=Chains" json:"-"`
-	SpeCount uint8        `struct:"uint8" json:"-"`
-	Hint0    uint32       `struct:"uint32" json:"-"`
-	Hint1    uint32       `struct:"uint32" json:"-"`
+	Player   uint8        `json:"player"`
+	Count    codec.Count8 `json:"-"`
+	SpeCount uint8        `json:"-"`
+	Hint0    uint32       `json:"-"`
+	Hint1    uint32       `json:"-"`
 	Chains   []ChainEntry `json:"chains"`
 }
 
@@ -255,9 +268,9 @@ type SelectChainMsg struct {
 // per playerop.cpp: player(1) count(1) flag(4)，无条目
 // ------------------------------------------------------------------
 type SelectPlaceMsg struct {
-	Player uint8  `struct:"uint8" json:"player"`
-	Count  uint8  `struct:"uint8" json:"count"`
-	Flag   uint32 `struct:"uint32" json:"flag"`
+	Player uint8  `json:"player"`
+	Count  uint8  `json:"count"`
+	Flag   uint32 `json:"flag"`
 }
 
 // ------------------------------------------------------------------
@@ -265,9 +278,9 @@ type SelectPlaceMsg struct {
 // per playerop.cpp: player(1), code(4), positions(1)
 // ------------------------------------------------------------------
 type SelectPositionMsg struct {
-	Player    uint8  `struct:"uint8" json:"player"`
-	Code      uint32 `struct:"uint32" json:"code"`
-	Positions uint8  `struct:"uint8" json:"positions"`
+	Player    uint8  `json:"player"`
+	Code      uint32 `json:"code"`
+	Positions uint8  `json:"positions"`
 }
 
 // ------------------------------------------------------------------
@@ -276,18 +289,18 @@ type SelectPositionMsg struct {
 // 条目 × cardcount = code(4) + c(1) + l(1) + s(1) + 计数(2) = 9 bytes
 // ------------------------------------------------------------------
 type CounterEntry struct {
-	Code       int32  `struct:"int32" json:"code"`
-	Controller uint8  `struct:"uint8" json:"c"`
-	Location   uint8  `struct:"uint8" json:"l"`
-	Sequence   uint8  `struct:"uint8" json:"s"`
-	Count      uint16 `struct:"uint16" json:"cnt"`
+	Code       int32  `json:"code"`
+	Controller uint8  `json:"c"`
+	Location   uint8  `json:"l"`
+	Sequence   uint8  `json:"s"`
+	Count      uint16 `json:"cnt"`
 }
 
 type SelectCounterMsg struct {
-	Player      uint8          `struct:"uint8" json:"player"`
-	CounterType uint16         `struct:"uint16" json:"countertype"`
-	Count       uint16         `struct:"uint16" json:"count"`
-	CardCount   uint8          `struct:"uint8,sizeof=Entries" json:"-"`
+	Player      uint8          `json:"player"`
+	CounterType uint16         `json:"countertype"`
+	Count       uint16         `json:"count"`
+	CardCount   codec.Count8   `json:"-"`
 	Entries     []CounterEntry `json:"cards"`
 }
 
@@ -298,23 +311,23 @@ type SelectCounterMsg struct {
 // 条目 = code(4) + c(1) + l(1) + s(1) + sum_param(4) = 11 bytes
 // ------------------------------------------------------------------
 type SumEntry struct {
-	Code       int32  `struct:"int32" json:"code"`
-	Controller uint8  `struct:"uint8" json:"c"`
-	Location   uint8  `struct:"uint8" json:"l"`
-	Sequence   uint8  `struct:"uint8" json:"s"`
-	Param      uint32 `struct:"uint32" json:"param"`
+	Code       int32  `json:"code"`
+	Controller uint8  `json:"c"`
+	Location   uint8  `json:"l"`
+	Sequence   uint8  `json:"s"`
+	Param      uint32 `json:"param"`
 }
 
 type SelectSumMsg struct {
-	SumMode     uint8      `struct:"uint8" json:"sumMode"`
-	Player      uint8      `struct:"uint8" json:"player"`
-	Acc         uint32     `struct:"uint32" json:"acc"`
-	Min         uint8      `struct:"uint8" json:"min"`
-	Max         uint8      `struct:"uint8" json:"max"`
-	MustCount   uint8      `struct:"uint8,sizeof=Must" json:"-"`
-	Must        []SumEntry `json:"must"`
-	SelectCount uint8      `struct:"uint8,sizeof=Select" json:"-"`
-	Select      []SumEntry `json:"select"`
+	SumMode     uint8        `json:"sumMode"`
+	Player      uint8        `json:"player"`
+	Acc         uint32       `json:"acc"`
+	Min         uint8        `json:"min"`
+	Max         uint8        `json:"max"`
+	MustCount   codec.Count8 `json:"-"`
+	Must        []SumEntry   `json:"must"`
+	SelectCount codec.Count8 `json:"-"`
+	Select      []SumEntry   `json:"select"`
 }
 
 // ------------------------------------------------------------------
@@ -323,15 +336,15 @@ type SelectSumMsg struct {
 // 条目 × count = code(4) + c(1) + l(1) + s(1) = 7 bytes
 // ------------------------------------------------------------------
 type SortCardEntry struct {
-	Code       int32 `struct:"int32" json:"code"`
-	Controller uint8 `struct:"uint8" json:"c"`
-	Location   uint8 `struct:"uint8" json:"l"`
-	Sequence   uint8 `struct:"uint8" json:"s"`
+	Code       int32 `json:"code"`
+	Controller uint8 `json:"c"`
+	Location   uint8 `json:"l"`
+	Sequence   uint8 `json:"s"`
 }
 
 type SortCardMsg struct {
-	Player uint8           `struct:"uint8" json:"player"`
-	Count  uint8           `struct:"uint8,sizeof=Cards" json:"-"`
+	Player uint8           `json:"player"`
+	Count  codec.Count8    `json:"-"`
 	Cards  []SortCardEntry `json:"cards"`
 }
 
@@ -341,20 +354,25 @@ type SortCardMsg struct {
 // 条目 × count = code(4) + c(1) + l(1) + s(1) = 7 bytes（无 pos 字节）
 // ------------------------------------------------------------------
 type ConfirmCardEntry struct {
-	Code       int32 `struct:"int32" json:"code"`
-	Controller uint8 `struct:"uint8" json:"c"`
-	Location   uint8 `struct:"uint8" json:"l"`
-	Sequence   uint8 `struct:"uint8" json:"s"`
+	Code       int32 `json:"code"`
+	Controller uint8 `json:"c"`
+	Location   uint8 `json:"l"`
+	Sequence   uint8 `json:"s"`
 }
 
 type ConfirmDeckTopMsg struct {
-	Player uint8              `struct:"uint8" json:"player"`
-	Count  uint8              `struct:"uint8,sizeof=Cards" json:"-"`
+	Player uint8              `json:"player"`
+	Count  codec.Count8       `json:"-"`
 	Cards  []ConfirmCardEntry `json:"cards"`
 }
 
 func (m *ConfirmDeckTopMsg) Pack() []byte {
-	data, _ := restruct.Pack(binary.LittleEndian, m)
+	data, err := codec.Marshal(m)
+	if err != nil {
+		// 布局错误属于静态 bug（由 message_test.go 锁定），静默返回
+		// nil 会让调用方发出空帧且无任何线索，宁可直接 panic
+		panic(fmt.Sprintf("codec.Marshal(%T): %v", m, err))
+	}
 	return data
 }
 
@@ -367,9 +385,9 @@ type ConfirmExtraTopMsg = ConfirmDeckTopMsg
 // 条目与 ConfirmCardEntry 相同（7 bytes）
 // ------------------------------------------------------------------
 type ConfirmCardsMsg struct {
-	Player    uint8              `struct:"uint8" json:"player"`
-	SkipPanel uint8              `struct:"uint8" json:"-"`
-	Count     uint8              `struct:"uint8,sizeof=Cards" json:"-"`
+	Player    uint8              `json:"player"`
+	SkipPanel uint8              `json:"-"`
+	Count     codec.Count8       `json:"-"`
 	Cards     []ConfirmCardEntry `json:"cards"`
 }
 
@@ -379,9 +397,9 @@ type ConfirmCardsMsg struct {
 // code | (表侧公开 ? 0x80000000 : 0)
 // ------------------------------------------------------------------
 type DrawMsg struct {
-	Player uint8   `struct:"uint8" json:"player"`
-	Count  uint8   `struct:"uint8,sizeof=Cards" json:"-"`
-	Cards  []int32 `struct:"[]int32" json:"cards"`
+	Player uint8        `json:"player"`
+	Count  codec.Count8 `json:"-"`
+	Cards  []int32      `json:"cards"`
 }
 
 func (m *DrawMsg) IsCardKnown(idx int) bool {
@@ -405,7 +423,12 @@ func (m *DrawMsg) HideUnknownCards() {
 }
 
 func (m *DrawMsg) Pack() []byte {
-	data, _ := restruct.Pack(binary.LittleEndian, m)
+	data, err := codec.Marshal(m)
+	if err != nil {
+		// 布局错误属于静态 bug（由 message_test.go 锁定），静默返回
+		// nil 会让调用方发出空帧且无任何线索，宁可直接 panic
+		panic(fmt.Sprintf("codec.Marshal(%T): %v", m, err))
+	}
 	return data
 }
 
@@ -415,9 +438,9 @@ func (m *DrawMsg) Pack() []byte {
 // 对非当前玩家发送时需要把 code 归零
 // ------------------------------------------------------------------
 type ShuffleHandMsg struct {
-	Player uint8   `struct:"uint8" json:"player"`
-	Count  uint8   `struct:"uint8,sizeof=Cards" json:"-"`
-	Cards  []int32 `struct:"[]int32" json:"cards"`
+	Player uint8        `json:"player"`
+	Count  codec.Count8 `json:"-"`
+	Cards  []int32      `json:"cards"`
 }
 
 func (m *ShuffleHandMsg) HideAllCodes() {
@@ -427,7 +450,12 @@ func (m *ShuffleHandMsg) HideAllCodes() {
 }
 
 func (m *ShuffleHandMsg) Pack() []byte {
-	data, _ := restruct.Pack(binary.LittleEndian, m)
+	data, err := codec.Marshal(m)
+	if err != nil {
+		// 布局错误属于静态 bug（由 message_test.go 锁定），静默返回
+		// nil 会让调用方发出空帧且无任何线索，宁可直接 panic
+		panic(fmt.Sprintf("codec.Marshal(%T): %v", m, err))
+	}
 	return data
 }
 
@@ -435,13 +463,13 @@ func (m *ShuffleHandMsg) Pack() []byte {
 type ShuffleExtraMsg = ShuffleHandMsg
 
 // MSG_SHUFFLE_DECK / MSG_SWAP_GRAVE_DECK 只有 player 一个字节
-//（duelclient.cpp:2263、:2378）。
+// （duelclient.cpp:2263、:2378）。
 type ShuffleDeckMsg struct {
-	Player uint8 `struct:"uint8" json:"player"`
+	Player uint8 `json:"player"`
 }
 
 type SwapGraveDeckMsg struct {
-	Player uint8 `struct:"uint8" json:"player"`
+	Player uint8 `json:"player"`
 }
 
 // ------------------------------------------------------------------
@@ -450,16 +478,16 @@ type SwapGraveDeckMsg struct {
 // （打包位置的 4 字节依次为 c, l, s, pos，与 8 个独立字节等价）
 // ------------------------------------------------------------------
 type MoveMsg struct {
-	Code   uint32 `struct:"uint32" json:"code"`
-	PC     uint8  `struct:"uint8" json:"pc"` // prev controller
-	PL     uint8  `struct:"uint8" json:"pl"` // prev location
-	PS     uint8  `struct:"uint8" json:"ps"` // prev sequence
-	PP     uint8  `struct:"uint8" json:"pp"` // prev position
-	CC     uint8  `struct:"uint8" json:"cc"` // curr controller
-	CL     uint8  `struct:"uint8" json:"cl"` // curr location
-	CS     uint8  `struct:"uint8" json:"cs"` // curr sequence
-	CP     uint8  `struct:"uint8" json:"cp"` // curr position
-	Reason uint32 `struct:"uint32" json:"reason"`
+	Code   uint32 `json:"code"`
+	PC     uint8  `json:"pc"` // prev controller
+	PL     uint8  `json:"pl"` // prev location
+	PS     uint8  `json:"ps"` // prev sequence
+	PP     uint8  `json:"pp"` // prev position
+	CC     uint8  `json:"cc"` // curr controller
+	CL     uint8  `json:"cl"` // curr location
+	CS     uint8  `json:"cs"` // curr sequence
+	CP     uint8  `json:"cp"` // curr position
+	Reason uint32 `json:"reason"`
 }
 
 // ------------------------------------------------------------------
@@ -468,12 +496,12 @@ type MoveMsg struct {
 // （pp=previous.position，cp=current.position）
 // ------------------------------------------------------------------
 type PosChangeMsg struct {
-	Code uint32 `struct:"uint32" json:"code"`
-	CC   uint8  `struct:"uint8" json:"cc"`
-	CL   uint8  `struct:"uint8" json:"cl"`
-	CS   uint8  `struct:"uint8" json:"cs"`
-	PP   uint8  `struct:"uint8" json:"pp"`
-	CP   uint8  `struct:"uint8" json:"cp"`
+	Code uint32 `json:"code"`
+	CC   uint8  `json:"cc"`
+	CL   uint8  `json:"cl"`
+	CS   uint8  `json:"cs"`
+	PP   uint8  `json:"pp"`
+	CP   uint8  `json:"cp"`
 }
 
 // ------------------------------------------------------------------
@@ -481,11 +509,11 @@ type PosChangeMsg struct {
 // per operations.cpp: code(4) + get_info_location(4) = 8 bytes
 // ------------------------------------------------------------------
 type SetMsg struct {
-	Code uint32 `struct:"uint32" json:"code"`
-	CC   uint8  `struct:"uint8" json:"cc"`
-	CL   uint8  `struct:"uint8" json:"cl"`
-	CS   uint8  `struct:"uint8" json:"cs"`
-	CP   uint8  `struct:"uint8" json:"cp"`
+	Code uint32 `json:"code"`
+	CC   uint8  `json:"cc"`
+	CL   uint8  `json:"cl"`
+	CS   uint8  `json:"cs"`
+	CP   uint8  `json:"cp"`
 }
 
 // ------------------------------------------------------------------
@@ -493,11 +521,11 @@ type SetMsg struct {
 // per operations.cpp: code(4) + get_info_location(4) = 8 bytes，布局相同
 // ------------------------------------------------------------------
 type SummoningMsg struct {
-	Code uint32 `struct:"uint32" json:"code"`
-	CC   uint8  `struct:"uint8" json:"cc"`
-	CL   uint8  `struct:"uint8" json:"cl"`
-	CS   uint8  `struct:"uint8" json:"cs"`
-	CP   uint8  `struct:"uint8" json:"cp"`
+	Code uint32 `json:"code"`
+	CC   uint8  `json:"cc"`
+	CL   uint8  `json:"cl"`
+	CS   uint8  `json:"cs"`
+	CP   uint8  `json:"cp"`
 }
 
 type FlipSummoningMsg = SummoningMsg
@@ -508,16 +536,16 @@ type SPSummoningMsg = SummoningMsg
 // per operations.cpp: code1(4)+info1(4) + code2(4)+info2(4) = 16 bytes
 // ------------------------------------------------------------------
 type SwapMsg struct {
-	Code1 uint32 `struct:"uint32" json:"code1"`
-	CC1   uint8  `struct:"uint8" json:"cc1"`
-	CL1   uint8  `struct:"uint8" json:"cl1"`
-	CS1   uint8  `struct:"uint8" json:"cs1"`
-	CP1   uint8  `struct:"uint8" json:"cp1"`
-	Code2 uint32 `struct:"uint32" json:"code2"`
-	CC2   uint8  `struct:"uint8" json:"cc2"`
-	CL2   uint8  `struct:"uint8" json:"cl2"`
-	CS2   uint8  `struct:"uint8" json:"cs2"`
-	CP2   uint8  `struct:"uint8" json:"cp2"`
+	Code1 uint32 `json:"code1"`
+	CC1   uint8  `json:"cc1"`
+	CL1   uint8  `json:"cl1"`
+	CS1   uint8  `json:"cs1"`
+	CP1   uint8  `json:"cp1"`
+	Code2 uint32 `json:"code2"`
+	CC2   uint8  `json:"cc2"`
+	CL2   uint8  `json:"cl2"`
+	CS2   uint8  `json:"cs2"`
+	CP2   uint8  `json:"cp2"`
 }
 
 // ------------------------------------------------------------------
@@ -527,16 +555,16 @@ type SwapMsg struct {
 // 注意：一般发动时触发位置 == 发动卡位置，但字节上是两组独立数据
 // ------------------------------------------------------------------
 type ChainingMsg struct {
-	Code                 uint32 `struct:"uint32" json:"code"`
-	CardController       uint8  `struct:"uint8" json:"cc"`
-	CardLocation         uint8  `struct:"uint8" json:"cl"`
-	CardSequence         uint8  `struct:"uint8" json:"cs"`
-	CardPosition         uint8  `struct:"uint8" json:"cp"`
-	TriggeringController uint8  `struct:"uint8" json:"-"`
-	TriggeringLocation   uint8  `struct:"uint8" json:"-"`
-	TriggeringSequence   uint8  `struct:"uint8" json:"-"`
-	Description          uint32 `struct:"uint32" json:"desc"`
-	ChainCount           uint8  `struct:"uint8" json:"count"`
+	Code                 uint32 `json:"code"`
+	CardController       uint8  `json:"cc"`
+	CardLocation         uint8  `json:"cl"`
+	CardSequence         uint8  `json:"cs"`
+	CardPosition         uint8  `json:"cp"`
+	TriggeringController uint8  `json:"-"`
+	TriggeringLocation   uint8  `json:"-"`
+	TriggeringSequence   uint8  `json:"-"`
+	Description          uint32 `json:"desc"`
+	ChainCount           uint8  `json:"count"`
 }
 
 // ------------------------------------------------------------------
@@ -544,7 +572,7 @@ type ChainingMsg struct {
 // MSG_CHAIN_DISABLED — 连锁处理，各 1 字节 chain number
 // ------------------------------------------------------------------
 type ChainSolvingMsg struct {
-	Count uint8 `struct:"uint8" json:"count"`
+	Count uint8 `json:"count"`
 }
 
 type ChainedMsg = ChainSolvingMsg
@@ -560,8 +588,8 @@ type AttackDisabledMsg struct{}
 // （无对象时第二组为 0）
 // ------------------------------------------------------------------
 type AttackMsg struct {
-	AttackerInfo uint32 `struct:"uint32" json:"-"`
-	TargetInfo   uint32 `struct:"uint32" json:"-"`
+	AttackerInfo uint32 `json:"-"`
+	TargetInfo   uint32 `json:"-"`
 }
 
 // ------------------------------------------------------------------
@@ -570,29 +598,32 @@ type AttackMsg struct {
 // 对象方位置(4) + da(4) + dd(4) + bd1(1) = 26 bytes
 // ------------------------------------------------------------------
 type BattleMsg struct {
-	AttackerInfo   uint32 `struct:"uint32" json:"-"`
-	AttackerATK    int32  `struct:"int32" json:"-"`
-	AttackerDEF    int32  `struct:"int32" json:"-"`
-	AttackerDirect uint8  `struct:"uint8" json:"-"`
-	TargetInfo     uint32 `struct:"uint32" json:"-"`
-	TargetATK      int32  `struct:"int32" json:"-"`
-	TargetDEF      int32  `struct:"int32" json:"-"`
-	TargetDirect   uint8  `struct:"uint8" json:"-"`
+	AttackerInfo   uint32 `json:"-"`
+	AttackerATK    int32  `json:"-"`
+	AttackerDEF    int32  `json:"-"`
+	AttackerDirect uint8  `json:"-"`
+	TargetInfo     uint32 `json:"-"`
+	TargetATK      int32  `json:"-"`
+	TargetDEF      int32  `json:"-"`
+	TargetDirect   uint8  `json:"-"`
 }
 
 // ------------------------------------------------------------------
 // MSG_CARD_SELECTED / MSG_RANDOM_SELECTED
-// per playerop.cpp: count(1) + int32[count]；RANDOM 版本前面多 1 字节 player
+// 两者布局一致：player(1) + count(1) + int32[count]（C++ 客户端
+// single_duel.cpp:1154 / tag_duel.cpp:1187 均先读 player；引擎侧
+// MSG_CARD_SELECTED 已注释不发（common.h:310），仅 RANDOM_SELECTED 实际可达）。
 // ------------------------------------------------------------------
 type CardSelectedMsg struct {
-	Count uint8   `struct:"uint8,sizeof=Cards" json:"-"`
-	Cards []int32 `struct:"[]int32" json:"cards"`
+	Player uint8        `json:"player"`
+	Count  codec.Count8 `json:"-"`
+	Cards  []int32      `json:"cards"`
 }
 
 type RandomSelectedMsg struct {
-	Player uint8   `struct:"uint8" json:"player"`
-	Count  uint8   `struct:"uint8,sizeof=Cards" json:"-"`
-	Cards  []int32 `struct:"[]int32" json:"cards"`
+	Player uint8        `json:"player"`
+	Count  codec.Count8 `json:"-"`
+	Cards  []int32      `json:"cards"`
 }
 
 // ------------------------------------------------------------------
@@ -600,8 +631,8 @@ type RandomSelectedMsg struct {
 // per operations.cpp: count(1) + get_info_location(4) × count
 // ------------------------------------------------------------------
 type BecomeTargetMsg struct {
-	Count   uint8    `struct:"uint8,sizeof=Targets" json:"-"`
-	Targets []uint32 `struct:"[]uint32" json:"targets"`
+	Count   codec.Count8 `json:"-"`
+	Targets []uint32     `json:"targets"`
 }
 
 // ------------------------------------------------------------------
@@ -609,20 +640,20 @@ type BecomeTargetMsg struct {
 // per operations.cpp: player(1) + value(4)
 // ------------------------------------------------------------------
 type DamageMsg struct {
-	Player uint8 `struct:"uint8" json:"player"`
-	Value  int32 `struct:"int32" json:"amount"`
+	Player uint8 `json:"player"`
+	Value  int32 `json:"amount"`
 }
 
 type RecoverMsg = DamageMsg
 
 type PayLPCostMsg struct {
-	Player uint8 `struct:"uint8" json:"player"`
-	Value  int32 `struct:"int32" json:"amount"`
+	Player uint8 `json:"player"`
+	Value  int32 `json:"amount"`
 }
 
 type LPUpdateMsg struct {
-	Player uint8 `struct:"uint8" json:"player"`
-	LP     int32 `struct:"int32" json:"lp"`
+	Player uint8 `json:"player"`
+	LP     int32 `json:"lp"`
 }
 
 // ------------------------------------------------------------------
@@ -630,15 +661,15 @@ type LPUpdateMsg struct {
 // per card.cpp: 装备卡 get_info_location(4) + 对象卡 get_info_location(4) = 8 bytes
 // ------------------------------------------------------------------
 type EquipMsg struct {
-	CardInfo   uint32 `struct:"uint32" json:"-"`
-	TargetInfo uint32 `struct:"uint32" json:"-"`
+	CardInfo   uint32 `json:"-"`
+	TargetInfo uint32 `json:"-"`
 }
 
 // ------------------------------------------------------------------
 // MSG_UNEQUIP — 解除装备（4 bytes：get_info_location）
 // ------------------------------------------------------------------
 type UnequipMsg struct {
-	Info uint32 `struct:"uint32" json:"-"`
+	Info uint32 `json:"-"`
 }
 
 // ------------------------------------------------------------------
@@ -652,11 +683,11 @@ type CardTargetMsg = EquipMsg
 // = 7 bytes（注意不是 get_info_location——没有 pos 字节）
 // ------------------------------------------------------------------
 type CounterMsg struct {
-	Type  uint16 `struct:"uint16" json:"type"`
-	CC    uint8  `struct:"uint8" json:"c"`
-	CL    uint8  `struct:"uint8" json:"l"`
-	CS    uint8  `struct:"uint8" json:"s"`
-	Count uint16 `struct:"uint16" json:"count"`
+	Type  uint16 `json:"type"`
+	CC    uint8  `json:"c"`
+	CL    uint8  `json:"l"`
+	CS    uint8  `json:"s"`
+	Count uint16 `json:"count"`
 }
 
 // ------------------------------------------------------------------
@@ -664,8 +695,8 @@ type CounterMsg struct {
 // per processor.cpp: get_info_location(4) + code(4)
 // ------------------------------------------------------------------
 type MissedEffectMsg struct {
-	InfoLocation uint32 `struct:"uint32" json:"-"`
-	Code         uint32 `struct:"uint32" json:"code"`
+	InfoLocation uint32 `json:"-"`
+	Code         uint32 `json:"code"`
 }
 
 // ------------------------------------------------------------------
@@ -673,7 +704,7 @@ type MissedEffectMsg struct {
 // per operations.cpp:535-536: code(4)（gframe 胜利时展示这张卡图）
 // ------------------------------------------------------------------
 type MatchKillMsg struct {
-	Code uint32 `struct:"uint32" json:"code"`
+	Code uint32 `json:"code"`
 }
 
 // ------------------------------------------------------------------
@@ -681,9 +712,9 @@ type MatchKillMsg struct {
 // per operations.cpp: player(1) count(1) + result(1) × count
 // ------------------------------------------------------------------
 type TossCoinMsg struct {
-	Player  uint8   `struct:"uint8" json:"player"`
-	Count   uint8   `struct:"uint8,sizeof=Results" json:"-"`
-	Results []uint8 `struct:"[]uint8" json:"results"`
+	Player  uint8        `json:"player"`
+	Count   codec.Count8 `json:"-"`
+	Results []uint8      `json:"results"`
 }
 
 type TossDiceMsg = TossCoinMsg
@@ -693,14 +724,14 @@ type TossDiceMsg = TossCoinMsg
 // per operations.cpp: phase(1)（0=请求出拳，1=请求出拳（再猜））
 // ------------------------------------------------------------------
 type RockPaperScissorsMsg struct {
-	Phase uint8 `struct:"uint8" json:"phase"`
+	Phase uint8 `json:"phase"`
 }
 
 // MSG_HAND_RES — 猜拳结果：res = hand0 | (hand1 << 2)
 // 出拳值：1=石头 2=剪刀 3=布（gframe 按钮图 f1/f2/f3 依次发 1/2/3，
 // event_handler.cpp:33；引擎判定 1 胜 2、2 胜 3、3 胜 1，operations.cpp:6538）
 type HandResMsg struct {
-	Res uint8 `struct:"uint8" json:"res"`
+	Res uint8 `json:"res"`
 }
 
 // ------------------------------------------------------------------
@@ -708,9 +739,9 @@ type HandResMsg struct {
 // per playerop.cpp: player(1) count(1) available(4)（位掩码）
 // ------------------------------------------------------------------
 type AnnounceRaceMsg struct {
-	Player    uint8  `struct:"uint8" json:"player"`
-	Count     uint8  `struct:"uint8" json:"count"`
-	Available uint32 `struct:"uint32" json:"available"`
+	Player    uint8  `json:"player"`
+	Count     uint8  `json:"count"`
+	Available uint32 `json:"available"`
 }
 
 type AnnounceAttribMsg = AnnounceRaceMsg
@@ -722,9 +753,9 @@ type AnnounceAttribMsg = AnnounceRaceMsg
 // 字面量 + OPCODE_ISCODE 的组合即为可选卡号
 // ------------------------------------------------------------------
 type AnnounceCardMsg struct {
-	Player uint8   `struct:"uint8" json:"player"`
-	Count  uint8   `struct:"uint8,sizeof=Values" json:"-"`
-	Values []int32 `struct:"[]int32" json:"options"`
+	Player uint8        `json:"player"`
+	Count  codec.Count8 `json:"-"`
+	Values []int32      `json:"options"`
 }
 
 type AnnounceNumberMsg = AnnounceCardMsg
@@ -734,9 +765,9 @@ type AnnounceNumberMsg = AnnounceCardMsg
 // per processor.cpp: uint8 type, uint8 player, int32 data
 // ------------------------------------------------------------------
 type HintMsg struct {
-	Type   uint8 `struct:"uint8" json:"type"`
-	Player uint8 `struct:"uint8" json:"player"`
-	Data   int32 `struct:"int32" json:"data"`
+	Type   uint8 `json:"type"`
+	Player uint8 `json:"player"`
+	Data   int32 `json:"data"`
 }
 
 // ------------------------------------------------------------------
@@ -744,33 +775,33 @@ type HintMsg struct {
 // per card.cpp: get_info_location(4) + type(1) + data(4) = 9 bytes
 // ------------------------------------------------------------------
 type CardHintMsg struct {
-	Info uint32 `struct:"uint32" json:"-"`
-	Type uint8  `struct:"uint8" json:"-"`
-	Data int32  `struct:"int32" json:"-"`
+	Info uint32 `json:"-"`
+	Type uint8  `json:"-"`
+	Data int32  `json:"-"`
 }
 
 // MSG_PLAYER_HINT — 玩家提示 (6 bytes: player(1) + type(1) + data(4))
 type PlayerHintMsg struct {
-	Player uint8 `struct:"uint8" json:"-"`
-	Type   uint8 `struct:"uint8" json:"-"`
-	Data   int32 `struct:"int32" json:"-"`
+	Player uint8 `json:"-"`
+	Type   uint8 `json:"-"`
+	Data   int32 `json:"-"`
 }
 
 // ------------------------------------------------------------------
 // MSG_NEW_TURN / MSG_NEW_PHASE / MSG_WIN — 回合/阶段/胜利
 // ------------------------------------------------------------------
 type NewTurnMsg struct {
-	Player uint8 `struct:"uint8" json:"player"`
+	Player uint8 `json:"player"`
 }
 
 // per processor.cpp: phase(2)（uint16）
 type NewPhaseMsg struct {
-	Phase uint16 `struct:"uint16" json:"phase"`
+	Phase uint16 `json:"phase"`
 }
 
 type WinMsg struct {
-	Player uint8 `struct:"uint8" json:"winner"`
-	Type   uint8 `struct:"uint8" json:"type"`
+	Player uint8 `json:"winner"`
+	Type   uint8 `json:"type"`
 }
 
 // ------------------------------------------------------------------
@@ -778,9 +809,9 @@ type WinMsg struct {
 // per libduel.cpp: player(1) sequence(1) code(4) = 6 bytes
 // ------------------------------------------------------------------
 type DeckTopMsg struct {
-	Player   uint8  `struct:"uint8" json:"player"`
-	Sequence uint8  `struct:"uint8" json:"sequence"`
-	Code     uint32 `struct:"uint32" json:"code"`
+	Player   uint8  `json:"player"`
+	Sequence uint8  `json:"sequence"`
+	Code     uint32 `json:"code"`
 }
 
 // ------------------------------------------------------------------
@@ -788,13 +819,13 @@ type DeckTopMsg struct {
 // per tag_duel.cpp: player(1) main数(1) extra数(1) side数(1) + 各 int32 列表
 // ------------------------------------------------------------------
 type TagSwapMsg struct {
-	Player     uint8   `struct:"uint8" json:"player"`
-	MainCount  uint8   `struct:"uint8,sizeof=Main" json:"-"`
-	ExtraCount uint8   `struct:"uint8,sizeof=Extra" json:"-"`
-	SideCount  uint8   `struct:"uint8,sizeof=Side" json:"-"`
-	Main       []int32 `struct:"[]int32" json:"main"`
-	Extra      []int32 `struct:"[]int32" json:"extra"`
-	Side       []int32 `struct:"[]int32" json:"side"`
+	Player     uint8        `json:"player"`
+	MainCount  codec.Count8 `json:"-"`
+	ExtraCount codec.Count8 `json:"-"`
+	SideCount  codec.Count8 `json:"-"`
+	Main       []int32      `json:"main"`
+	Extra      []int32      `json:"extra"`
+	Side       []int32      `json:"side"`
 }
 
 // ------------------------------------------------------------------
@@ -802,21 +833,21 @@ type TagSwapMsg struct {
 // per operations.cpp: loc(1) count(1) + [code(4) + get_info_location(4)] × count
 // ------------------------------------------------------------------
 type ShuffleSetCardMsg struct {
-	Loc   uint8          `struct:"uint8" json:"-"`
-	Count uint8          `struct:"uint8,sizeof=Cards" json:"-"`
+	Loc   uint8          `json:"-"`
+	Count codec.Count8   `json:"-"`
 	Cards []SetCardEntry `json:"-"`
 }
 
 type SetCardEntry struct {
-	Code int32  `struct:"int32" json:"-"`
-	Info uint32 `struct:"uint32" json:"-"`
+	Code int32  `json:"-"`
+	Info uint32 `json:"-"`
 }
 
 // ------------------------------------------------------------------
 // MSG_REFRESH_DECK — 刷新卡组（player(1)）
 // ------------------------------------------------------------------
 type RefreshDeckMsg struct {
-	Player uint8 `struct:"uint8" json:"-"`
+	Player uint8 `json:"-"`
 }
 
 // MSG_REVERSE_DECK — 翻转卡组，无数据
@@ -826,21 +857,14 @@ type ReverseDeckMsg struct{}
 // MSG_FIELD_DISABLED — 场地禁用（zones(4)）
 // ------------------------------------------------------------------
 type FieldDisabledMsg struct {
-	Zones uint32 `struct:"uint32" json:"-"`
+	Zones uint32 `json:"-"`
 }
 
 // ------------------------------------------------------------------
 // 辅助函数
 // ------------------------------------------------------------------
 
-// UnpackGameMsg 用 restruct 从字节切片解析特定类型的消息
-// 注意：data 不应包含开头的消息类型字节
-func UnpackGameMsg(data []byte, msg interface{}) error {
-	return restruct.Unpack(data, binary.LittleEndian, msg)
-}
-
-// PackGameMsg 用 restruct 将消息打包为字节切片
-func PackGameMsg(msg interface{}) []byte {
-	data, _ := restruct.Pack(binary.LittleEndian, msg)
-	return data
-}
+// Pack 方法（SelectCardMsg / SelectUnselectCardMsg / ConfirmDeckTopMsg /
+// DrawMsg / ShuffleHandMsg）走 codec.Marshal，失败 panic：布局错误属于
+// 静态 bug，宁可崩溃也不发出空帧。其余引擎消息组包走 core/duel 的
+// packEngineMsg（WireSize + MarshalInto 单次分配）。

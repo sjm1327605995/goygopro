@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/go-restruct/restruct"
+	"github.com/sjm1327605995/goygopro/core/codec"
 	"github.com/sjm1327605995/goygopro/core/duel"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
@@ -39,6 +39,11 @@ type HostEntry struct {
 // refreshMu 串行化多次「刷新主机」：7921 端口同一时间只允许一个接收者
 // （Windows 上 SO_REUSEADDR 语义不同，双收会互相抢包）。
 var refreshMu sync.Mutex
+
+// hostPacketBufSize 是 HostPacket 的线上尺寸（当前 72 字节）。应答缓冲按
+// struct 实际尺寸分配，不再用旧的魔法数 256：协议加长时这里跟着变，否则
+// ReadFromUDP 截断 → codec.Unmarshal 失败 → 主机被静默漏收。
+var hostPacketBufSize = binary.Size(protocol.HostPacket{})
 
 // RefreshHosts 执行一轮 LAN 广播发现，返回应答的主机列表。
 // timeoutMs 是收应答的窗口（原版 timeval{3,0}），缺省/越界时取 3000。
@@ -71,7 +76,7 @@ func refreshHosts(timeoutMs int, dst *net.UDPAddr) []HostEntry {
 	seen := map[string]bool{}
 	var hosts []HostEntry
 	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
-	buf := make([]byte, 256)
+	buf := make([]byte, hostPacketBufSize)
 	for {
 		_ = conn.SetReadDeadline(deadline)
 		n, remoteAddr, err := conn.ReadFromUDP(buf)
@@ -80,7 +85,7 @@ func refreshHosts(timeoutMs int, dst *net.UDPAddr) []HostEntry {
 			break
 		}
 		var hp protocol.HostPacket
-		if err := restruct.Unpack(buf[:n], binary.LittleEndian, &hp); err != nil {
+		if err := codec.Unmarshal(buf[:n], &hp); err != nil {
 			continue
 		}
 		// 原版 BroadcastReply：identifier/version 不符直接丢弃
@@ -116,7 +121,7 @@ func refreshHosts(timeoutMs int, dst *net.UDPAddr) []HostEntry {
 // 会自动设置 SO_BROADCAST，这里按本地 IPv4 接口逐个绑定发送，无接口时兜底发一发。
 func broadcastRequests(dst *net.UDPAddr) {
 	req := protocol.HostRequest{Identifier: network.NETWORK_CLIENT_ID}
-	payload, err := restruct.Pack(binary.LittleEndian, &req)
+	payload, err := codec.Marshal(&req)
 	if err != nil {
 		return
 	}

@@ -72,23 +72,23 @@ const (
 )
 
 const (
-	CTOS_RESPONSE      = 0x1  // byte array
-	CTOS_UPDATE_DECK   = 0x2  // CTOS_DeckData
-	CTOS_HAND_RESULT   = 0x3  // CTOS_HandResult
-	CTOS_TP_RESULT     = 0x4  // CTOS_TPResult
-	CTOS_PLAYER_INFO   = 0x10 // CTOS_PlayerInfo
-	CTOS_CREATE_GAME   = 0x11 // CTOS_CreateGame
-	CTOS_JOIN_GAME     = 0x12 // CTOS_JoinGame
-	CTOS_LEAVE_GAME    = 0x13 // no data
-	CTOS_SURRENDER     = 0x14 // no data
-	CTOS_TIME_CONFIRM  = 0x15 // no data
-	CTOS_CHAT          = 0x16 // uint16_t array
+	CTOS_RESPONSE         = 0x1  // byte array
+	CTOS_UPDATE_DECK      = 0x2  // CTOS_DeckData
+	CTOS_HAND_RESULT      = 0x3  // CTOS_HandResult
+	CTOS_TP_RESULT        = 0x4  // CTOS_TPResult
+	CTOS_PLAYER_INFO      = 0x10 // CTOS_PlayerInfo
+	CTOS_CREATE_GAME      = 0x11 // CTOS_CreateGame
+	CTOS_JOIN_GAME        = 0x12 // CTOS_JoinGame
+	CTOS_LEAVE_GAME       = 0x13 // no data
+	CTOS_SURRENDER        = 0x14 // no data
+	CTOS_TIME_CONFIRM     = 0x15 // no data
+	CTOS_CHAT             = 0x16 // uint16_t array
 	CTOS_EXTERNAL_ADDRESS = 0x17 // CTOS_ExternalAddress
-	CTOS_HS_TODUELIST  = 0x20 // no data
-	CTOS_HS_TOOBSERVER = 0x21 // no data
-	CTOS_HS_READY      = 0x22 // no data
-	CTOS_HS_NOTREADY   = 0x23 // no data
-	CTOS_HS_KICK       = 0x24 // CTOS_Kick
-	CTOS_HS_START      = 0x25 // no data
-	CTOS_REQUEST_FIELD = 0x30
+	CTOS_HS_TODUELIST     = 0x20 // no data
+	CTOS_HS_TOOBSERVER    = 0x21 // no data
+	CTOS_HS_READY         = 0x22 // no data
+	CTOS_HS_NOTREADY      = 0x23 // no data
+	CTOS_HS_KICK          = 0x24 // CTOS_Kick
+	CTOS_HS_START         = 0x25 // no data
+	CTOS_REQUEST_FIELD    = 0x30
 )

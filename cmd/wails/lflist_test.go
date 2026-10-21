@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sjm1327605995/goygopro/core/duel"
+	"github.com/sjm1327605995/goygopro/core/data"
 )
 
 // 波 G-3：禁限卡表下拉（gframe 建房窗 cbLFlist）。HostInfo.LFList 存哈希，
@@ -17,16 +17,16 @@ func TestListLFLists(t *testing.T) {
 	if err := os.WriteFile(conf, []byte("# comment\n!Test List\n"), 0o644); err != nil {
 		t.Fatalf("write conf: %v", err)
 	}
-	duel.DeckManager.LoadLFListSingle(conf)
+	data.DeckManager.LoadLFListSingle(conf)
 	// 显式补上「N/A」（LoadLFList 尾部追加，哈希 0）
-	duel.DeckManager.LoadLFList()
+	data.DeckManager.LoadLFList()
 
 	a := NewApp()
 	entries := a.ListLFLists()
 
-	var testList, nolimit *duel.LFList
-	for i := range duel.DeckManager.LFList {
-		l := &duel.DeckManager.LFList[i]
+	var testList, nolimit *data.LFList
+	for i := range data.DeckManager.LFList {
+		l := &data.DeckManager.LFList[i]
 		switch l.ListName {
 		case "Test List":
 			testList = l

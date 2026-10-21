@@ -1,8 +1,7 @@
-package duel
+package data
 
 import (
 	"bufio"
-	"bytes"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 	"os"
@@ -29,11 +28,7 @@ const (
 )
 
 type deckManager struct {
-	deckBuff    *bytes.Buffer
-	LFList      []LFList
-	currentDeck *Deck
-
-	_datas map[uint32]*CardDataC
+	LFList []LFList
 }
 
 var DeckManager = new(deckManager)
@@ -44,7 +39,7 @@ type LFList struct {
 	Content  map[uint32]int
 }
 
-func (d *deckManager) LoadLFListSingle(path string) {
+func (dm *deckManager) LoadLFListSingle(path string) {
 	file, err := os.Open(path)
 	if err != nil {
 		return
@@ -70,8 +65,8 @@ func (d *deckManager) LoadLFListSingle(path string) {
 				ListName: listName,
 				Content:  make(map[uint32]int),
 			}
-			d.LFList = append(d.LFList, newList)
-			currentList = &d.LFList[len(d.LFList)-1]
+			dm.LFList = append(dm.LFList, newList)
+			currentList = &dm.LFList[len(dm.LFList)-1]
 		default:
 			if currentList == nil {
 				continue
@@ -101,22 +96,30 @@ func (d *deckManager) LoadLFListSingle(path string) {
 		}
 	}
 }
-func (d *deckManager) LoadLFList() {
-	d.LoadLFListSingle("expansions/lflist.conf")
-	d.LoadLFListSingle("lflist.conf")
+
+// LoadLFList 加载禁限表。paths 为可选的禁限表文件路径；不传时保持原版
+// 行为（依次加载 expansions/lflist.conf 与 lflist.conf），传入时按给定
+// 顺序加载（空表名 "!" 段的处理与逐文件语义不变）。
+func (dm *deckManager) LoadLFList(paths ...string) {
+	if len(paths) == 0 {
+		paths = []string{"expansions/lflist.conf", "lflist.conf"}
+	}
+	for _, path := range paths {
+		dm.LoadLFListSingle(path)
+	}
 
 	nolimit := LFList{
 		ListName: "N/A",
 		Hash:     0,
 		Content:  make(map[uint32]int),
 	}
-	d.LFList = append(d.LFList, nolimit)
+	dm.LFList = append(dm.LFList, nolimit)
 }
 
-func (d *deckManager) GetLFList(lfhash uint32) *LFList {
-	for i := range d.LFList {
-		if d.LFList[i].Hash == lfhash {
-			return &d.LFList[i]
+func (dm *deckManager) GetLFList(lfhash uint32) *LFList {
+	for i := range dm.LFList {
+		if dm.LFList[i].Hash == lfhash {
+			return &dm.LFList[i]
 		}
 	}
 	return nil
@@ -134,7 +137,7 @@ func checkAvail(ot, avail uint32) uint32 {
 	}
 	return network.DECKERROR_NOTAVAIL
 }
-func (d *deckManager) CheckDeck(deck *Deck, lfhash uint32, rule int) uint32 {
+func (dm *deckManager) CheckDeck(deck *Deck, lfhash uint32, rule int) uint32 {
 	ccount := make(map[uint32]int)
 
 	// 检查卡组大小
@@ -149,7 +152,7 @@ func (d *deckManager) CheckDeck(deck *Deck, lfhash uint32, rule int) uint32 {
 	}
 
 	// 获取限制列表
-	lflist := d.GetLFList(lfhash)
+	lflist := dm.GetLFList(lfhash)
 	if lflist == nil {
 		return 0
 	}
@@ -187,8 +190,8 @@ func (d *deckManager) CheckDeck(deck *Deck, lfhash uint32, rule int) uint32 {
 }
 
 // checkPile 是 CheckDeck 主卡/额外/副卡三段共有检查的公共实现：可用性
-//（checkAvail）、类型约束（typeOK 为 false 时返回 countErrCode<<28）、同名卡
-//（含 Alias 归并）不超过 3 张与禁卡表数量限制。三段仅在"类型约束"与"计数错误码"
+// （checkAvail）、类型约束（typeOK 为 false 时返回 countErrCode<<28）、同名卡
+// （含 Alias 归并）不超过 3 张与禁卡表数量限制。三段仅在"类型约束"与"计数错误码"
 // 上不同，由参数表达；返回的错误码与原逐段实现逐位一致（DECKERROR_*<<28 | code）。
 func checkPile(cards []*CardDataC, ccount map[uint32]int, lflist *LFList, avail uint32, typeOK func(*CardDataC) bool, countErrCode uint32) uint32 {
 	for _, card := range cards {
@@ -210,27 +213,27 @@ func checkPile(cards []*CardDataC, ccount map[uint32]int, lflist *LFList, avail 
 	return 0
 }
 
-func (d *deckManager) LoadDeck(deck *Deck, dbuf []uint32, mainc, sidec int32, isPacklist bool) uint32 {
+func (dm *deckManager) LoadDeck(deck *Deck, codes []uint32, mainc, sidec int32, isPacklist bool) uint32 {
 
-	var errorcode uint32
-	var cd *ocgcore.CardData
+	var errCode uint32
+	var card *ocgcore.CardData
 
 	for i := int32(0); i < mainc; i++ {
-		code := dbuf[i]
-		cd = DefaultDataManager.GetData(code)
-		if cd == nil {
-			errorcode = code
+		code := codes[i]
+		card = DefaultDataManager.GetData(code)
+		if card == nil {
+			errCode = code
 			continue
 		}
-		if cd.Type&ocgcore.TYPE_TOKEN != 0 {
-			errorcode = code
+		if card.Type&ocgcore.TYPE_TOKEN != 0 {
+			errCode = code
 			continue
 		}
 		if isPacklist {
 			deck.Main = append(deck.Main, DefaultDataManager.GetCodePointer(code))
 			continue
 		}
-		if cd.Type&ocgcore.TYPES_EXTRA_DECK != 0 {
+		if card.Type&ocgcore.TYPES_EXTRA_DECK != 0 {
 			if len(deck.Extra) < EXTRA_MAX_SIZE {
 				deck.Extra = append(deck.Extra, DefaultDataManager.GetCodePointer(code))
 			}
@@ -242,14 +245,14 @@ func (d *deckManager) LoadDeck(deck *Deck, dbuf []uint32, mainc, sidec int32, is
 	}
 
 	for i := int32(0); i < sidec; i++ {
-		code := dbuf[mainc+i]
-		cd = DefaultDataManager.GetData(code)
-		if cd == nil {
-			errorcode = code
+		code := codes[mainc+i]
+		card = DefaultDataManager.GetData(code)
+		if card == nil {
+			errCode = code
 			continue
 		}
-		if cd.Type&ocgcore.TYPE_TOKEN != 0 {
-			errorcode = code
+		if card.Type&ocgcore.TYPE_TOKEN != 0 {
+			errCode = code
 			continue
 		}
 		if len(deck.Side) < SIDE_MAX_SIZE {
@@ -257,9 +260,9 @@ func (d *deckManager) LoadDeck(deck *Deck, dbuf []uint32, mainc, sidec int32, is
 		}
 	}
 
-	return errorcode
+	return errCode
 }
-func (d *deckManager) LoadSide(deck *Deck, dbuf []uint32, mainc, sidec int32) bool {
+func (dm *deckManager) LoadSide(deck *Deck, codes []uint32, mainc, sidec int32) bool {
 	pcount := make(map[uint32]int)
 	ncount := make(map[uint32]int)
 
@@ -276,7 +279,7 @@ func (d *deckManager) LoadSide(deck *Deck, dbuf []uint32, mainc, sidec int32) bo
 
 	// 加载新卡组
 	ndeck := &Deck{}
-	d.LoadDeck(ndeck, dbuf, mainc, sidec, false)
+	dm.LoadDeck(ndeck, codes, mainc, sidec, false)
 
 	// 检查卡组大小是否一致
 	if len(ndeck.Main) != len(deck.Main) || len(ndeck.Extra) != len(deck.Extra) || len(ndeck.Side) != len(deck.Side) {

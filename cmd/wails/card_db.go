@@ -88,6 +88,9 @@ type CardDBManager struct {
 	db       *sqlx.DB
 	cache    map[uint32]*CardInfo
 	setNames *SetNameTable
+	// counters 是 strings.conf !counter 行的惰性缓存（见 counter_names.go）：
+	// nil = 尚未加载。与 db 一样受 mu 保护。
+	counters map[uint32]string
 }
 
 func NewCardDBManager() *CardDBManager {
@@ -103,6 +106,15 @@ func (m *CardDBManager) OpenDB(dbPath string) error {
 	db, err := sqlx.Open("sqlite", dbPath)
 	if err != nil {
 		return err
+	}
+	// sqlx.Open 是惰性的，坏路径要到首次查询才报错；Ping 把失败前置到
+	// 打开时（启动期就能发现卡数据库不可用，而不是表现为查询静默返回空）。
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return err
+	}
+	if m.db != nil {
+		_ = m.db.Close()
 	}
 	m.db = db
 	return nil
@@ -120,13 +132,14 @@ func (m *CardDBManager) GetCard(code uint32) *CardInfo {
 	// 0x80000000 是协议里的公开标记（如表侧抽卡），不是卡号的一部分
 	code &^= 0x80000000
 	m.mu.RLock()
-	if card, ok := m.cache[code]; ok {
-		m.mu.RUnlock()
+	db := m.db
+	card, ok := m.cache[code]
+	m.mu.RUnlock()
+	if ok {
 		return card
 	}
-	m.mu.RUnlock()
 
-	if m.db == nil {
+	if db == nil {
 		return nil
 	}
 
@@ -140,7 +153,7 @@ func (m *CardDBManager) GetCard(code uint32) *CardInfo {
 		levelInfo uint32
 	)
 
-	row := m.db.QueryRow(query, code)
+	row := db.QueryRow(query, code)
 	err := row.Scan(&cd.Code, &cd.Ot, &cd.Alias, &cd.Setcode, &cd.Type, &cd.Attack, &cd.Defense, &levelInfo,
 		&cd.Race, &cd.Attribute, &cd.Category, &cd.Name, &cd.Desc,
 		&strList[0], &strList[1], &strList[2], &strList[3], &strList[4], &strList[5], &strList[6], &strList[7],
@@ -315,7 +328,10 @@ func parseKeywordElements(kw string, multi int, table *SetNameTable) []kwElement
 }
 
 func (m *CardDBManager) SearchCards(f CardFilter) []CardInfo {
-	if m.db == nil {
+	m.mu.RLock()
+	db := m.db
+	m.mu.RUnlock()
+	if db == nil {
 		return nil
 	}
 
@@ -522,7 +538,7 @@ func (m *CardDBManager) SearchCards(f CardFilter) []CardInfo {
 		args = append(args, limit, f.Offset)
 	}
 
-	rows, err := m.db.Query(query, args...)
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil
 	}

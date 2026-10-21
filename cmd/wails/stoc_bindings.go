@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/sjm1327605995/goygopro/core/duel"
+	"github.com/sjm1327605995/goygopro/core/replay"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
@@ -95,7 +95,7 @@ func decorateErrorMsg(c *WailsDuelClient, msg any) {
 
 // handleChat 布局 = player_type(2) + NUL 结尾的 UTF-16 变长串
 // （netserver.cpp:380-385：只写入 player + 原始消息字节，非定长 256），
-// restruct 的定长数组表达不了 NUL 结尾，保留手写解码。
+// 定长数组布局表达不了 NUL 结尾，保留手写解码。
 func handleChat(c *WailsDuelClient, payload []byte) {
 	if len(payload) < 2 {
 		return
@@ -125,7 +125,7 @@ func handleReplay(c *WailsDuelClient, payload []byte) {
 	c.mu.Unlock()
 	flag := binary.LittleEndian.Uint32(payload[8:12])
 	startTime := binary.LittleEndian.Uint32(payload[12:16]) // Seed
-	if flag&duel.REPLAY_UNIFORM != 0 {
+	if flag&replay.REPLAY_UNIFORM != 0 {
 		startTime = binary.LittleEndian.Uint32(payload[20:24]) // StartTime
 	}
 	suggested := time.Unix(int64(startTime), 0).Format("2006-01-02 15-04-05")

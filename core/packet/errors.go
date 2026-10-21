@@ -1,4 +1,4 @@
-package duel
+package packet
 
 import "fmt"
 
@@ -7,7 +7,7 @@ import "fmt"
 //
 // 注意：这些码是服务端内部的分类码（0x10-0x18），与协议层 network.ERRMSG_*
 // （0x1-0x4，客户端据此弹对应文案）不是一回事。只有能映射到 ERRMSG_* 的错误
-// 才会经 SendError 上报客户端（见 packet_context.go errmsgCode），其余协议
+// 才会经 SendError 上报客户端（见 context.go errmsgCode），其余协议
 // 违例类错误与原版 netserver 一样只服务端处理、不回复。
 // --------------------------------------------------
 const (
@@ -20,6 +20,7 @@ const (
 	ErrInvalidState       uint8 = 0x16 // 状态非法
 	ErrAlreadyInGame      uint8 = 0x17 // 已在游戏中
 	ErrJoinFailed         uint8 = 0x18 // 加入房间失败（映射 ERRMSG_JOINERROR）
+	ErrPayloadTooLong     uint8 = 0x19 // Payload 长度超限
 )
 
 // PacketError 是统一错误类型
@@ -29,20 +30,20 @@ type PacketError struct {
 	Cause   error
 }
 
-func (e *PacketError) Error() string {
-	if e.Cause != nil {
-		return fmt.Sprintf("packet error [0x%02x] %s: %v", e.Code, e.Message, e.Cause)
+func (perr *PacketError) Error() string {
+	if perr.Cause != nil {
+		return fmt.Sprintf("packet error [0x%02x] %s: %v", perr.Code, perr.Message, perr.Cause)
 	}
-	return fmt.Sprintf("packet error [0x%02x] %s", e.Code, e.Message)
+	return fmt.Sprintf("packet error [0x%02x] %s", perr.Code, perr.Message)
 }
 
 // NewPacketError 创建错误
 func NewPacketError(code uint8, msg string, cause ...error) *PacketError {
-	e := &PacketError{Code: code, Message: msg}
+	perr := &PacketError{Code: code, Message: msg}
 	if len(cause) > 0 {
-		e.Cause = cause[0]
+		perr.Cause = cause[0]
 	}
-	return e
+	return perr
 }
 
 // --------------------------------------------------
@@ -52,6 +53,13 @@ func NewPacketError(code uint8, msg string, cause ...error) *PacketError {
 func ErrPayloadShort(got, need int, pktType uint8) *PacketError {
 	return NewPacketError(ErrPayloadTooShort,
 		fmt.Sprintf("payload too short: got %d, need %d, pktType=0x%02x", got, need, pktType))
+}
+
+// ErrPayloadLong 构造「payload 超过上限」错误（与 ErrPayloadShort 对称，
+// 此前超长包误用 ErrPayloadTooShort，日志里无法区分两种违例）。
+func ErrPayloadLong(got, max int, pktType uint8) *PacketError {
+	return NewPacketError(ErrPayloadTooLong,
+		fmt.Sprintf("payload too long: got %d, max %d, pktType=0x%02x", got, max, pktType))
 }
 
 func ErrBind(pktType uint8, cause error) *PacketError {

@@ -11,14 +11,6 @@ const (
 	CARD_HERMOS                  = 46232525
 )
 
-var secondCode = map[uint32]uint32{
-	CARD_MARINE_DOLPHIN: 17955766,
-	CARD_TWINKLE_MOSS:   17732278,
-	CARD_TIMAEUS:        10000050,
-	CARD_CRITIAS:        10000060,
-	CARD_HERMOS:         10000070,
-}
-
 // CardData 表示卡片的核心数据
 type CardData struct {
 	Code       uint32 `db:"id"`

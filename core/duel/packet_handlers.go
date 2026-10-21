@@ -3,54 +3,75 @@ package duel
 import (
 	"unicode/utf16"
 
+	"github.com/sjm1327605995/goygopro/core/data"
+	"github.com/sjm1327605995/goygopro/core/packet"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
 )
 
+// playerOf 取回 PacketContext 中的具体玩家（Peer 的决斗侧实现类型，
+// core/packet 只认识窄接口 packet.Peer）。
+func playerOf(c *packet.PacketContext) *DuelPlayer {
+	return c.Peer.(*DuelPlayer)
+}
+
 // --------------------------------------------------
 // CTOS_PLAYER_INFO — 玩家信息设置
 // --------------------------------------------------
-func HandlePlayerInfo(c *PacketContext) {
+func HandlePlayerInfo(c *packet.PacketContext) {
 	pkt := c.MustPayload().(*protocol.CTOSPlayerInfo)
+	player := playerOf(c)
 	utils.NullTerminate(pkt.Name[:], 0)
-	copy(c.Player.Name[:], pkt.Name[:])
-	c.Player.SetID(string(utf16.Decode(c.Player.Name[:])))
+	copy(player.Name[:], pkt.Name[:])
+	player.SetID(string(utf16.Decode(player.Name[:])))
 	utils.NetLogf("server", "PLAYER_INFO: name=%q", utils.WideString(pkt.Name[:]))
+}
+
+// normalizeCreateGameInfo 修正 CREATE_GAME 的主机信息：规则/模式截断到服务器
+// 支持的上限，禁卡表哈希不在服务器列表时回退为列表首项（服务器无列表时置 0）。
+// 对应原版 netserver.cpp CTOS_CREATE_GAME 分支的逐项修正。
+func normalizeCreateGameInfo(info *protocol.HostInfo) {
+	if info.Rule > CURRENT_RULE {
+		info.Rule = CURRENT_RULE
+	}
+	if info.Mode > MODE_TAG {
+		info.Mode = MODE_SINGLE
+	}
+	for _, lfList := range data.DeckManager.LFList {
+		if info.LFList == lfList.Hash {
+			return
+		}
+	}
+	info.LFList = 0
+	if len(data.DeckManager.LFList) > 0 {
+		info.LFList = data.DeckManager.LFList[0].Hash
+	}
 }
 
 // --------------------------------------------------
 // CTOS_CREATE_GAME — 创建房间
 // --------------------------------------------------
-func HandleCreateGame(c *PacketContext) {
+func HandleCreateGame(c *packet.PacketContext) {
 	pkt := c.MustPayload().(*protocol.CTOSCreateGame)
-	if c.Player.Game != nil {
-		c.AbortWithError(ErrAlreadyInGameAction())
+	player := playerOf(c)
+	if player.Game != nil {
+		c.AbortWithError(packet.ErrAlreadyInGameAction())
 		return
 	}
 
-	// 规则修正
-	if pkt.Info.Rule > CURRENT_RULE {
-		pkt.Info.Rule = CURRENT_RULE
-	}
-	if pkt.Info.Mode > MODE_TAG {
-		pkt.Info.Mode = MODE_SINGLE
-	}
+	normalizeCreateGameInfo(&pkt.Info)
 
-	// 校验禁卡表
-	var found bool
-	for _, lfList := range DeckManager.LFList {
-		if pkt.Info.LFList == lfList.Hash {
-			found = true
-			break
-		}
-	}
-	if !found {
-		if len(DeckManager.LFList) > 0 {
-			pkt.Info.LFList = DeckManager.LFList[0].Hash
-		} else {
-			pkt.Info.LFList = 0
-		}
+	roomID := string(utf16.Decode(pkt.Pass[:]))
+
+	// C++: if(dp->game || duel_mode) return;
+	// 玩家已在游戏中（RequireNotInGame 已拦）或服务器已有房间，拒绝创建。
+	// 单房间约束的权威判定在 CreateRoomIfEmpty（预检 + SetIfAbsent 同一临界区，
+	// 不同密码的并发 CREATE_GAME 不能都建成），这里只是免分配的快速预检。
+	if DefaultManager.RoomCount() > 0 {
+		utils.NetLogf("server", "CREATE_GAME rejected: room already exists (count=%d)", DefaultManager.RoomCount())
+		c.AbortWithError(packet.ErrAlreadyInGameAction())
+		return
 	}
 
 	// 创建模式实例
@@ -72,28 +93,19 @@ func HandleCreateGame(c *PacketContext) {
 	copy(mode.BaseMode().Name[:], pkt.Name[:])
 	copy(mode.BaseMode().Pass[:], pkt.Pass[:])
 
-	roomId := string(utf16.Decode(pkt.Pass[:]))
 	utils.NetLogf("server", "CREATE_GAME: room=%q pass=%q mode=%d rule=%d duelRule=%d player=%q",
 		utils.WideString(pkt.Name[:]), utils.WideString(pkt.Pass[:]), pkt.Info.Mode, pkt.Info.Rule, pkt.Info.DuelRule,
-		utils.WideString(c.Player.Name[:]))
+		utils.WideString(player.Name[:]))
 
-	// C++: if(dp->game || duel_mode) return;
-	// 玩家已在游戏中 或 服务器已有房间，拒绝创建
-	if DefaultManager.RoomCount() > 0 {
-		utils.NetLogf("server", "CREATE_GAME rejected: room already exists (count=%d)", DefaultManager.RoomCount())
-		c.AbortWithError(ErrAlreadyInGameAction())
-		return
-	}
-
-	room, created := DefaultManager.CreateRoom(roomId, mode)
+	room, created := DefaultManager.CreateRoomIfEmpty(roomID, mode)
 	if !created {
-		utils.NetLogf("server", "CREATE_GAME rejected: CreateRoom failed (roomId=%q)", roomId)
-		c.AbortWithError(ErrAlreadyInGameAction())
+		utils.NetLogf("server", "CREATE_GAME rejected: CreateRoomIfEmpty failed (roomId=%q)", roomID)
+		c.AbortWithError(packet.ErrAlreadyInGameAction())
 		return
 	}
-	mode.BaseMode().RoomID = roomId
+	mode.BaseMode().RoomID = roomID
 
-	c.Player.Game = room.DuelMode
+	player.Game = room.DuelMode
 	// 对齐原版 netserver.cpp:313（CTOS_CREATE_GAME 即 StartBroadcast）：
 	// 建房时若广播应答器未运行（如上一场决斗开始时被 StopListen 连带停止）
 	// 则恢复 LAN 发现应答；已在运行时为空操作，端口被占只记日志。
@@ -102,24 +114,25 @@ func HandleCreateGame(c *PacketContext) {
 	// 该中间件是 no-op），而 JoinGame 写房间的共享玩家表，需显式持锁，
 	// 避免 --multicore=true 下与并发加入者竞争。
 	room.DuelMode.BaseMode().Mu.Lock()
-	c.Player.Game.JoinGame(c.Player, nil, true)
+	player.Game.JoinGame(player, nil, true)
 	room.DuelMode.BaseMode().Mu.Unlock()
 }
 
 // --------------------------------------------------
 // CTOS_JOIN_GAME — 加入房间
 // --------------------------------------------------
-func HandleJoinGame(c *PacketContext) {
+func HandleJoinGame(c *packet.PacketContext) {
 	pkt := c.MustPayload().(*protocol.CTOSJoinGame)
+	player := playerOf(c)
 	// 与 HandleCreateGame 对齐：客户端只填前 N 个 uint16，剩余槽位是 0，
 	// 不解 NUL 截断会把尾随 \x00 算进 roomId，导致按密码永远查不到房间。
 	utils.NullTerminate(pkt.Pass[:], 0)
-	roomId := string(utf16.Decode(pkt.Pass[:]))
+	roomID := string(utf16.Decode(pkt.Pass[:]))
 	utils.NetLogf("server", "JOIN_GAME: player=%q pass=%q version=0x%04x gameId=%d",
-		utils.WideString(c.Player.Name[:]), utils.WideString(pkt.Pass[:]), pkt.Version, pkt.GameID)
+		utils.WideString(player.Name[:]), utils.WideString(pkt.Pass[:]), pkt.Version, pkt.GameID)
 
-	room, exist := DefaultManager.GetRoom(roomId)
-	if !exist {
+	room, found := DefaultManager.GetRoom(roomID)
+	if !found {
 		utils.NetLogf("server", "JOIN_GAME rejected: room pass=%q not found (rooms=%d)", utils.WideString(pkt.Pass[:]), DefaultManager.RoomCount())
 		// Go 设计密码即房间索引：GetRoom 失败最常见的原因是密码不对。
 		// 对齐原版进房后密码不符的提示（JOINERROR code=1，SysString 1404
@@ -127,161 +140,174 @@ func HandleJoinGame(c *PacketContext) {
 		// 只要服务器上还有任意房间就按密码错误提示；一个房间都没有时才回
 		// 通用 JOINERROR（code=0），单房间语义不变。
 		if DefaultManager.RoomCount() > 0 {
-			c.AbortWithErrorCode(ErrWrongRoomPassword(), 1)
+			c.AbortWithErrorCode(packet.ErrWrongRoomPassword(), 1)
 			return
 		}
-		c.AbortWithError(ErrJoinError())
+		c.AbortWithError(packet.ErrJoinError())
 		return
 	}
 
-	// 注意不能在这里提前把 c.Player.Game 设为房间：checkJoinAllowed 把
+	// 注意不能在这里提前把 player.Game 设为房间：checkJoinAllowed 把
 	// dp.Game != nil 视为「已在其他房间」直接拒绝（C++ 是先校验后赋值，
 	// netserver.cpp CTOS_JOIN_GAME 分支）。JoinGame 校验通过后会自行设置。
 	// join 未挂 RoomLockMiddleware（RequireNotInGame 保证进来时 c.Game()==nil），
 	// JoinGame 写房间共享玩家表需显式持锁。
 	room.DuelMode.BaseMode().Mu.Lock()
-	room.DuelMode.JoinGame(c.Player, pkt, false)
+	room.DuelMode.JoinGame(player, pkt, false)
 	room.DuelMode.BaseMode().Mu.Unlock()
 }
 
 // --------------------------------------------------
 // CTOS_LEAVE_GAME — 离开房间（统一错误处理）
 // --------------------------------------------------
-func HandleLeaveGame(c *PacketContext) {
-	if c.Player.Game == nil {
-		c.AbortWithError(ErrNeedGame())
+func HandleLeaveGame(c *packet.PacketContext) {
+	if c.Game() == nil {
+		c.AbortWithError(packet.ErrNeedGame())
 		return
 	}
-	c.Player.leaveGameOnce()
+	playerOf(c).leaveGameOnce()
 }
 
 // --------------------------------------------------
 // CTOS_SURRENDER — 投降（统一错误处理）
 // --------------------------------------------------
-func HandleSurrender(c *PacketContext) {
-	if c.Player.Game == nil {
-		c.AbortWithError(ErrNeedGame())
+func HandleSurrender(c *packet.PacketContext) {
+	player := playerOf(c)
+	if player.Game == nil {
+		c.AbortWithError(packet.ErrNeedGame())
 		return
 	}
-	c.Player.Game.Surrender(c.Player)
+	player.Game.Surrender(player)
 }
 
 // --------------------------------------------------
 // CTOS_RESPONSE — 响应/操作
 // --------------------------------------------------
-func HandleResponse(c *PacketContext) {
-	c.Player.Game.GetResponse(c.Player, c.Payload)
+func HandleResponse(c *packet.PacketContext) {
+	player := playerOf(c)
+	player.Game.GetResponse(player, c.Payload)
 }
 
 // --------------------------------------------------
 // CTOS_TIME_CONFIRM — 时间确认（统一错误处理）
 // --------------------------------------------------
-func HandleTimeConfirm(c *PacketContext) {
-	if c.Player.Game == nil {
-		c.AbortWithError(ErrNeedGame())
+func HandleTimeConfirm(c *packet.PacketContext) {
+	player := playerOf(c)
+	if player.Game == nil {
+		c.AbortWithError(packet.ErrNeedGame())
 		return
 	}
-	if c.Player.Game.OCGDuel() == nil {
-		c.AbortWithError(ErrNeedDuel())
+	if player.Game.OCGDuel() == nil {
+		c.AbortWithError(packet.ErrNeedDuel())
 		return
 	}
-	c.Player.Game.TimeConfirm(c.Player)
+	player.Game.TimeConfirm(player)
 }
 
 // --------------------------------------------------
 // CTOS_CHAT — 聊天（统一错误处理）
 // --------------------------------------------------
-func HandleChat(c *PacketContext) {
-	if c.Player.Game == nil {
-		c.AbortWithError(ErrNeedGame())
+func HandleChat(c *packet.PacketContext) {
+	player := playerOf(c)
+	if player.Game == nil {
+		c.AbortWithError(packet.ErrNeedGame())
 		return
 	}
-	pData := c.Payload
-	if len(pData) < 2 {
-		c.AbortWithError(ErrPayloadShort(len(pData), 2, c.PktType))
+	payload := c.Payload
+	if len(payload) < 2 {
+		c.AbortWithError(packet.ErrPayloadShort(len(payload), 2, c.PktType))
 		return
 	}
-	if len(pData) > protocol.LEN_CHAT_MSG*2 {
-		c.AbortWithError(NewPacketError(ErrPayloadTooShort, "chat msg too long"))
+	if len(payload) > protocol.LEN_CHAT_MSG*2 {
+		c.AbortWithError(packet.ErrPayloadLong(len(payload), protocol.LEN_CHAT_MSG*2, c.PktType))
 		return
 	}
-	if len(pData)%2 != 0 {
-		c.AbortWithError(NewPacketError(ErrBadRequest, "chat msg length must be even"))
+	if len(payload)%2 != 0 {
+		c.AbortWithError(packet.NewPacketError(packet.ErrBadRequest, "chat msg length must be even"))
 		return
 	}
-	c.Player.Game.Chat(c.Player, pData)
+	player.Game.Chat(player, payload)
 }
 
 // --------------------------------------------------
 // CTOS_UPDATE_DECK — 更新卡组（统一错误处理）
 // --------------------------------------------------
-func HandleUpdateDeck(c *PacketContext) {
-	pData := c.Payload
-	if len(pData) < 8 {
-		c.AbortWithError(ErrPayloadShort(len(pData), 8, c.PktType))
+func HandleUpdateDeck(c *packet.PacketContext) {
+	player := playerOf(c)
+	payload := c.Payload
+	if len(payload) < deckDataHeaderLen {
+		c.AbortWithError(packet.ErrPayloadShort(len(payload), deckDataHeaderLen, c.PktType))
 		return
 	}
-	if len(pData) > int(protocol.MAINC_MAX+protocol.SIDEC_MAX)*4+8 {
-		c.AbortWithError(NewPacketError(ErrPayloadTooShort, "deck data too long"))
+	if len(payload) > deckDataMaxPayload {
+		c.AbortWithError(packet.ErrPayloadLong(len(payload), deckDataMaxPayload, c.PktType))
 		return
 	}
-	c.Player.Game.UpdateDeck(c.Player, pData)
+	player.Game.UpdateDeck(player, payload)
 }
 
 // --------------------------------------------------
 // CTOS_HAND_RESULT — 猜拳结果
 // --------------------------------------------------
-func HandleHandResult(c *PacketContext) {
+func HandleHandResult(c *packet.PacketContext) {
 	pkt := c.MustPayload().(*protocol.CTOSHandResult)
-	c.Player.Game.HandResult(c.Player, pkt.Res)
+	player := playerOf(c)
+	player.Game.HandResult(player, pkt.Res)
 }
 
 // --------------------------------------------------
 // CTOS_TP_RESULT — 先后攻选择
 // --------------------------------------------------
-func HandleTPResult(c *PacketContext) {
+func HandleTPResult(c *packet.PacketContext) {
 	pkt := c.MustPayload().(*protocol.CTOSTPResult)
-	c.Player.Game.TPResult(c.Player, pkt.Res)
+	player := playerOf(c)
+	player.Game.TPResult(player, pkt.Res)
 }
 
 // --------------------------------------------------
 // CTOS_HS_TODUELIST — 切换为决斗者
 // --------------------------------------------------
-func HandleHsToDuelist(c *PacketContext) {
-	c.Player.Game.ToDuelList(c.Player)
+func HandleHsToDuelist(c *packet.PacketContext) {
+	player := playerOf(c)
+	player.Game.ToDuelList(player)
 }
 
 // --------------------------------------------------
 // CTOS_HS_TOOBSERVER — 切换为观战者
 // --------------------------------------------------
-func HandleHsToObserver(c *PacketContext) {
-	c.Player.Game.ToObserver(c.Player)
+func HandleHsToObserver(c *packet.PacketContext) {
+	player := playerOf(c)
+	player.Game.ToObserver(player)
 }
 
 // --------------------------------------------------
 // CTOS_HS_READY / CTOS_HS_NOTREADY — 准备/取消准备
 // --------------------------------------------------
-func HandleHsReady(c *PacketContext) {
-	c.Player.Game.PlayerReady(c.Player, true)
+func HandleHsReady(c *packet.PacketContext) {
+	player := playerOf(c)
+	player.Game.PlayerReady(player, true)
 }
 
-func HandleHsNotReady(c *PacketContext) {
-	c.Player.Game.PlayerReady(c.Player, false)
+func HandleHsNotReady(c *packet.PacketContext) {
+	player := playerOf(c)
+	player.Game.PlayerReady(player, false)
 }
 
 // --------------------------------------------------
 // CTOS_HS_KICK — 踢人
 // --------------------------------------------------
-func HandleHsKick(c *PacketContext) {
+func HandleHsKick(c *packet.PacketContext) {
 	pkt := c.MustPayload().(*protocol.CTOSKick)
-	c.Player.Game.PlayerKick(c.Player, pkt.Pos)
+	player := playerOf(c)
+	player.Game.PlayerKick(player, pkt.Pos)
 }
 
 // --------------------------------------------------
 // CTOS_HS_START — 开始决斗
 // --------------------------------------------------
-func HandleHsStart(c *PacketContext) {
-	c.Player.Game.StartDuel(c.Player)
+func HandleHsStart(c *packet.PacketContext) {
+	player := playerOf(c)
+	player.Game.StartDuel(player)
 }
 
 // --------------------------------------------------
@@ -289,18 +315,19 @@ func HandleHsStart(c *PacketContext) {
 // --------------------------------------------------
 
 // RequireNotInGame 检查玩家不在任何游戏中
-func RequireNotInGame(c *PacketContext) {
-	if c.Player.Game != nil {
-		c.AbortWithError(ErrAlreadyInGameAction())
+func RequireNotInGame(c *packet.PacketContext) {
+	if c.Game() != nil {
+		c.AbortWithError(packet.ErrAlreadyInGameAction())
 		return
 	}
 	c.Next()
 }
 
 // RequireGameNotStarted 检查游戏未开始（大厅阶段）
-func RequireGameNotStarted(c *PacketContext) {
-	if c.Player.Game == nil || c.Player.Game.BaseMode() == nil || c.Player.Game.BaseMode().Duel != nil {
-		c.AbortWithError(ErrNeedLobby())
+func RequireGameNotStarted(c *packet.PacketContext) {
+	game := c.Game()
+	if game == nil || game.BaseRoom() == nil || game.BaseRoom().DuelStarted() {
+		c.AbortWithError(packet.ErrNeedLobby())
 		return
 	}
 	c.Next()
@@ -311,69 +338,71 @@ func RequireGameNotStarted(c *PacketContext) {
 // --------------------------------------------------
 
 // BuildPacketRouter 创建并配置完整的路由器
-func BuildPacketRouter() *PacketRouter {
-	router := NewPacketRouter()
+func BuildPacketRouter() *packet.PacketRouter {
+	router := packet.NewPacketRouter()
 
 	// 全局中间件：Recover + 状态检查
-	router.Use(RecoverMiddleware, StateMiddleware)
+	router.Use(packet.RecoverMiddleware, packet.StateMiddleware)
 
 	// 玩家信息设置（不需要在游戏内）
 	router.Handle(network.CTOS_PLAYER_INFO,
-		Bind(protocol.CTOSPlayerInfo{}),
+		packet.Bind(protocol.CTOSPlayerInfo{}),
 		HandlePlayerInfo,
 	)
 
 	// 创建房间（不能已在游戏中）
 	router.Handle(network.CTOS_CREATE_GAME,
 		RequireNotInGame,
-		Bind(protocol.CTOSCreateGame{}),
+		packet.Bind(protocol.CTOSCreateGame{}),
 		HandleCreateGame,
 	)
 
 	// 加入房间（不能已在游戏中）
 	router.Handle(network.CTOS_JOIN_GAME,
 		RequireNotInGame,
-		Bind(protocol.CTOSJoinGame{}),
+		packet.Bind(protocol.CTOSJoinGame{}),
 		HandleJoinGame,
 	)
 
 	// 离开房间
-	router.Handle(network.CTOS_LEAVE_GAME, RequireGame, RoomLockMiddleware, HandleLeaveGame)
+	// 离开房间：锁由 leaveGameOnce 内部统一获取（OnClose 断线路径不走路由，
+	// middleware 罩不到，见 leaveGameOnce 注释），此处不再挂 RoomLockMiddleware。
+	router.Handle(network.CTOS_LEAVE_GAME, packet.RequireGame, HandleLeaveGame)
 
 	// 投降（特殊：不检查 State）
-	router.Handle(network.CTOS_SURRENDER, RequireGame, RoomLockMiddleware, HandleSurrender)
+	router.Handle(network.CTOS_SURRENDER, packet.RequireGame, packet.RoomLockMiddleware, HandleSurrender)
 
 	// 聊天（特殊：不检查 State）
-	router.Handle(network.CTOS_CHAT, RequireGame, RoomLockMiddleware, HandleChat)
+	router.Handle(network.CTOS_CHAT, packet.RequireGame, packet.RoomLockMiddleware, HandleChat)
 
 	// 以下操作需要游戏已经开始（决斗中）
-	gameGroup := router.Group("game", RequireGame, RoomLockMiddleware)
+	gameGroup := router.Group(packet.RequireGame, packet.RoomLockMiddleware)
 	{
 		gameGroup.Handle(network.CTOS_RESPONSE, HandleResponse)
-		gameGroup.Handle(network.CTOS_TIME_CONFIRM, RequireDuel, HandleTimeConfirm)
+		gameGroup.Handle(network.CTOS_TIME_CONFIRM, packet.RequireDuel, HandleTimeConfirm)
 		gameGroup.Handle(network.CTOS_UPDATE_DECK, HandleUpdateDeck)
 		gameGroup.Handle(network.CTOS_HAND_RESULT,
-			ValidateLength(int(1)),
-			Bind(protocol.CTOSHandResult{}),
+			packet.ValidateLength(1),
+			packet.Bind(protocol.CTOSHandResult{}),
 			HandleHandResult,
 		)
 		gameGroup.Handle(network.CTOS_TP_RESULT,
-			ValidateLength(int(1)),
-			Bind(protocol.CTOSTPResult{}),
+			packet.ValidateLength(1),
+			packet.Bind(protocol.CTOSTPResult{}),
 			HandleTPResult,
 		)
 	}
 
 	// 以下操作需要在大厅阶段（游戏未开始）
-	lobbyGroup := router.Group("lobby", RequireGame, RoomLockMiddleware, RequireGameNotStarted)
+	lobbyGroup := router.Group(packet.RequireGame, packet.RoomLockMiddleware, RequireGameNotStarted)
 	{
 		lobbyGroup.Handle(network.CTOS_HS_TODUELIST, HandleHsToDuelist)
 		lobbyGroup.Handle(network.CTOS_HS_TOOBSERVER, HandleHsToObserver)
 		lobbyGroup.Handle(network.CTOS_HS_READY, HandleHsReady)
 		lobbyGroup.Handle(network.CTOS_HS_NOTREADY, HandleHsNotReady)
 		lobbyGroup.Handle(network.CTOS_HS_KICK,
-			ValidateLength(int(1)),
-			Bind(protocol.CTOSKick{}),
+			packet.ValidateLength(1),
+			packet.Bind(protocol.CTOSKick{}),
 			HandleHsKick,
 		)
 		lobbyGroup.Handle(network.CTOS_HS_START, HandleHsStart)

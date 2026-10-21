@@ -7,15 +7,20 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/panjf2000/gnet/v2/pkg/logging"
 	"github.com/sjm1327605995/goygopro/core/duel"
+
+	"github.com/sjm1327605995/goygopro/core/data"
+	"github.com/sjm1327605995/goygopro/core/replay"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -38,7 +43,16 @@ type App struct {
 	// lastSingleReplay 保存最近一次已完结单人谜题的录像句柄，供前端确认后
 	// SaveSingleReplay 落盘（auto_save_replay=0 时）。session 本身在 Run 返回
 	// 后即被置 nil，这里只保留 Replay 避免持有已 End 的引擎句柄。
-	lastSingleReplay *duel.Replay
+	lastSingleReplay *replay.Replay
+
+	// cfgCache 是 loadConfig 的缓存，按文件 mtime+size 判活（config.go）。
+	cfgCache atomic.Value // *configSnapshot
+
+	// 本地决斗服务器：localServerPort 记录本进程成功监听的端口。引擎是
+	// 进程级单例，重复「启动服务器」时按它判活——用端口探测而非布尔标志，
+	// 因为测试/外部逻辑可能绕过 App 直接 Stop 引擎（duel.NetServerEngine）。
+	serverMu        sync.Mutex
+	localServerPort int
 }
 
 // NewApp creates a new App application struct
@@ -67,9 +81,12 @@ func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOpt
 			EmitWailsEvent(a.ctx, eventName, nil)
 		}
 	})
-	// Initialize card database
+	// Initialize card database（OpenDB 内部 Ping 前置校验；失败记日志——
+	// 否则表现为所有卡牌查询静默返回空，无从诊断）
 	if _, err := os.Stat(a.dbPath); err == nil {
-		_ = a.cardDB.OpenDB(a.dbPath)
+		if err := a.cardDB.OpenDB(a.dbPath); err != nil {
+			log.Printf("[App] 打开卡数据库 %s 失败: %v", a.dbPath, err)
+		}
 	}
 	// 系列名表（strings.conf !setname 行；可选数据，缺文件静默降级）
 	_ = a.cardDB.LoadSetNames("strings.conf")
@@ -99,9 +116,9 @@ func (a *App) ConnectServer(addr string, username string, pass string) map[strin
 	}
 	err := a.client.Connect(addr, username, pass)
 	if err != nil {
-		return map[string]interface{}{"success": false, "error": err.Error()}
+		return failResult(err)
 	}
-	return map[string]interface{}{"success": true}
+	return okResult()
 }
 
 func (a *App) StartLocalServer(port int) map[string]interface{} {
@@ -114,19 +131,42 @@ func (a *App) StartLocalServer(port int) map[string]interface{} {
 		port = 7911
 	}
 
+	// 决斗服务器是进程级单例（core/duel 的全局 NetServerEngine），重复
+	// 「启动服务器」先判活：同端口仍在监听直接复用成功；不同端口且旧服务器
+	// 还活着则拒绝——否则两个 gnet 服务器并存且无人可以停掉旧的。判活用
+	// 端口探测而非 App 内布尔标志：外部（测试收尾/进程管理）可能直接
+	// Stop 引擎，布尔标志会过期。
+	// serverMu 全程持有：把「判活 → InitServerData → 起服务 → 登记端口」
+	// 串行化，杜绝两个并发调用都通过判活后各起一个服务器（check-then-act）。
+	// 持锁时长含最长 500ms 的启动探测，并发调用在此期间阻塞，语义符合
+	// 「启动服务器必须串行」的预期。
+	a.serverMu.Lock()
+	defer a.serverMu.Unlock()
+	runningPort := a.localServerPort
+	if runningPort > 0 && portOpen(runningPort) {
+		if port == runningPort {
+			return okResult("port", port, "alreadyRunning", true)
+		}
+		return failResultf("本地服务器已在端口 %d 运行", runningPort)
+	}
+
 	// Initialize server data if needed
 	err := duel.InitServerData(a.dbPath, a.scriptPath, ".")
 	if err != nil {
-		return map[string]interface{}{"success": false, "error": fmt.Sprintf("init error: %v", err)}
+		return failResultf("init error: %v", err)
 	}
 
 	// 对齐原版 netserver.cpp:313（CTOS_CREATE_GAME 即 StartBroadcast）与
-	// cmd/server 的写法：建房后启动 LAN 发现广播应答。UDP :7920 被占用
-	// （如同机另一实例已在应答）只记录日志，不影响建房本身。
+	// cmd/server 的写法：建房后启动 LAN 发现广播应答。重建主机前先停掉旧
+	// 广播——StartBroadcast 每次新建 socket，旧实例不显式 Stop 会泄漏
+	// goroutine 并一直占用 :7920。UDP :7920 被占用（如同机另一实例已在应答）
+	// 只记录日志，不影响建房本身。实例指针统一走 duel 包的加锁助手，
+	// 与 EnsureBroadcast/StopListen 的并发触达互斥。
+	duel.StopBroadcast()
 	if bs, err := duel.StartBroadcast(uint16(port)); err != nil {
 		logging.Infof("failed to start broadcast: %v", err)
 	} else {
-		duel.BroadcastInstance = bs
+		duel.SetBroadcast(bs)
 	}
 
 	// gnet.Run 绑定端口失败会立刻返回错误，成功则阻塞运行到 Stop；这里后台
@@ -138,22 +178,34 @@ func (a *App) StartLocalServer(port int) map[string]interface{} {
 	select {
 	case startErr := <-errCh:
 		utils.NetLogf("server", "local server failed to start on :%d: %v", port, startErr)
-		return map[string]interface{}{"success": false, "error": fmt.Sprintf("server failed to start: %v", startErr)}
+		return failResultf("server failed to start: %v", startErr)
 	case <-time.After(500 * time.Millisecond):
 	}
 
+	a.localServerPort = port
 	utils.NetLogf("server", "local server started on :%d (all interfaces)", port)
 	// 原版 StopListen 只是停收连接（evconnlistener_disable），重新建立主机走
 	// StartServer 重建监听自然恢复接受（netserver.cpp:19-41）。本进程的
 	// AcceptingConnections 被 StopListen 落下后，此处成功启动新监听即复位，
 	// 否则每场对局结束后只能办一场、再次建房会拒绝一切新连接。
 	duel.AcceptingConnections.Store(true)
-	return map[string]interface{}{"success": true, "port": port}
+	return okResult("port", port)
 }
 
 // ------------------------------------------------------------------
 // Room / Game Management
 // ------------------------------------------------------------------
+
+// portOpen 探测本机 TCP 端口是否有监听者（短超时；仅用于本地服务器判活，
+// 不是网络可达性检查）。
+func portOpen(port int) bool {
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 300*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
 
 type HostInfoReq struct {
 	LFList        uint32 `json:"lflist"`
@@ -210,11 +262,11 @@ func (a *App) ListDeckCategories() []string {
 // LoadLFList 会把「N/A」（哈希 0）追加在末尾；仓库目前没有 lflist.conf，
 // 因此通常只有 N/A，缺数据时下拉照常工作。
 func (a *App) ListLFLists() []LFListEntry {
-	if len(duel.DeckManager.LFList) == 0 {
-		duel.DeckManager.LoadLFList()
+	if len(data.DeckManager.LFList) == 0 {
+		data.DeckManager.LoadLFList()
 	}
-	entries := make([]LFListEntry, 0, len(duel.DeckManager.LFList))
-	for _, l := range duel.DeckManager.LFList {
+	entries := make([]LFListEntry, 0, len(data.DeckManager.LFList))
+	for _, l := range data.DeckManager.LFList {
 		entries = append(entries, LFListEntry{Hash: l.Hash, Name: l.ListName})
 	}
 	return entries
@@ -225,10 +277,10 @@ func (a *App) ListLFLists() []LFListEntry {
 // deck_manager.cpp CheckDeck 的前端对应）。哈希 0（N/A）或无此表返回空表，
 // 前端按「无限制（3）」处理。
 func (a *App) LFListContent(hash uint32) map[uint32]int {
-	if len(duel.DeckManager.LFList) == 0 {
-		duel.DeckManager.LoadLFList()
+	if len(data.DeckManager.LFList) == 0 {
+		data.DeckManager.LoadLFList()
 	}
-	l := duel.DeckManager.GetLFList(hash)
+	l := data.DeckManager.GetLFList(hash)
 	if l == nil {
 		return map[uint32]int{}
 	}
@@ -270,17 +322,19 @@ func (a *App) CreateGame(req HostInfoReq, roomName string, pass string) map[stri
 
 	err := a.client.CreateGame(hostInfo, roomName, pass)
 	if err != nil {
-		return map[string]interface{}{"success": false, "error": err.Error()}
+		return failResult(err)
 	}
-	return map[string]interface{}{"success": true}
+	return okResult()
 }
 
 func (a *App) JoinGame(pass string) map[string]interface{} {
-	err := a.client.JoinGame(0x1361, 0, pass)
+	// 0x1361 = duel.PRO_VERSION：原版写死的协议版本（JOIN_GAME 不带版本协商，
+	// 服务端在 duel_common 按同一常量校验）
+	err := a.client.JoinGame(duel.PRO_VERSION, 0, pass)
 	if err != nil {
-		return map[string]interface{}{"success": false, "error": err.Error()}
+		return failResult(err)
 	}
-	return map[string]interface{}{"success": true}
+	return okResult()
 }
 
 func (a *App) LeaveGame() {
@@ -352,19 +406,44 @@ func (a *App) GetCard(code uint32) *CardInfo {
 // card is pulled from the YGOProDeck CDN by the Go side (the WebView cannot
 // fetch it itself: images.ygoprodeck.com sends no CORS headers, so a
 // cross-origin fetch from the webview origin is always blocked) and cached
-// into <cwd>/pics/ so later calls hit the local branch. Returns "" only when
-// neither local art nor the CDN has the card.
+// into <cwd>/pics/ so later calls hit the local branch. The resolved data URL
+// (including negative results) is cached per card code in memory — repeated
+// calls for the same card neither re-scan the pics dirs nor re-download;
+// negative results expire after cardArtNegativeTTL so CDN recovery or newly
+// added art needs no restart. Returns "" only when neither local art nor the
+// CDN has the card.
 // GetFieldImage follows ImageManager::GetTextureField; missing field art does
 // not fall back to the card face or a network thumbnail.
+//
+// picsSearchRoots 返回卡图搜索根目录：YGOPRO_PICS_DIR 覆盖优先，其次可执行
+// 文件目录与工作目录——无论从安装目录启动还是经快捷方式以其他工作目录
+// 启动都能找到图（GetCardImage/GetFieldImage 共用）。
+func picsSearchRoots() []string {
+	var roots []string
+	if dir := strings.TrimSpace(os.Getenv("YGOPRO_PICS_DIR")); dir != "" {
+		roots = append(roots, dir)
+	}
+	if exe, err := os.Executable(); err == nil {
+		roots = append(roots, filepath.Dir(exe))
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		roots = append(roots, cwd)
+	}
+	return roots
+}
+
 func (a *App) GetFieldImage(code uint32) string {
 	if code == 0 {
 		return ""
 	}
-	for _, dir := range []string{"expansions/pics/field", "pics/field"} {
-		for _, ext := range []string{"png", "jpg"} {
-			data, err := os.ReadFile(filepath.Join(dir, fmt.Sprintf("%d.%s", code, ext)))
-			if err == nil && len(data) > 0 {
-				return "data:" + http.DetectContentType(data) + ";base64," + base64.StdEncoding.EncodeToString(data)
+	name := fmt.Sprintf("%d", code)
+	for _, root := range picsSearchRoots() {
+		for _, dir := range []string{"expansions/pics/field", "pics/field"} {
+			for _, ext := range []string{"png", "jpg"} {
+				data, err := os.ReadFile(filepath.Join(root, dir, name+"."+ext))
+				if err == nil && len(data) > 0 {
+					return "data:" + http.DetectContentType(data) + ";base64," + base64.StdEncoding.EncodeToString(data)
+				}
 			}
 		}
 	}
@@ -372,6 +451,29 @@ func (a *App) GetFieldImage(code uint32) string {
 }
 
 func (a *App) GetCardImage(code uint32) string {
+	cardArtInflightMu.Lock()
+	e, ok := cardArtInflight[code]
+	if !ok {
+		e = &cardArtEntry{}
+		cardArtInflight[code] = e
+	}
+	cardArtInflightMu.Unlock()
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	// 命中缓存（含负结果）直接返回；负结果按 cardArtNegativeTTL 过期重试。
+	if e.ready && (e.url != "" || time.Since(e.fetched) < cardArtNegativeTTL) {
+		return e.url
+	}
+	e.url = a.resolveCardImage(code)
+	e.fetched = time.Now()
+	e.ready = true
+	return e.url
+}
+
+// resolveCardImage 执行实际的卡图查找（本地 pics 目录全落空才走 CDN 下载）。
+// 结果被 GetCardImage 的 per-code 缓存包住，同一卡号只解析一次。
+func (a *App) resolveCardImage(code uint32) string {
 	var roots []string
 	if dir := strings.TrimSpace(os.Getenv("YGOPRO_PICS_DIR")); dir != "" {
 		roots = append(roots, dir)
@@ -427,13 +529,19 @@ func (a *App) GetCardImage(code uint32) string {
 // WebView 里前端 fetch images.ygoprodeck.com 会被 CORS 拦截（对方不发
 // Access-Control-Allow-Origin），所以必须走 Go 代拉。拉取成功后顺手落盘
 // 到 <cwd>/pics/<code>.jpg，下一次调用直接命中上面的本地分支。
-// cardArtEntry 是单卡号的单飞记录：第一个进入的调用负责下载，后续调用
-// （含并发）直接复用结果。只锁不缓存结果的话，并发调用会排队后重复下载。
+// cardArtEntry 是单卡号的结果缓存兼单飞记录：第一个进入的调用负责解析
+// （本地读盘或 CDN 下载），后续调用（含并发）直接复用结果。只锁不缓存
+// 结果的话，并发调用会排队后重复读盘/重复下载。
 type cardArtEntry struct {
-	mu   sync.Mutex
-	done bool
-	url  string
+	mu      sync.Mutex
+	ready   bool
+	url     string
+	fetched time.Time
 }
+
+// cardArtNegativeTTL：本地与 CDN 都找不到时的负结果缓存时长。过期后下次
+// 调用重试——CDN 恢复或图床补充新卡图后无需重启进程即可拿到。
+const cardArtNegativeTTL = time.Hour
 
 var (
 	cardArtClient = &http.Client{Timeout: 12 * time.Second}
@@ -444,26 +552,35 @@ var (
 	}
 	cardArtCacheDir = "" // 测试可指向 t.TempDir()；空 = <cwd>/pics
 
+	// cardArtInflight 是 GetCardImage 的结果缓存（本地 + CDN 的解析结果）。
 	cardArtInflightMu sync.Mutex
 	cardArtInflight   = map[uint32]*cardArtEntry{}
+
+	// cdnArtInflight 是 CDN 下载层的单飞表。必须与 cardArtInflight 分离：
+	// GetCardImage 持结果锁时会调到 fetchCDNCardArt，两层复用同一把锁会
+	// 自死锁。经 GetCardImage 调用时外层锁已天然串行化；直接调用
+	// fetchCDNCardArt（测试）时由本表保证单飞。
+	cdnArtMu      sync.Mutex
+	cdnArtEntries = map[uint32]*cardArtEntry{}
 )
 
 func fetchCDNCardArt(code uint32) string {
-	cardArtInflightMu.Lock()
-	e, ok := cardArtInflight[code]
+	cdnArtMu.Lock()
+	e, ok := cdnArtEntries[code]
 	if !ok {
 		e = &cardArtEntry{}
-		cardArtInflight[code] = e
+		cdnArtEntries[code] = e
 	}
-	cardArtInflightMu.Unlock()
+	cdnArtMu.Unlock()
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.done {
+	if e.ready && (e.url != "" || time.Since(e.fetched) < cardArtNegativeTTL) {
 		return e.url
 	}
 	e.url = downloadCardArt(code)
-	e.done = true
+	e.fetched = time.Now()
+	e.ready = true
 	return e.url
 }
 
@@ -562,13 +679,13 @@ func (a *App) ListReplays() []string {
 // start_time，否则取 seed 兼作时间戳；再加玩家名 ===VS=== 布局所需的数据。
 func (a *App) ReplayInfo(name string) map[string]interface{} {
 	name = filepath.Base(name)
-	rm := duel.NewReplayMode()
+	rm := replay.NewReplayMode()
 	if err := rm.Load(filepath.Join(a.replayDir, name)); err != nil {
-		return map[string]interface{}{"success": false, "error": err.Error()}
+		return failResult(err)
 	}
 	hdr := rm.Replay.ReadHeader()
 	// 原版：UNIFORM 录像时间在 start_time，其余用 seed 字段兼作记录时间
-	uniform := hdr.Base.Flag&duel.REPLAY_UNIFORM != 0
+	uniform := hdr.Base.Flag&replay.REPLAY_UNIFORM != 0
 	rawTime := hdr.Base.Seed
 	if uniform {
 		rawTime = hdr.Base.StartTime
@@ -593,12 +710,12 @@ func (a *App) ReplayInfo(name string) map[string]interface{} {
 // 无卡组信息直接拒绝。卡组序号→玩家映射与原版 Replay::GetDeckPlayer 一致。
 func (a *App) ExportReplayDeck(name string) map[string]interface{} {
 	name = filepath.Base(name)
-	rm := duel.NewReplayMode()
+	rm := replay.NewReplayMode()
 	if err := rm.Load(filepath.Join(a.replayDir, name)); err != nil {
-		return map[string]interface{}{"success": false, "error": err.Error()}
+		return failResult(err)
 	}
 	if rm.IsSingleMode {
-		return map[string]interface{}{"success": false, "error": "单人模式录像没有卡组信息"}
+		return failResultf("单人模式录像没有卡组信息")
 	}
 	safeName := func(s string) string {
 		return strings.Map(func(r rune) rune {
@@ -610,7 +727,7 @@ func (a *App) ExportReplayDeck(name string) map[string]interface{} {
 	}
 	var saved []string
 	for i := range rm.Decks {
-		playerIdx := duel.GetDeckPlayer(i)
+		playerIdx := replay.GetDeckPlayer(i)
 		player := ""
 		if playerIdx < len(rm.Players) {
 			player = rm.Players[playerIdx]
@@ -618,28 +735,28 @@ func (a *App) ExportReplayDeck(name string) map[string]interface{} {
 		deckName := fmt.Sprintf("%s-%d %s", name, i+1, safeName(player))
 		deckPath, err := safeDeckPath(a.deckDir, deckName)
 		if err != nil {
-			return map[string]interface{}{"success": false, "error": err.Error()}
+			return failResult(err)
 		}
 		if !rm.Replay.SaveDeck(i, deckPath) {
-			return map[string]interface{}{"success": false, "error": "写卡组文件失败：" + deckName}
+			return failResultf("写卡组文件失败：%s", deckName)
 		}
 		saved = append(saved, deckName+".ydk")
 	}
-	return map[string]interface{}{"success": true, "files": saved}
+	return okResult("files", saved)
 }
 
 // SaveLastReplay 落盘最近一次对局录像（STOC_REPLAY → 缓存 → 前端确认后
 // 调用；auto_save_replay=1 时前端直接调用）。返回实际保存的文件名。
 func (a *App) SaveLastReplay(name string) map[string]interface{} {
 	if a.client == nil {
-		return map[string]interface{}{"success": false, "error": "not connected"}
+		return failResultf("not connected")
 	}
 	a.client.SetReplayDir(a.replayDir)
 	saved, err := a.client.SaveReplay(name)
 	if err != nil {
-		return map[string]interface{}{"success": false, "error": err.Error()}
+		return failResult(err)
 	}
-	return map[string]interface{}{"success": true, "name": saved + ".yrp"}
+	return okResult("name", saved+".yrp")
 }
 
 func (a *App) DeleteReplay(name string) error {
@@ -676,13 +793,13 @@ func (a *App) RenameReplay(oldName string, newName string) error {
 func (a *App) PlayReplay(name string) map[string]interface{} {
 	// ocgcore needs the card database/script root initialized before a duel.
 	if err := duel.InitServerData(a.dbPath, a.scriptPath, "."); err != nil {
-		return map[string]interface{}{"success": false, "error": fmt.Sprintf("init error: %v", err)}
+		return failResultf("init error: %v", err)
 	}
 
-	rm := duel.NewReplayMode()
+	rm := replay.NewReplayMode()
 	replayPath := filepath.Join(a.replayDir, name)
 	if err := rm.Load(replayPath); err != nil {
-		return map[string]interface{}{"success": false, "error": err.Error()}
+		return failResult(err)
 	}
 
 	// Synthesize the opening duel:start event from the replay metadata.
@@ -743,8 +860,8 @@ func (a *App) PlayReplay(name string) map[string]interface{} {
 	})
 	// 中途截断的录像（underflow / desync）不视为致命：已收集的事件照常返回，
 	// truncated 标记给前端。desync 错误经过 %w 包装，必须用 errors.Is 判断。
-	if err != nil && !errors.Is(err, duel.ErrReplayResponseUnderflow) && !errors.Is(err, duel.ErrReplayDesynchronized) {
-		return map[string]interface{}{"success": false, "error": err.Error()}
+	if err != nil && !errors.Is(err, replay.ErrReplayResponseUnderflow) && !errors.Is(err, replay.ErrReplayDesynchronized) {
+		return failResult(err)
 	}
 
 	return map[string]interface{}{

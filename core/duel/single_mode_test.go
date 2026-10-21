@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sjm1327605995/goygopro/core/data"
+	"github.com/sjm1327605995/goygopro/core/replay"
 	"github.com/sjm1327605995/goygopro/ocgcore"
 )
 
@@ -25,14 +27,14 @@ func initSingleEngine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := DefaultDataManager.LoadDB(filepath.Join(root, "cards.cdb")); err != nil {
+	if err := data.DefaultDataManager.LoadDB(filepath.Join(root, "cards.cdb")); err != nil {
 		t.Fatalf("load cards.cdb: %v", err)
 	}
 	if err := ocgcore.Init(
 		ocgcore.WithRootPath(root),
 		ocgcore.WithScriptDirectory(filepath.Join(root, "script")),
 		ocgcore.WithCardReader(func(cardId uint32) *ocgcore.CardData {
-			return DefaultDataManager.GetData(cardId)
+			return data.DefaultDataManager.GetData(cardId)
 		}),
 	); err != nil {
 		t.Skipf("ocgcore library not available: %v", err)
@@ -309,35 +311,35 @@ func TestSingleSessionRecordRoundtrip(t *testing.T) {
 		t.Fatal("SaveReplay failed")
 	}
 
-	r2 := NewReplay()
-	if !r2.OpenReplay("single_replay_roundtrip.yrp") {
-		t.Fatal("OpenReplay failed to read back single replay")
+	rm := replay.NewReplayMode()
+	if err := rm.Load("./replay/single_replay_roundtrip.yrp"); err != nil {
+		t.Fatalf("Load failed to read back single replay: %v", err)
 	}
-	hdr := r2.ReadHeader()
-	if hdr.Base.Flag&REPLAY_SINGLE_MODE == 0 || hdr.Base.Flag&REPLAY_UNIFORM == 0 {
+	hdr := rm.Replay.ReadHeader()
+	if hdr.Base.Flag&replay.REPLAY_SINGLE_MODE == 0 || hdr.Base.Flag&replay.REPLAY_UNIFORM == 0 {
 		t.Fatalf("header flag = 0x%x, want REPLAY_SINGLE_MODE|REPLAY_UNIFORM", hdr.Base.Flag)
 	}
-	if len(r2.players) != 2 {
-		t.Fatalf("players = %d, want 2", len(r2.players))
+	if len(rm.Players) != 2 {
+		t.Fatalf("players = %d, want 2", len(rm.Players))
 	}
-	if r2.players[0] != "ReplayTester" {
-		t.Fatalf("host name = %q, want ReplayTester", r2.players[0])
+	if rm.Players[0] != "ReplayTester" {
+		t.Fatalf("host name = %q, want ReplayTester", rm.Players[0])
 	}
-	if r2.players[1] != "" {
-		t.Fatalf("client name = %q, want empty", r2.players[1])
+	if rm.Players[1] != "" {
+		t.Fatalf("client name = %q, want empty", rm.Players[1])
 	}
-	if r2.scriptName != "青眼一击.lua" {
-		t.Fatalf("script name = %q, want 青眼一击.lua", r2.scriptName)
+	if rm.ScriptName != "青眼一击.lua" {
+		t.Fatalf("script name = %q, want 青眼一击.lua", rm.ScriptName)
 	}
-	if r2.params.StartLP != 8000 || r2.params.StartHand != 5 || r2.params.DrawCount != 1 {
-		t.Fatalf("params = LP%d/Hand%d/Draw%d, want 8000/5/1", r2.params.StartLP, r2.params.StartHand, r2.params.DrawCount)
+	if rm.Params.StartLP != 8000 || rm.Params.StartHand != 5 || rm.Params.DrawCount != 1 {
+		t.Fatalf("params = LP%d/Hand%d/Draw%d, want 8000/5/1", rm.Params.StartLP, rm.Params.StartHand, rm.Params.DrawCount)
 	}
 
 	// 响应流：SkipInfo 定位到信息区之后，第一段是 uint8 长度 + 4 字节 LE 的
 	// encodeI(6)（进入战斗阶段）。
-	r2.SkipInfo()
+	rm.Replay.SkipInfo()
 	var resp [8]byte
-	if !r2.ReadNextResponse(resp[:]) {
+	if !rm.Replay.ReadNextResponse(resp[:]) {
 		t.Fatal("ReadNextResponse failed at response stream start")
 	}
 	if resp[0] != 6 || resp[1] != 0 || resp[2] != 0 || resp[3] != 0 {

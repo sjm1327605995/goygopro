@@ -11,9 +11,6 @@ import (
 // Go 中通过全局变量模拟，在 server.go 的 OnBoot 中注入。
 var NetServerEngine *gnet.Engine
 
-// BroadcastInstance 全局广播服务器引用
-var BroadcastInstance *BroadcastServer
-
 // AcceptingConnections 是否接受新连接。atomic.Bool：OnOpen 在 gnet 事件循环
 // goroutine 读取，StopListen 在决斗 goroutine 写入，--multicore=true 下是跨
 // goroutine 访问，普通 bool 会数据竞争。

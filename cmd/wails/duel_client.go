@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/go-restruct/restruct"
+	"github.com/sjm1327605995/goygopro/core/codec"
 	"github.com/sjm1327605995/goygopro/core/utils"
 	"github.com/sjm1327605995/goygopro/protocol"
 	"github.com/sjm1327605995/goygopro/protocol/network"
@@ -141,25 +141,31 @@ func (c *WailsDuelClient) emit(eventName string, data interface{}) {
 // Outgoing CTOS Packets
 // ------------------------------------------------------------------
 
+// 出站帧用 codec.Frame（CTOS 线格式帧：2 字节小端长度 + 1 字节 proto +
+// 负载；Len 含 proto 字节本身 = 1+len(Payload)，由调用方显式赋值，负载
+// greedy 吃光）。
 func (c *WailsDuelClient) sendPacket(proto byte, payload []byte) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	buf, err := codec.Marshal(&codec.Frame{Len: uint16(1 + len(payload)), Proto: proto, Payload: payload})
+	if err != nil {
+		return err
+	}
 
-	if !c.isConnected || c.conn == nil {
+	// 锁内只取连接引用。写出不能放在临界区里：对端不读、内核发送缓冲打满
+	// 时 Write 可能长时间阻塞，持 c.mu 会把 Disconnect/teardown/IsConnected
+	// 一起拖死。
+	c.mu.Lock()
+	conn := c.conn
+	connected := c.isConnected && conn != nil
+	c.mu.Unlock()
+	if !connected {
 		utils.NetLogf("client", "send CTOS %s (0x%02x) dropped: not connected", network.CTOSName(proto), proto)
 		return fmt.Errorf("not connected")
 	}
 
 	utils.NetLogf("client", "send CTOS %s (0x%02x) len=%d", network.CTOSName(proto), proto, len(payload))
-	pktLen := uint16(1 + len(payload))
-	buf := make([]byte, 2+int(pktLen))
-	binary.LittleEndian.PutUint16(buf[0:2], pktLen)
-	buf[2] = proto
-	if len(payload) > 0 {
-		copy(buf[3:], payload)
-	}
-
-	_, err := c.conn.Write(buf)
+	// 写出带超时：连接半关闭/对端僵死时不会永久阻塞在 Write 上。
+	_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	_, err = conn.Write(buf)
 	return err
 }
 
@@ -175,7 +181,7 @@ func writeFixedUTF16(dst []uint16, s string) {
 func (c *WailsDuelClient) sendPlayerInfo(name string) error {
 	var pkt protocol.CTOSPlayerInfo
 	writeFixedUTF16(pkt.Name[:], name)
-	data, err := restruct.Pack(binary.LittleEndian, &pkt)
+	data, err := codec.Marshal(&pkt)
 	if err != nil {
 		return err
 	}
@@ -187,7 +193,7 @@ func (c *WailsDuelClient) CreateGame(hostInfo protocol.HostInfo, roomName string
 	pkt.Info = hostInfo
 	writeFixedUTF16(pkt.Name[:], roomName)
 	writeFixedUTF16(pkt.Pass[:], pass)
-	data, err := restruct.Pack(binary.LittleEndian, &pkt)
+	data, err := codec.Marshal(&pkt)
 	if err != nil {
 		return err
 	}
@@ -199,7 +205,7 @@ func (c *WailsDuelClient) JoinGame(version uint16, gameID uint32, pass string) e
 	pkt.Version = version
 	pkt.GameID = gameID
 	writeFixedUTF16(pkt.Pass[:], pass)
-	data, err := restruct.Pack(binary.LittleEndian, &pkt)
+	data, err := codec.Marshal(&pkt)
 	if err != nil {
 		return err
 	}
@@ -237,6 +243,10 @@ func (c *WailsDuelClient) SendChat(msg string) error {
 	encoded := utf16.Encode([]rune(msg))
 	if len(encoded) > 255 {
 		encoded = encoded[:255]
+		// 截断处若劈开 UTF-16 代理对，退掉末尾孤立的高代理项
+		if u := encoded[len(encoded)-1]; u >= 0xd800 && u <= 0xdbff {
+			encoded = encoded[:len(encoded)-1]
+		}
 	}
 	buf := make([]byte, (len(encoded)+1)*2)
 	for i, v := range encoded {
@@ -249,7 +259,7 @@ func (c *WailsDuelClient) SendChat(msg string) error {
 func (c *WailsDuelClient) SendHandResult(res byte) error {
 	var pkt protocol.CTOSHandResult
 	pkt.Res = res
-	data, err := restruct.Pack(binary.LittleEndian, &pkt)
+	data, err := codec.Marshal(&pkt)
 	if err != nil {
 		return err
 	}
@@ -259,7 +269,7 @@ func (c *WailsDuelClient) SendHandResult(res byte) error {
 func (c *WailsDuelClient) SendTPResult(res byte) error {
 	var pkt protocol.CTOSTPResult
 	pkt.Res = res
-	data, err := restruct.Pack(binary.LittleEndian, &pkt)
+	data, err := codec.Marshal(&pkt)
 	if err != nil {
 		return err
 	}
@@ -359,7 +369,13 @@ func (c *WailsDuelClient) readLoop() {
 			break
 		}
 
-		packetLen := binary.LittleEndian.Uint16(header)
+		// ReadFull 已保证恰好 2 字节，Unmarshal 不会失败
+		var fh codec.FrameLen
+		if err := codec.Unmarshal(header, &fh); err != nil {
+			log.Printf("[WailsDuelClient] Decode header error: %v", err)
+			break
+		}
+		packetLen := fh.Len
 		if packetLen == 0 {
 			continue
 		}
