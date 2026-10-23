@@ -1,92 +1,95 @@
 /* ==================================================================
    Mantine 统一主题覆盖层 —— 未分层 CSS，恒胜 @mantine/core/styles.css
    的 @layer mantine。所有 Mantine 控件与 gframe 窗口同源：
-   深蓝面板 + 钢铁蓝控件 + 青（--primary）/金（--accent-gold）点缀。
+   中性炭黑面板 + Master Duel 深蓝主色 + 金色强调，扁平无霓虹光晕。
    ================================================================== */
 
 /* Mantine 全局变量对齐本游戏配色（dark scheme） */
 :root {
-  --mantine-color-text: #dbe7ff;
-  --mantine-color-dimmed: #9fb0d8;
+  --mantine-color-text: #e8edf5;
+  --mantine-color-dimmed: #94a3b8;
   --mantine-color-body: transparent;
-  --mantine-color-placeholder: #5d6b8c;
+  --mantine-color-placeholder: #64748b;
   /* default variant（次级按钮/输入边框等） */
-  --mantine-color-default: #283654;
-  --mantine-color-default-hover: #34446f;
-  --mantine-color-default-border: rgba(126, 156, 222, 0.45);
-  --mantine-color-default-color: #dbe7ff;
+  --mantine-color-default: #1b2434;
+  --mantine-color-default-hover: #232e42;
+  --mantine-color-default-border: rgba(148, 163, 184, 0.22);
+  --mantine-color-default-color: #e8edf5;
 }
 
 /* ---- 按钮（UiButton 注入 .ui-btn） ---- */
 .mantine-Button-root.ui-btn {
-  background: linear-gradient(180deg, #34446f 0%, #283654 50%, #1f2a46 100%);
-  border: 1px solid rgba(126, 156, 222, 0.45);
-  color: #dbe7ff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 1px 3px rgba(0, 0, 0, 0.4);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  background: linear-gradient(180deg, #1f2937 0%, #1a2331 100%);
+  border: 1px solid var(--border-strong);
+  color: var(--text-main);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 .mantine-Button-root.ui-btn:hover {
-  background: linear-gradient(180deg, #3d5080 0%, #2f3f63 50%, #253252 100%);
-  border-color: rgba(0, 210, 255, 0.55);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 8px rgba(0, 210, 255, 0.25);
+  background: linear-gradient(180deg, #263244 0%, #1f2a3a 100%);
+  border-color: var(--border-accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 .mantine-Button-root.ui-btn:active {
-  background: linear-gradient(180deg, #1b2440 0%, #283654 50%, #34446f 100%);
+  background: #141b26;
+  border-color: var(--border-color);
 }
 .mantine-Button-root.ui-btn:disabled,
 .mantine-Button-root.ui-btn[data-disabled] {
-  background: #232c46;
-  color: #5d6b8c;
-  border-color: rgba(126, 156, 222, 0.2);
+  background: #171e29;
+  color: #5c6a7d;
+  border-color: rgba(148, 163, 184, 0.1);
   box-shadow: none;
 }
 /* 主操作（金） */
 .mantine-Button-root.ui-btn--gold {
-  background: linear-gradient(180deg, #8a6a2a 0%, #6d5220 50%, #54401a 100%);
-  border-color: rgba(245, 158, 11, 0.55);
-  color: #ffe8b8;
+  background: linear-gradient(180deg, #eab308 0%, #ca8a04 100%);
+  border-color: rgba(250, 204, 21, 0.5);
+  color: #1a1405;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(202, 138, 4, 0.2);
 }
 .mantine-Button-root.ui-btn--gold:hover {
-  background: linear-gradient(180deg, #a07c32 0%, #7d6026 50%, #60491e 100%);
-  border-color: rgba(245, 158, 11, 0.8);
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.35);
+  background: linear-gradient(180deg, var(--accent-gold-bright) 0%, #d99a05 100%);
+  border-color: rgba(250, 204, 21, 0.75);
+  box-shadow: 0 3px 14px rgba(202, 138, 4, 0.3);
 }
 /* 危险（红） */
 .mantine-Button-root.ui-btn--danger {
-  background: linear-gradient(180deg, #7a3535 0%, #5f2828 50%, #481f1f 100%);
+  background: linear-gradient(180deg, #b93838 0%, #9b2c2c 100%);
   border-color: rgba(239, 68, 68, 0.5);
-  color: #ffd0d0;
+  color: #ffe2e2;
 }
 .mantine-Button-root.ui-btn--danger:hover {
-  background: linear-gradient(180deg, #8f4040 0%, #6e2f2f 50%, #542424 100%);
+  background: linear-gradient(180deg, #cc4141 0%, #ad3131 100%);
   border-color: rgba(239, 68, 68, 0.75);
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+  box-shadow: 0 3px 14px rgba(220, 38, 38, 0.26);
 }
 
 /* ---- 输入框（UiInput 注入 .ui-input 到 input 元素） ---- */
 .ui-input {
-  background: rgba(8, 12, 26, 0.85);
-  border: 1px solid rgba(126, 156, 222, 0.35);
-  color: #e6eeff;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
 }
 .ui-input:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 6px rgba(0, 210, 255, 0.3);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
   outline: none;
 }
 .ui-input::placeholder {
-  color: #5d6b8c;
+  color: #64748b;
 }
 
 /* ---- 复选框（UiCheckbox） ---- */
 .mantine-Checkbox-input.ui-check {
-  background: rgba(8, 12, 26, 0.85);
-  border-color: rgba(126, 156, 222, 0.45);
+  background: var(--bg-inset);
+  border-color: var(--border-strong);
 }
 .mantine-Checkbox-input.ui-check:checked {
-  background: #00a8cc;
-  border-color: #00d2ff;
+  background: var(--primary);
+  border-color: #60a5fa;
 }
 .mantine-Checkbox-label {
-  color: #c9d6f2;
+  color: #c2ccdb;
 }

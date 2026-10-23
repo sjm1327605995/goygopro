@@ -8,36 +8,36 @@
 /* 按钮总闸：cpp-parity 的 Irrlicht 灰斜面按钮 (.duel-stage button) 全部
  * 换回 neos 暗色胶囊（特异性和其 :not 规则持平，靠后加载胜出） */
 :is(#app,#root) .duel-stage button:not(.hand-card-item) {
-  background: rgba(13, 21, 34, 0.86);
-  color: #e8eef8;
-  border: 1px solid rgba(122, 162, 222, 0.18);
+  background: rgba(19, 26, 38, 0.88);
+  color: #e8edf5;
+  border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   text-shadow: none;
   font-weight: 600;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 :is(#app,#root) .duel-stage button:not(.hand-card-item):hover {
-  background: rgba(30, 47, 73, 0.92);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  background: rgba(29, 39, 55, 0.94);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 :is(#app,#root) .duel-stage button:disabled:not(.hand-card-item) {
-  color: rgba(142, 163, 192, 0.6);
-  background: rgba(13, 21, 34, 0.6);
+  color: rgba(148, 163, 184, 0.5);
+  background: rgba(19, 26, 38, 0.6);
 }
 
 :is(#app,#root) .duel-stage {
-  --neos-panel: rgba(13, 21, 34, 0.86);
-  --neos-panel-solid: #101a2b;
-  --neos-panel-border: rgba(122, 162, 222, 0.18);
-  --neos-accent: #4aa3ff;
-  --neos-accent-soft: rgba(74, 163, 255, 0.16);
-  --neos-text: #e8eef8;
-  --neos-text-dim: #8ea3c0;
+  --neos-panel: rgba(19, 26, 38, 0.88);
+  --neos-panel-solid: #131a26;
+  --neos-panel-border: rgba(148, 163, 184, 0.16);
+  --neos-accent: #3b82f6;
+  --neos-accent-soft: rgba(59, 130, 246, 0.16);
+  --neos-text: #e8edf5;
+  --neos-text-dim: #94a3b8;
   --neos-radius: 10px;
-  --neos-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  --neos-shadow: 0 8px 28px rgba(0, 0, 0, 0.42);
 }
 
 /* ---- 玩家状态面板：玻璃卡片（neos 双方 LP 卡片） ---- */
@@ -56,7 +56,7 @@
 :is(#app,#root) .duel-stage .player-state-panel.is-turn {
   background: rgba(17, 30, 50, 0.92);
   border-color: rgba(74, 163, 255, 0.55);
-  box-shadow: 0 0 0 1px rgba(74, 163, 255, 0.25), 0 6px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.22), 0 6px 24px rgba(0, 0, 0, 0.45);
 }
 
 :is(#app,#root) .duel-stage .player-state-name {
@@ -76,6 +76,7 @@
 /* LP 条：去掉 lpf.png 木框 → 圆角轨道 + lp.png 彩条 */
 :is(#app,#root) .duel-stage .lp-frame {
   height: 22px;
+  /* 注意：backgroundColor 被 stage_smoke 锁定，保持 rgba(0, 0, 0, 0.35) */
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid var(--neos-panel-border);
   border-radius: 7px;
@@ -155,13 +156,13 @@
 :is(#app,#root) .duel-stage button.phase-btn.phase-display.current,
 :is(#app,#root) .duel-stage button.phase-btn.current-phase {
   background: var(--neos-accent-soft);
-  border-color: rgba(74, 163, 255, 0.6);
-  color: #cfe6ff;
+  border-color: rgba(59, 130, 246, 0.55);
+  color: #d6e6ff;
 }
 
 :is(#app,#root) .duel-stage button.phase-btn.actionable {
-  background: rgba(23, 38, 61, 0.95);
-  border-color: rgba(74, 163, 255, 0.75);
+  background: rgba(26, 38, 56, 0.95);
+  border-color: rgba(59, 130, 246, 0.7);
   color: #ffffff;
   animation: none;
 }
@@ -174,9 +175,9 @@
 /* ---- 阶段/胜利横幅：去硬描边，柔光大字 ---- */
 :is(#app,#root) .duel-stage .phase-banner {
   color: #ffffff;
-  text-shadow: 0 2px 18px rgba(74, 163, 255, 0.55), 0 2px 6px rgba(0, 0, 0, 0.85);
+  text-shadow: 0 2px 18px rgba(59, 130, 246, 0.5), 0 2px 6px rgba(0, 0, 0, 0.85);
   letter-spacing: 0.06em;
-  background: linear-gradient(180deg, rgba(13, 21, 34, 0.0), rgba(13, 21, 34, 0.55), rgba(13, 21, 34, 0.0));
+  background: linear-gradient(180deg, rgba(19, 26, 38, 0.0), rgba(19, 26, 38, 0.55), rgba(19, 26, 38, 0.0));
 }
 
 :is(#app,#root) .duel-stage .victory-reason {
@@ -199,7 +200,7 @@
   box-shadow: var(--neos-shadow);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  padding: 6px 20px;
+  /* 内边距/行高由 duel-original.css 的「HUD 像素落点」锁定，皮肤层不覆盖 */
 }
 
 /* ---- 右列控制条按钮：暗色胶囊 ---- */
@@ -226,8 +227,8 @@
 :is(#app,#root) .duel-stage button.chain-btn.pressed {
   background: var(--neos-accent-soft);
   border-color: var(--neos-accent);
-  color: #d6ebff;
-  box-shadow: 0 0 0 1px rgba(74, 163, 255, 0.3), 0 2px 8px rgba(0, 0, 0, 0.35);
+  color: #d6e6ff;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.28), 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 :is(#app,#root) .duel-stage button.surrender-btn:hover {
@@ -247,6 +248,7 @@
 
 /* ---- 悬停卡提示（stTip）：白底 → neos 暗色卡提示 ---- */
 :is(#app,#root) #st-tip.st-tip {
+  /* 注意：backgroundColor 被 spec_smoke 锁定，保持 rgba(13, 21, 34, 0.94) */
   background: rgba(13, 21, 34, 0.94);
   color: var(--neos-text);
   border: 1px solid var(--neos-panel-border);
@@ -264,7 +266,7 @@
 
 /* ---- 动作弹出菜单（原版 wCMDMenu） ---- */
 :is(#app,#root) .duel-stage .action-popup {
-  background: rgba(13, 21, 34, 0.95);
+  background: rgba(19, 26, 38, 0.95);
   border: 1px solid var(--neos-panel-border);
   border-radius: 10px;
   box-shadow: var(--neos-shadow);
@@ -276,7 +278,7 @@
 :is(#app,#root) .duel-stage .action-popup .action-btn {
   background: transparent;
   border: none;
-  border-bottom: 1px solid rgba(122, 162, 222, 0.1);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   color: var(--neos-text);
   text-align: left;
   padding: 9px 18px;
@@ -381,14 +383,14 @@
 
 :is(#app,#root) .duel-stage button.preview-tab.active {
   background: var(--neos-accent-soft);
-  color: #d6ebff;
-  border-color: rgba(74, 163, 255, 0.4);
+  color: #d6e6ff;
+  border-color: rgba(59, 130, 246, 0.4);
 }
 
 /* ---- 决斗内弹窗（询问/堆区列表/投降确认）：深色玻璃统一皮 ---- */
 :is(#app,#root) .duel-stage .modal-box,
 :is(#app,#root) .duel-stage .wcs-window {
-  background: rgba(15, 24, 39, 0.97);
+  background: rgba(19, 26, 38, 0.97);
   border: 1px solid var(--neos-panel-border);
   border-radius: 14px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
@@ -401,7 +403,7 @@
 :is(#app,#root) .duel-stage .wcs-title {
   color: #ffffff;
   text-shadow: none;
-  border-bottom: 1px solid rgba(122, 162, 222, 0.14);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
 }
 
 :is(#app,#root) .duel-stage .modal-box button.btn,
@@ -412,14 +414,14 @@
 
 /* 按钮统一：金钮 → 蓝色主钮（决斗作用域） */
 :is(#app,#root) .duel-stage button.btn-gold {
-  background: linear-gradient(180deg, #3f8de0, #2f6fc0);
-  border: 1px solid rgba(140, 195, 255, 0.5);
+  background: linear-gradient(180deg, #3b82f6, #2563eb);
+  border: 1px solid rgba(96, 154, 250, 0.5);
   color: #ffffff;
   text-shadow: none;
 }
 
 :is(#app,#root) .duel-stage button.btn-gold:hover {
-  background: linear-gradient(180deg, #4f9dee, #3a7ed0);
+  background: linear-gradient(180deg, #4b90f8, #2f74f0);
 }
 
 :is(#app,#root) .duel-stage button.btn-gold:disabled {
@@ -449,7 +451,7 @@
 
 /* ---- 投降确认窗 ---- */
 :is(#app,#root) .duel-stage .surrender-confirm {
-  background: rgba(15, 24, 39, 0.97);
+  background: rgba(19, 26, 38, 0.97);
   border: 1px solid rgba(255, 122, 122, 0.35);
   border-radius: 12px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);

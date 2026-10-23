@@ -1203,7 +1203,9 @@ const run = async () => {
   await waitFor(() => duelStore.getState().viewSwapped === true);
   assert('swapFlipsDisplaySeats', duelStore.getState().lp[1] === 6000
     && duelStore.getState().lp[0] === 8000, JSON.stringify(duelStore.getState().lp));
-  await waitFor(() => field.camera.position.z < 0, 3000);
+  // 相机落点跟随下侧座位（本地座 1 时未交换在 -Z、交换后在 +Z）
+  const localSide = field.localSeat === 1 ? -1 : 1;
+  await waitFor(() => field.camera.position.z * localSide < 0, 3000);
   assert('swapFlipsCamera', true);
   // 翻转后 seat0 的事件落入显示座 1（换算连续）
   eventBus.emit('duel:lp_update', { player: 0, lp: 5000 });
@@ -1214,7 +1216,7 @@ const run = async () => {
   await waitFor(() => duelStore.getState().viewSwapped === false);
   assert('swapBackRestores', duelStore.getState().lp[0] === 5000
     && duelStore.getState().lp[1] === 8000, JSON.stringify(duelStore.getState().lp));
-  await waitFor(() => field.camera.position.z > 0, 3000);
+  await waitFor(() => field.camera.position.z * localSide > 0, 3000);
   assert('swapCameraBack', true);
 
   document.getElementById('leave-game-btn').click();

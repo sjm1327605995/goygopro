@@ -4,23 +4,37 @@
 @tailwind components;
 @tailwind utilities;
 
-/* YGOPro 3D Client - Master Duel Aesthetic Theme */
+/* YGOPro 3D Client - Master Duel 深蓝 / 中性炭黑设计系统
+   单一事实源：所有皮肤层（style / gframe-window / duel-* / ui-kit）都从这里取色。
+   设计取向：扁平、8–10px 圆角、1px 淡边框、柔和阴影、玻璃面板、无霓虹光晕。 */
 :root {
-  --bg-dark: #0a0e17;
-  --bg-card: rgba(16, 24, 39, 0.85);
-  --bg-card-hover: rgba(28, 41, 66, 0.95);
-  --primary: #00d2ff;
-  --primary-glow: rgba(0, 210, 255, 0.4);
-  --accent-gold: #f59e0b;
-  --accent-gold-glow: rgba(245, 158, 11, 0.5);
+  /* 底色与面板面（中性炭黑，替代原钢铁蓝渐变） */
+  --bg-dark: #0a0d14;
+  --bg-panel: #131a26;
+  --bg-panel-3: #1b2434;
+  --bg-inset: #0d131d;
+  --bg-card: rgba(19, 26, 38, 0.92);
+  --bg-card-hover: rgba(27, 36, 52, 0.96);
+  /* 主色：Master Duel 深蓝（原青色霓虹退役） */
+  --primary: #3b82f6;
+  /* 强调色（金 = 选中/卡牌强调；gold-bright 用于高亮文字与描边） */
+  --accent-gold: #eab308;
+  --accent-gold-bright: var(--accent-gold-bright);
   --accent-red: #ef4444;
-  --accent-green: #10b981;
-  --accent-purple: #8b5cf6;
-  --text-main: #f3f4f6;
-  --text-muted: #9ca3af;
-  --border-color: rgba(255, 255, 255, 0.12);
-  --border-cyan: rgba(0, 210, 255, 0.3);
-  --font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  --accent-green: #22c55e;
+  /* 文字与描边 */
+  --text-main: #e8edf5;
+  --text-muted: #94a3b8;
+  --border-color: rgba(148, 163, 184, 0.14);
+  --border-strong: rgba(148, 163, 184, 0.22);
+  --border-accent: rgba(59, 130, 246, 0.34);
+  --border-cyan: rgba(59, 130, 246, 0.34); /* 旧变量别名，语义 = 强调描边 */
+  /* 面板渐变（近乎扁平的炭黑）与柔和投影 */
+  --panel-grad: linear-gradient(180deg, #171f2d 0%, #121824 100%);
+  --panel-grad-solid: linear-gradient(180deg, #182130 0%, #121823 100%);
+  --shadow-panel: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-pop: 0 18px 48px rgba(0, 0, 0, 0.55);
+  --font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Microsoft YaHei', sans-serif;
 }
 
 * {
@@ -69,10 +83,33 @@ body, html {
    （窗口结构与皮肤见 css/gframe-window.css）
    ------------------------------------------------------------------ */
 #main-menu-screen {
-  background: url('../textures/bg_menu.jpg') center/cover no-repeat;
+  background:
+    radial-gradient(ellipse 80% 70% at 50% 38%, rgba(10, 13, 20, 0.18) 0%, rgba(8, 11, 18, 0.78) 60%, rgba(5, 7, 12, 0.96) 100%),
+    url('../textures/bg_menu.jpg') center/cover no-repeat;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+}
+/* 柔和的环境光斑（无霓虹描边，只做背景层次） */
+#main-menu-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 20% 16%, rgba(59, 130, 246, 0.2) 0%, transparent 42%),
+    radial-gradient(circle at 82% 84%, rgba(139, 92, 246, 0.14) 0%, transparent 40%);
+}
+
+#lobby-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 74% 22%, rgba(59, 130, 246, 0.16) 0%, transparent 40%),
+    radial-gradient(circle at 22% 82%, rgba(139, 92, 246, 0.12) 0%, transparent 38%);
 }
 
 /* ------------------------------------------------------------------
@@ -81,7 +118,10 @@ body, html {
    （结构与皮肤见 css/gframe-window.css）
    ------------------------------------------------------------------ */
 #lobby-screen {
-  background: url('../textures/bg_menu.jpg') center/cover no-repeat;
+  background:
+    radial-gradient(ellipse 80% 70% at 50% 38%, rgba(10, 13, 20, 0.18) 0%, rgba(8, 11, 18, 0.78) 60%, rgba(5, 7, 12, 0.96) 100%),
+    url('../textures/bg_menu.jpg') center/cover no-repeat;
+  overflow: hidden;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -103,18 +143,18 @@ body, html {
 .form-input, .form-select {
   width: 100%;
   padding: 10px 14px;
-  background: rgba(10, 16, 28, 0.8);
+  background: var(--bg-inset);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  color: #fff;
+  color: var(--text-main);
   font-size: 14px;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .form-input:focus, .form-select:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 10px var(--primary-glow);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
 }
 
 /* 决斗场景覆盖层的按钮皮肤（Mantine 迁移的菜单控件带 .ui-btn，豁免） */
@@ -134,40 +174,44 @@ body, html {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #00d2ff, #0072ff);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   color: #fff;
-  box-shadow: 0 4px 15px rgba(0, 210, 255, 0.3);
+  border: 1px solid rgba(96, 154, 250, 0.45);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28);
 }
 
 .btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 210, 255, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.4);
 }
 
 .btn-gold {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  color: #fff;
-  box-shadow: 0 4px 15px var(--accent-gold-glow);
+  background: linear-gradient(135deg, #eab308, #ca8a04);
+  color: #1a1405;
+  border: 1px solid rgba(250, 204, 21, 0.45);
+  box-shadow: 0 4px 14px rgba(202, 138, 4, 0.24);
 }
 
 .btn-gold:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px var(--accent-gold-glow);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(202, 138, 4, 0.36);
 }
 
 .btn-danger {
   background: linear-gradient(135deg, #ef4444, #dc2626);
   color: #fff;
+  border: 1px solid rgba(248, 113, 113, 0.4);
 }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-panel-3);
   color: var(--text-main);
   border: 1px solid var(--border-color);
 }
 
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: #232e42;
+  border-color: var(--border-strong);
 }
 
 /* ------------------------------------------------------------------
@@ -209,17 +253,17 @@ body, html {
   left: 16px;
   width: 276px;
   bottom: 16px;
-  background: linear-gradient(180deg, rgba(30, 39, 68, 0.97) 0%, rgba(17, 23, 44, 0.97) 100%);
-  border: 1px solid rgba(98, 132, 202, 0.45);
+  background: rgba(19, 26, 38, 0.92);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
-  backdrop-filter: none;
+  backdrop-filter: blur(14px);
   display: flex;
   flex-direction: column;
   padding: 10px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: var(--shadow-panel), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   z-index: 10;
   overflow: hidden;
-  color: #dbe7ff;
+  color: var(--text-main);
 }
 
 .inspector-pic-box {
@@ -227,11 +271,11 @@ body, html {
   height: 240px;
   border-radius: 6px;
   overflow: hidden;
-  background: #05070f;
+  background: var(--bg-inset);
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(126, 156, 222, 0.35);
+  border: 1px solid var(--border-color);
   margin-bottom: 10px;
   position: relative;
 }
@@ -256,15 +300,15 @@ body, html {
   font-weight: 700;
   color: #fff;
   text-align: center;
-  background: rgba(8, 12, 26, 0.85);
-  border: 1px solid rgba(126, 156, 222, 0.35);
+  background: rgba(10, 14, 22, 0.7);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 4px 6px;
 }
 
 /* 类型行：[怪兽/效果] 种族/属性 */
 .inspector-type-line {
-  color: #7fd4ff;
+  color: #7fb0ff;
   font-weight: 600;
 }
 
@@ -279,23 +323,23 @@ body, html {
   flex: 1;
   padding: 3px 0;
   font-size: 12px;
-  background: linear-gradient(180deg, #283654 0%, #1f2a46 100%);
-  border: 1px solid rgba(126, 156, 222, 0.35);
+  background: var(--bg-panel-3);
+  border: 1px solid var(--border-color);
   border-radius: 6px 6px 0 0;
-  color: #9fb0d8;
+  color: var(--text-muted);
   cursor: pointer;
 }
 
 .inspector-tab.active {
-  background: rgba(30, 39, 68, 0.97);
+  background: var(--bg-panel);
   border-bottom-color: transparent;
   color: #fff;
   font-weight: 700;
 }
 
 .inspector-log {
-  background: rgba(8, 12, 26, 0.85);
-  border: 1px solid rgba(126, 156, 222, 0.35);
+  background: rgba(10, 14, 22, 0.7);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 6px;
 }
@@ -303,14 +347,14 @@ body, html {
 .inspector-log-line {
   font-size: 12px;
   line-height: 1.6;
-  color: #c9d6f2;
-  border-bottom: 1px dotted rgba(255, 255, 255, 0.15);
+  color: #c2ccdb;
+  border-bottom: 1px dotted rgba(148, 163, 184, 0.16);
 }
 
 .inspector-meta {
   font-size: 12px;
   line-height: 1.5;
-  color: #c3cfe8;
+  color: #b6c2d4;
 }
 
 .inspector-badges {
@@ -329,8 +373,8 @@ body, html {
   border: 1px solid var(--border-color);
 }
 
-.badge-attr { background: rgba(0, 210, 255, 0.2); border-color: var(--primary); }
-.badge-type { background: rgba(245, 158, 11, 0.2); border-color: var(--accent-gold); }
+.badge-attr { background: rgba(59, 130, 246, 0.16); border-color: var(--border-accent); }
+.badge-type { background: rgba(234, 179, 8, 0.14); border-color: rgba(234, 179, 8, 0.4); }
 
 .inspector-stats {
   display: flex;
@@ -338,7 +382,7 @@ body, html {
   font-size: 13px;
   font-weight: 700;
   padding: 6px 10px;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.28);
   border-radius: 6px;
   border: 1px solid var(--border-color);
 }
@@ -346,7 +390,7 @@ body, html {
 .inspector-desc {
   font-size: 12px;
   line-height: 1.5;
-  color: #b8c6e4;
+  color: #aebacd;
   user-select: text;
   white-space: pre-wrap;
 }
@@ -366,7 +410,7 @@ body, html {
   align-items: center;
   gap: 16px;
   background: var(--bg-card);
-  border: 1px solid var(--border-cyan);
+  border: 1px solid var(--border-strong);
   padding: 10px 20px;
   border-radius: 10px;
   backdrop-filter: blur(12px);
@@ -378,7 +422,7 @@ body, html {
   height: 48px;
   border-radius: 50%;
   border: 2px solid var(--primary);
-  background: #1e293b;
+  background: var(--bg-panel-3);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -411,7 +455,7 @@ body, html {
 .lp-bar-fill {
   height: 100%;
   width: 100%;
-  background: linear-gradient(90deg, #10b981, #00d2ff);
+  background: linear-gradient(90deg, #22c55e, #3b82f6);
   transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1), background 0.4s ease;
 }
 
@@ -429,36 +473,10 @@ body, html {
   display: flex;
   gap: 6px;
   background: var(--bg-card);
-  border: 1px solid var(--border-cyan);
+  border: 1px solid var(--border-strong);
   padding: 6px 12px;
   border-radius: 20px;
   backdrop-filter: blur(12px);
-}
-
-.phase-item {
-  padding: 6px 14px;
-  font-size: 12px;
-  font-weight: 700;
-  border-radius: 12px;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.phase-item.active {
-  background: var(--primary);
-  color: #000;
-  box-shadow: 0 0 12px var(--primary-glow);
-}
-
-.phase-item.actionable {
-  border: 1px solid var(--accent-gold);
-  color: var(--accent-gold);
-}
-
-.phase-item.actionable:hover {
-  background: var(--accent-gold);
-  color: #000;
 }
 
 /* Bottom Hand Dock — 原版手牌画在场地底部中央（浮在场地/聊天条之上） */
@@ -490,8 +508,8 @@ body, html {
   height: 130px;
   margin: 0 -18px;
   border-radius: 6px;
-  background: #111;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #0b1018;
+  border: 1px solid var(--border-strong);
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
@@ -514,13 +532,13 @@ body, html {
   transform: translateY(-35px) scale(1.22);
   z-index: 50;
   border-color: var(--primary);
-  box-shadow: 0 12px 30px var(--primary-glow);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.65);
 }
 
 .hand-card-item.selected {
   transform: translateY(-45px) scale(1.25);
   border-color: var(--accent-gold);
-  box-shadow: 0 12px 30px var(--accent-gold-glow);
+  box-shadow: 0 12px 30px rgba(234, 179, 8, 0.24);
   z-index: 60;
 }
 
@@ -565,23 +583,23 @@ body, html {
   pointer-events: auto;
   position: absolute;
   background: var(--bg-card);
-  border: 1px solid var(--primary);
+  border: 1px solid var(--border-accent);
   border-radius: 10px;
   backdrop-filter: blur(16px);
   padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+  box-shadow: var(--shadow-pop);
   z-index: 100;
 }
 
 .action-btn {
   padding: 8px 18px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  color: #fff;
+  color: var(--text-main);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -591,7 +609,7 @@ body, html {
 
 .action-btn:hover {
   background: var(--primary);
-  color: #000;
+  color: #fff;
 }
 
 /* ------------------------------------------------------------------
@@ -603,8 +621,8 @@ body, html {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(8px);
+  background: rgba(5, 7, 12, 0.72);
+  backdrop-filter: blur(6px);
   display: none;
   align-items: center;
   justify-content: center;
@@ -615,15 +633,12 @@ body, html {
   display: flex;
 }
 
+/* 弹窗只定布局；皮肤（底色/描边/圆角/阴影）统一在 duel-original.css 的 .modal-box */
 .modal-box {
-  background: var(--bg-card);
-  border: 1px solid var(--primary);
-  border-radius: 14px;
   padding: 24px;
   min-width: 420px;
   max-width: 90vw;
   max-height: 90vh;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.9);
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -638,7 +653,8 @@ body, html {
 .modal-title {
   font-size: 20px;
   font-weight: 700;
-  color: var(--primary);
+  color: var(--text-main);
+  letter-spacing: 0.2px;
 }
 
 .modal-cards-grid {
@@ -667,15 +683,15 @@ body, html {
 
 .select-card-item.selected {
   border-color: var(--accent-gold);
-  box-shadow: 0 0 15px var(--accent-gold-glow);
+  box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.18);
 }
 
 /* ------------------------------------------------------------------
    DECK BUILDER SCREEN
    ------------------------------------------------------------------ */
 #deck-screen {
-  /* 原版卡组编辑器能看清背景图：遮罩只做轻微压暗，不要糊死 */
-  background: linear-gradient(180deg, rgba(8, 14, 34, 0.45) 0%, rgba(4, 8, 20, 0.62) 100%),
+  /* 原版卡组编辑器能看清背景图：中性暗色遮罩，压掉旧图蓝调 */
+  background: linear-gradient(180deg, rgba(7, 10, 16, 0.58) 0%, rgba(4, 6, 10, 0.76) 100%),
               url('../textures/bg_deck.jpg') center/cover no-repeat;
   flex-direction: column;
   padding: 0;
@@ -725,9 +741,9 @@ body, html {
   top: 1px;
   width: 197px;
   height: 272px;
-  background: linear-gradient(180deg, rgba(30, 39, 68, 0.97) 0%, rgba(17, 23, 44, 0.97) 100%);
-  border: 1px solid rgba(98, 132, 202, 0.45);
-  border-radius: 4px;
+  background: var(--panel-grad);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 /* imgCard (10,9)-(187,263)：177×254 卡图位 */
@@ -748,9 +764,9 @@ body, html {
   height: 364px;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, rgba(30, 39, 68, 0.97) 0%, rgba(17, 23, 44, 0.97) 100%);
-  border: 1px solid rgba(98, 132, 202, 0.45);
-  border-radius: 4px;
+  background: var(--panel-grad);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   padding: 2px;
   overflow: hidden;
@@ -782,7 +798,7 @@ body, html {
   font-size: 11px;
 }
 #deck-screen .inspector-type-line {
-  color: #6d9bff;
+  color: #7fb0ff;
 }
 #deck-screen .inspector-desc {
   flex: 1;
@@ -814,12 +830,13 @@ body, html {
 /* wDeckEdit (309,5)-(605,130) / wFilter (610,5)-(1020,130)（game.cpp:656/740） */
 .deck-header,
 .deck-search-panel {
-  background: linear-gradient(180deg, rgba(30, 39, 68, 0.97) 0%, rgba(17, 23, 44, 0.97) 100%);
-  border: 1px solid rgba(98, 132, 202, 0.45);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  padding: 4px 6px;
-  border-radius: 6px;
-  color: #dbe7ff;
+  background: rgba(19, 26, 38, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  padding: 5px 8px;
+  border-radius: 10px;
+  color: var(--text-main);
   overflow: hidden;
 }
 .deck-header {
@@ -939,8 +956,8 @@ body, html {
   top: 55px;
   width: 400px;
   height: 245px;
-  background: linear-gradient(180deg, rgba(30, 39, 68, 0.98) 0%, rgba(17, 23, 44, 0.98) 100%);
-  border: 1px solid rgba(98, 132, 202, 0.55);
+  background: var(--panel-grad-solid);
+  border: 1px solid var(--border-accent);
   border-radius: 6px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65);
   padding: 8px;
@@ -948,7 +965,7 @@ body, html {
   grid-template-columns: repeat(4, 1fr);
   gap: 2px;
   font-size: 11px;
-  color: #dbe7ff;
+  color: var(--text-main);
   overflow-y: auto;
   z-index: 50;
 }
@@ -959,8 +976,8 @@ body, html {
   top: 30px;
   width: 120px;
   height: 120px;
-  background: linear-gradient(180deg, rgba(30, 39, 68, 0.98) 0%, rgba(17, 23, 44, 0.98) 100%);
-  border: 1px solid rgba(98, 132, 202, 0.55);
+  background: var(--panel-grad-solid);
+  border: 1px solid var(--border-accent);
   border-radius: 6px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65);
   display: grid;
@@ -988,10 +1005,10 @@ body, html {
 #deck-screen .form-input,
 #deck-screen .form-select {
   height: 20px;
-  background: rgba(8, 12, 26, 0.85);
-  border: 1px solid rgba(126, 156, 222, 0.35);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
-  color: #e6eeff;
+  color: var(--text-main);
   padding: 0 4px;
   font-size: 11px;
   width: auto;
@@ -1008,35 +1025,36 @@ body, html {
 #deck-screen .form-input:focus,
 #deck-screen .form-select:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 6px rgba(0, 210, 255, 0.3);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 #deck-screen .form-input::placeholder {
-  color: #5d6b8c;
+  color: #64748b;
 }
 #deck-screen .gfw-label {
   font-size: 11px;
-  color: #9fb0d8;
+  color: var(--text-muted);
   white-space: nowrap;
   line-height: 20px;
 }
 
 /* 主/额外/副卡组区（DrawDeckBd drawing.cpp:1228-1295 设计坐标）：
-   区标题 = 原版 "Deck: 60" 深藏青短横条 (309,136/439/536 起 100×20 + 1px 描边)；
+   区标题 = 原版 "Deck: 60" 短横条，新布局 (309,136/439/536 起) 489×22 + 1px 描边；
    网格区 = 原版半透明蓝黑渐变底 + 细描边，卡牌直接铺在上面。 */
 .deck-section-title {
   font-size: 11px;
   font-weight: 700;
-  color: #fff;
+  color: #dbe3ef;
+  letter-spacing: 0.06em;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  width: 102px;
+  width: 489px;
   height: 22px;
-  background: linear-gradient(180deg, rgba(0, 0, 255, 0.25) 0%, rgba(0, 0, 0, 0.25) 100%),
-              rgba(8, 12, 52, 0.78);
-  border: 1px solid rgba(180, 200, 255, 0.4);
-  padding: 1px 6px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.18) 0%, rgba(25, 34, 50, 0.92) 100%);
+  border: 1px solid var(--border-strong);
+  border-radius: 7px 7px 0 0;
+  padding: 1px 10px;
+  box-sizing: border-box;
 }
 .ds-title-main { left: 309px; top: 136px; }
 .ds-title-extra { left: 309px; top: 439px; }
@@ -1049,7 +1067,7 @@ body, html {
   padding: 0;
   font-size: 11px;
   font-weight: 700;
-  color: #ffd966;
+  color: #93c5fd;
   text-transform: none;
 }
 /* 卡组网格 = 原版 DrawDeckBd 的层叠布局：非 CSS grid，逐行 flex +
@@ -1060,10 +1078,11 @@ body, html {
   display: block;
   left: 309px;
   width: 489px;
-  padding: 4px 0 0 5px;
-  background: linear-gradient(180deg, rgba(0, 0, 255, 0.25) 0%, rgba(0, 0, 0, 0.25) 100%);
-  border: 1px solid rgba(180, 200, 255, 0.4);
-  border-radius: 0;
+  padding: 6px 0 0 7px;
+  box-sizing: border-box;
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.08) 0%, rgba(19, 26, 38, 0.62) 100%);
+  border: 1px solid var(--border-strong);
+  border-radius: 0 0 8px 8px;
 }
 .ds-grid-main { top: 159px; height: 278px; }
 .ds-grid-extra { top: 462px; height: 72px; }
@@ -1097,7 +1116,7 @@ body, html {
 }
 .deck-card-chip:hover {
   border-color: var(--accent-gold);
-  box-shadow: 0 0 10px var(--accent-gold-glow);
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.22);
 }
 
 /* 同铭张数角标（×N，alias 归并后 >1 才显示） */
@@ -1105,7 +1124,7 @@ body, html {
   position: absolute;
   right: 2px;
   bottom: 2px;
-  background: rgba(8, 12, 24, 0.85);
+  background: rgba(10, 14, 22, 0.85);
   color: var(--accent-gold);
   font-size: 10px;
   font-weight: 700;
@@ -1127,7 +1146,7 @@ body, html {
   padding: 2px 3px;
   border-radius: 4px;
   pointer-events: none;
-  background: rgba(8, 12, 24, 0.85);
+  background: rgba(10, 14, 22, 0.85);
 }
 .deck-limit-0 { color: #ff5252; border: 1px solid #ff5252; }
 .deck-limit-1 { color: #ffb454; border: 1px solid #ffb454; }
@@ -1160,17 +1179,17 @@ body, html {
 }
 /* 结果区标题条（原版 "Results: N" 短条，这里加宽到整列容纳扩展下拉） */
 .deck-results #deck-result-count {
-  color: #fff !important;
-  background: linear-gradient(180deg, rgba(0, 0, 255, 0.25) 0%, rgba(0, 0, 0, 0.25) 100%),
-              rgba(8, 12, 52, 0.78);
-  border: 1px solid rgba(180, 200, 255, 0.4);
+  color: #dbe3ef !important;
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.18) 0%, rgba(25, 34, 50, 0.92) 100%);
+  border: 1px solid var(--border-strong);
+  border-radius: 7px 7px 0 0;
   height: 21px;
   display: flex;
   align-items: center;
-  padding: 0 6px;
+  padding: 0 8px;
   font-size: 11px;
   font-weight: 700;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  letter-spacing: 0.05em;
 }
 /* 「点击加入」下拉是扩展件（原版点击=主卡组、右键=副卡组），细条弱化 */
 .deck-add-target-row {
@@ -1180,9 +1199,9 @@ body, html {
   height: 20px;
 }
 .deck-results label {
-  color: #dbe4ff !important;
+  color: #c8d4e6 !important;
   font-size: 11px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 .search-results-grid {
   flex: 1;
@@ -1191,8 +1210,9 @@ body, html {
   flex-direction: column;
   gap: 0;
   overflow-y: auto;
-  background: linear-gradient(180deg, rgba(0, 0, 255, 0.25) 0%, rgba(0, 0, 0, 0.25) 100%);
-  border: 1px solid rgba(180, 200, 255, 0.4);
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.06) 0%, rgba(19, 26, 38, 0.62) 100%);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
   padding: 3px;
 }
 /* 结果行：横向「缩略图 + 文本」，覆盖 .deck-card-chip 的 59/86 比例。
@@ -1210,24 +1230,24 @@ body, html {
   align-items: center;
   gap: 6px;
   padding: 1px 4px;
-  background: rgba(16, 24, 64, 0.55);
-  border: 1px solid rgba(120, 140, 220, 0.25);
-  border-radius: 2px;
+  background: rgba(23, 31, 45, 0.72);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
   cursor: pointer;
 }
 .search-results-grid .deck-card-chip:hover {
-  background: rgba(52, 72, 160, 0.75);
-  border-color: rgba(160, 180, 255, 0.7);
+  background: rgba(37, 99, 235, 0.16);
+  border-color: var(--border-accent);
   box-shadow: none;
 }
 .deck-result-thumb {
   flex: 0 0 44px;
   height: 64px;
-  background: #000;
+  background: #05080e;
   border: 1px solid rgba(0, 0, 0, 0.7);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
   overflow: hidden;
-  border-radius: 2px;
+  border-radius: 3px;
 }
 .deck-result-thumb-fallback {
   width: 100%;
@@ -1237,7 +1257,7 @@ body, html {
   align-items: center;
   justify-content: center;
   font-size: 8px;
-  color: #38bdf8;
+  color: #60a5fa;
   text-align: center;
   padding: 2px;
   overflow: hidden;
@@ -1254,21 +1274,21 @@ body, html {
   font-size: 13px;
   font-weight: 700;
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .deck-result-sub {
   font-size: 11px;
-  color: #c8d4f0;
+  color: #9fb0c8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .deck-result-stats {
   font-size: 11px;
-  color: #e8c86a;
+  color: var(--accent-gold-bright);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1280,10 +1300,10 @@ body, html {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(10, 14, 22, 0.3);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-cyan);
+  background: var(--border-strong);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -1299,15 +1319,15 @@ body, html {
   pointer-events: auto;
 }
 .card-display-window {
-  background: var(--bg-card);
-  border: 1px solid var(--border-cyan);
+  background: rgba(19, 26, 38, 0.95);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
   width: 264px;
   max-height: 70vh;
   display: flex;
   flex-direction: column;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-panel);
 }
 .card-display-header {
   display: flex;
@@ -1315,7 +1335,7 @@ body, html {
   align-items: center;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border-color);
-  color: var(--primary);
+  color: var(--text-main);
   font-size: 14px;
   font-weight: bold;
 }
@@ -1351,13 +1371,13 @@ body, html {
   border: 1px solid transparent;
 }
 .card-display-item:hover {
-  background: rgba(0, 210, 255, 0.08);
-  border-color: var(--border-cyan);
+  background: rgba(59, 130, 246, 0.08);
+  border-color: var(--border-accent);
 }
 /* 堆区列表里当前可发动/可特召的卡（cmdFlag ACTIVATE/SPSUMMON 等价高亮） */
 .card-display-actionable {
-  border-color: var(--gold, #c9a227);
-  box-shadow: 0 0 6px rgba(201, 162, 39, 0.55);
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.18);
 }
 .card-display-pic {
   width: 44px;
@@ -1365,12 +1385,12 @@ body, html {
   object-fit: contain;
   border-radius: 4px;
   flex: none;
-  background: #0a0f1e;
+  background: #0b1018;
 }
 .card-display-pic-empty { width: 44px; height: 64px; }
 .card-display-name {
   font-size: 12px;
-  color: var(--text-main, #dbe7ff);
+  color: var(--text-main);
   line-height: 1.4;
   word-break: break-all;
 }

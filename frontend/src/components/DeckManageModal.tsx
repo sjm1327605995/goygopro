@@ -137,7 +137,7 @@ export default function DeckManageModal({ deckList, onClose, onRefresh, onImport
       {/* 原版 wDeckManage（game.cpp:660-683）：(310,135)-(800,515) 490×380，
           lstCategories (10,30) 130×340 / lstDecks (150,30) 190×340 /
           按钮列 x350-480 宽 130、y30 起 35 距 25 高。名称输入/目标分类/关闭是
-          扩展件（原版走 wDMQuery 弹窗），压在底部扩展行（列表收短到 300）。 */}
+          扩展件（原版走 wDMQuery 弹窗），压在底部扩展行（列表收短到 340）。 */}
       <DesignSpace>
       <SourceWindow x={310} y={135} width={490} height={380}
         id="deck-manage-modal"
@@ -154,15 +154,17 @@ export default function DeckManageModal({ deckList, onClose, onRefresh, onImport
           {/* 左：分类列表（原版 lstCategories (10,30)-(140,370)） */}
           <div style={{ position: 'absolute', left: 0, top: '6px', width: '130px' }}>
             <div id="dm-category-list" style={{
-              border: '1px solid #808080', borderRadius: 0, height: '340px', overflowY: 'auto', padding: 4,
+              border: '1px solid rgba(148,163,184,0.18)', borderRadius: 8, height: '340px', overflowY: 'auto',
+              padding: 5, background: 'rgba(13,19,29,0.6)',
             }}>
               {['', ...categories].map((c) => (
                 <div
                   key={c || '__root__'}
                   className={`dm-list-item${selCategory === c ? ' selected' : ''}`}
                   style={{
-                    padding: '3px 6px', cursor: 'pointer', borderRadius: 4, fontSize: 12,
-                    background: selCategory === c ? 'rgba(56,189,248,0.25)' : 'transparent',
+                    padding: '3px 8px', cursor: 'pointer', borderRadius: 6, fontSize: 12,
+                    background: selCategory === c ? 'rgba(59,130,246,0.22)' : 'transparent',
+                    color: selCategory === c ? '#bfdbfe' : 'var(--text-main)',
                   }}
                   onClick={() => { setSelCategory(c); setSelDeck(''); }}
                 >
@@ -174,7 +176,8 @@ export default function DeckManageModal({ deckList, onClose, onRefresh, onImport
           {/* 中：卡组列表（原版 lstDecks (150,30)-(340,370)） */}
           <div style={{ position: 'absolute', left: '140px', top: '6px', width: '190px' }}>
             <div id="dm-deck-list" style={{
-              border: '1px solid #808080', borderRadius: 0, height: '340px', overflowY: 'auto', padding: 4,
+              border: '1px solid rgba(148,163,184,0.18)', borderRadius: 8, height: '340px', overflowY: 'auto',
+              padding: 5, background: 'rgba(13,19,29,0.6)',
             }}>
               {decksInCategory.length === 0 ? (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 6 }}>该分类下没有卡组。</div>
@@ -183,8 +186,9 @@ export default function DeckManageModal({ deckList, onClose, onRefresh, onImport
                   key={n}
                   className={`dm-list-item${selDeck === n ? ' selected' : ''}`}
                   style={{
-                    padding: '3px 6px', cursor: 'pointer', borderRadius: 4, fontSize: 12,
-                    background: selDeck === n ? 'rgba(56,189,248,0.25)' : 'transparent',
+                    padding: '3px 8px', cursor: 'pointer', borderRadius: 6, fontSize: 12,
+                    background: selDeck === n ? 'rgba(59,130,246,0.22)' : 'transparent',
+                    color: selDeck === n ? '#bfdbfe' : 'var(--text-main)',
                   }}
                   onClick={() => {setSelDeck(n);onSelectDeck?.(n);}}
                 >
@@ -195,7 +199,7 @@ export default function DeckManageModal({ deckList, onClose, onRefresh, onImport
           </div>
           {/* 右：按钮列（原版 x350-480，y30 起 35 距；顺序 新建/重命名/删除分类 →
               新建/重命名/删除卡组 → 移动 → 复制） */}
-          <div style={{ position: 'absolute', left: '340px', top: '6px', width: '130px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ position: 'absolute', left: '340px', top: '6px', width: '130px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <UiButton id="dm-new-category" disabled={busy} onClick={newCategory}>新建分类</UiButton>
             <UiButton id="dm-rename-category" disabled={busy || !selCategory} onClick={renameCategory}>重命名分类</UiButton>
             <UiButton id="dm-delete-category" variant="danger" disabled={busy || !selCategory} onClick={deleteCategory}>删除分类</UiButton>

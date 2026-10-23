@@ -30,7 +30,7 @@ root.render(
   <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
     <DuelStage
       interactive={false}
-      showSurrender={false}
+      showSurrender
       onReady={(h) => { window.__stage = h; }}
     />
   </div>
@@ -319,7 +319,9 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     duelStore.toggleViewSwap();
     record('swap-flips-lp-display', duelStore.getState().lp[0] === lpBefore[1]
       && duelStore.getState().lp[1] === lpBefore[0], JSON.stringify(duelStore.getState().lp));
-    await waitFor(() => f.camera.position.z < 0, 'camera flips to far side');
+    // 相机落点跟随当前下侧座位：本地座 1 交换后应到 +Z（原先写死 z<0 会被
+    // 交换前的 -16 蒙混过关，等于没验证翻转）
+    await waitFor(() => f.camera.position.z * (f.localSeat === 1 ? -1 : 1) < 0, 'camera flips to far side');
     record('swap-flips-camera', true);
     // 手牌坞改看对侧手牌（对面 seat 没抽过牌 → 空坞）
     await waitFor(() => $('#hand-cards-dock').children.length === 0, 'hand dock swaps to far side');
@@ -330,7 +332,8 @@ const waitFor = (predicate, label, timeoutMs = 8000) => new Promise((resolve, re
     record('swap-keeps-event-mapping', duelStore.getState().lp[0] === lpBefore[1],
       JSON.stringify(duelStore.getState().lp));
     duelStore.toggleViewSwap();
-    await waitFor(() => f.camera.position.z > 0, 'camera back');
+    // 换回后镜头应回到本地座所在侧（localseat=1 时是 -Z），不能固定 +Z
+    await waitFor(() => f.camera.position.z * (f.localSeat === 1 ? -1 : 1) > 0, 'camera back');
     record('swap-back-restores', duelStore.getState().lp[0] === 6500
       && $('#hand-cards-dock').children.length === handBefore,
       JSON.stringify(duelStore.getState().lp));

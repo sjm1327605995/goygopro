@@ -619,9 +619,9 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
         <span
           style={{
             position: 'absolute', left: '40px', top: `${top}px`, width: '200px',
-            height: '20px', lineHeight: '20px', background: 'rgba(8, 12, 26, 0.85)',
-            border: '1px solid rgba(126, 156, 222, 0.35)', borderRadius: '4px',
-            color: '#e6eeff', fontSize: '12px', padding: '0 4px',
+            height: '20px', lineHeight: '20px', background: 'rgba(13, 19, 29, 0.9)',
+            border: '1px solid rgba(148, 163, 184, 0.2)', borderRadius: '6px',
+            color: '#e8edf5', fontSize: '12px', padding: '0 8px',
             boxSizing: 'border-box', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
           }}
         >
@@ -632,8 +632,8 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
           title={seat.ready ? '已准备' : '未准备'}
           style={{
             position: 'absolute', left: '250px', top: `${top}px`, width: '20px', height: '20px',
-            border: '1px solid rgba(126, 156, 222, 0.35)', borderRadius: '3px', boxSizing: 'border-box',
-            background: seat.ready ? 'rgba(0, 150, 220, 0.85)' : 'rgba(8, 12, 26, 0.85)', color: '#fff',
+            border: '1px solid rgba(148, 163, 184, 0.2)', borderRadius: '3px', boxSizing: 'border-box',
+            background: seat.ready ? 'rgba(34, 197, 94, 0.85)' : 'rgba(13, 19, 29, 0.9)', color: '#fff',
             fontSize: '10px', lineHeight: '18px', textAlign: 'center',
           }}
         >
@@ -696,19 +696,17 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
   return (
     <div id="lobby-screen" className="screen active">
       <DesignSpace>
-      {/* ---- wLanWindow 联机模式（game.cpp:208-227）：窗口 (220,100)-(800,520) 580×420；
-              内部坐标（窗口相对）：昵称行 y25-50（ebNickName 110-450 + btnCreateHost 460-570）、
-              lstHostList (10,60)-(570,320)、btnLanRefresh (240,325)-(340,350)、
-              主机信息行 y355-380（ebJoinHost 110-350 + ebJoinPort 360-420 + btnJoinHost 460-570）、
-              主机密码行 y385-410（ebJoinPass 110-420 + btnJoinCancel 460-570） ---- */}
+      {/* ---- wLanWindow 联机模式：现窗口 620×470 @ (202,85)（css/gframe-window.css .gfw-lan）；
+              内容区 446px，行序沿用原版 game.cpp:208-227（原窗 (220,100) 580×420）：
+              昵称行 / lstHostList / 刷新 / 主机信息行 / 密码行 ---- */}
       <div
         id="server-connect-panel"
         className="gfw-window gfw-lan"
         style={{ display: showLan ? 'block' : 'none' }}
       >
         <div className="gfw-title">联机模式</div>
-        {/* 内容区 = 420-24 标题 = 396px；行高/间距按上方原版坐标折算 */}
-        <div style={{ height: '396px', padding: '0 10px 10px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+        {/* 内容区 446px（470 - 24 标题）；行高/间距沿用原版坐标折算 */}
+        <div style={{ height: '446px', padding: '0 12px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
           {/* 昵称行：label(10,30) + ebNickName(110,25)-(450,50) + btnCreateHost(460,25)-(570,50) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '1px', height: '25px', flexShrink: 0 }}>
             <span className="gfw-label" style={{ width: '100px', flexShrink: 0 }}>昵称：</span>
@@ -728,10 +726,10 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
               建立主机
             </UiButton>
           </div>
-          {/* lstHostList (10,60)-(570,320) = 560×260（LAN UDP 广播发现，点击行回填主机信息） */}
-          <div id="lobby-host-list" className="gfw-list" style={{ marginTop: '10px', height: '260px', flexShrink: 0, overflowY: 'auto' }}>
+          {/* lstHostList：原版 (10,60)-(570,320) 560×260；新布局列表 300px 高（LAN UDP 广播发现，点击行回填主机信息） */}
+          <div id="lobby-host-list" className="gfw-list" style={{ marginTop: '12px', height: '300px', flexShrink: 0, overflowY: 'auto' }}>
             {hosts.length === 0 ? (
-              <div className="gfw-list-item" style={{ color: '#7b89ab' }}>
+              <div className="gfw-list-item" style={{ color: '#64748b' }}>
                 {refreshingHosts ? '正在搜索局域网主机……' : '未发现主机——可「建立主机」本机开服，或输入主机信息加入游戏'}
               </div>
             ) : hosts.map((h, i) => (
@@ -817,17 +815,18 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
         </div>
       </div>
 
-      {/* ---- wCreateHost 建立主机（game.cpp:229-302）：窗口 (320,100)-(700,520) 380×420 ---- */}
+      {/* ---- wCreateHost 建立主机：现窗口 400×470 @ (312,85)（.gfw-create）；
+              原版 game.cpp:229-302 (320,100) 380×420 ---- */}
       <div
         className="gfw-window gfw-create room-create-panel"
         style={{ display: showCreate ? 'flex' : 'none', flexDirection: 'column' }}
       >
         <div className="gfw-title">建立主机</div>
-        {/* 内容区 396px（420-24 标题），行坐标对齐原版（窗口相对 y-24）：
+        {/* 内容区 446px（470-24 标题），行坐标沿用原版折算（窗口相对 y-24）：
             禁限卡表 y25 / 卡片允许 y55 / 决斗模式 y85 / 每回合时间 y115（输入框 140-220）/
             提示行 y150-170 / 规则 y175 / 复选框 y210-230 / 初始三项 y235/265/295 /
             底部 主机名称 y355 + 主机密码 y385（输入框 110-250），确定/取消 (260,355/385) 110×25 */}
-        <div style={{ height: '396px', padding: '0 10px 10px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ height: '446px', padding: '0 12px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
           {row('禁限卡表：', (
             <GfwSelect
               id="lobby-lflist-select"
@@ -870,7 +869,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
             />
           ))}
           {/* 原版 y150-170 的静态文本位（SysString 1228）：额外选项提示 */}
-          <div style={{ marginTop: '10px', height: '20px', flexShrink: 0, fontSize: '11px', color: '#7b89ab', paddingLeft: '10px', lineHeight: '20px' }}>↓额外选项（无特殊要求请勿修改）</div>
+          <div style={{ marginTop: '10px', height: '20px', flexShrink: 0, fontSize: '11px', color: '#64748b', paddingLeft: '10px', lineHeight: '20px' }}>↓额外选项（无特殊要求请勿修改）</div>
           {row('规则：', (
             <GfwSelect
               id="lobby-duel-rule-select"
@@ -923,18 +922,20 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
         </div>
       </div>
 
-      {/* ---- wHostPrepare 决斗准备（game.cpp:304-333）：窗口 (270,120)-(750,440) 480×320 ---- */}
+      {/* ---- wHostPrepare 决斗准备：现窗口 520×340 @ (252,110)（.gfw-prepare）；
+              原版 game.cpp:304-333 (270,120) 480×320 ---- */}
       <div
         id="room-lobby-panel"
         className="gfw-window gfw-prepare"
         style={{ display: showPrepare ? 'block' : 'none' }}
       >
         <div className="gfw-title">决斗准备</div>
-        {/* 内容区 296px（320-24 标题），全绝对定位对齐原版（窗口相对 y-24，game.cpp:307-333）：
-            btnHostPrepDuelist (10,30) 100×25 / 座位行 y65/90/125/150 / btnHostPrepOB (10,180) /
-            btnHostPrepReady (170,180) 100×25 / 卡组选择 label(10,210) + 两下拉 (10,230) 128、(142,230) 198 /
-            stHostPrepRule (280,30) 180×200 / stHostPrepOB (10,285) / 开始 (230,280) 110、退出 (350,280) 110 */}
-        <div style={{ position: 'relative', height: '296px' }}>
+        {/* 内容区 316px（340-24 标题），全绝对定位（沿用原版 game.cpp:307-333 的相对行序）：
+            转为决斗者 (10,6) 100 / 座位行 / 转为观战 (10,156) 100 / 准备 (170,156) 100 /
+            卡组选择 label(10,186) + 两下拉 (10,206) 128、(142,206) 198 /
+            规则/加入面板 (280,6) 220×200 / 观战人数 (10,270) /
+            开始 (250,266) 120、退出 (380,266) 120 */}
+        <div style={{ position: 'relative', height: '316px' }}>
           {/* 转为决斗者（btnHostPrepDuelist，观战身份时出现） */}
           {isObserver ? (
             <UiButton id="lobby-to-duelist" style={{ position: 'absolute', left: '10px', top: '6px', width: '100px' }} onClick={backToDuelist}>转为决斗者</UiButton>
@@ -986,13 +987,13 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
               </div>
             </>
           ) : null}
-          {/* stHostPrepRule (280,30)-(460,230) 180×200 带边框；未进房时同区域放加入行扩展件
+          {/* 规则/加入面板：原版 stHostPrepRule (280,30) 180×200；新布局 (280,6) 220×200 带边框；未进房时同区域放加入行扩展件
              （原版无加入行：连接后由 LAN 窗直接 JOIN_GAME；本地单房间流程需要入口） */}
           <div style={{
-            position: 'absolute', left: '280px', top: '6px', width: '180px', height: '200px',
-            border: '1px solid rgba(126, 156, 222, 0.35)', borderRadius: '4px', boxSizing: 'border-box',
-            background: 'rgba(8, 12, 26, 0.6)', padding: '4px 6px', overflow: 'hidden',
-            fontSize: '12px', color: '#c9d6f2',
+            position: 'absolute', left: '280px', top: '6px', width: '220px', height: '200px',
+            border: '1px solid rgba(148, 163, 184, 0.2)', borderRadius: '8px', boxSizing: 'border-box',
+            background: 'rgba(13, 19, 29, 0.65)', padding: '8px', overflow: 'hidden',
+            fontSize: '12px', color: '#c2ccdb',
           }}>
             <div style={{ display: inRoom ? 'none' : 'flex', flexDirection: 'column', gap: '4px' }}>
               <UiInput
@@ -1016,14 +1017,14 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
             ) : null}
           </div>
           {/* stHostPrepOB 观战人数 (10,285)-(270,305) */}
-          <div style={{ position: 'absolute', left: '10px', top: '261px', fontSize: '12px', color: '#c9d6f2' }}>
+          <div style={{ position: 'absolute', left: '10px', top: '270px', fontSize: '12px', color: '#c2ccdb' }}>
             当前观战人数：<span id="lobby-watch-count">{watchCount}</span>
           </div>
-          {/* btnHostPrepStart (230,280)-(340,305) / btnHostPrepCancel (350,280)-(460,305) 110×25 */}
+          {/* 开始 / 退出：原版 (230,280)/(350,280) 各 110×25；新布局 (250,266)/(380,266) 各 120 宽 */}
           {isHost && !isObserver && (
             <UiButton
              
-              style={{ position: 'absolute', left: '230px', top: '256px', width: '110px' }}
+              style={{ position: 'absolute', left: '250px', top: '266px', width: '120px' }}
               disabled={!canStart}
               title={canStart ? '' : '所有决斗者都准备后才能开始'}
               onClick={() => WailsBridge.startDuel()}
@@ -1031,23 +1032,23 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
               开始
             </UiButton>
           )}
-          <UiButton style={{ position: 'absolute', left: '350px', top: '256px', width: '110px' }} onClick={leaveRoom}>退出</UiButton>
+          <UiButton style={{ position: 'absolute', left: '380px', top: '266px', width: '120px' }} onClick={leaveRoom}>退出</UiButton>
         </div>
       </div>
 
-      {/* ---- 聊天（扩展件：原版等候区无聊天窗；贴在决斗准备窗 (270,120)+320 下方，随等候区窗显隐）---- */}
+      {/* ---- 聊天（扩展件：原版等候区无聊天窗；贴在决斗准备窗 (252,110)+340 下方，随等候区窗显隐）---- */}
       <div
         id="lobby-chat-panel"
         style={{
           display: showPrepare ? 'flex' : 'none',
-          position: 'absolute', left: '270px', top: '450px', transform: 'none',
-          width: '480px', height: '110px',
-          flexDirection: 'column', background: 'linear-gradient(180deg, rgba(30, 39, 68, 0.97) 0%, rgba(17, 23, 44, 0.97) 100%)',
-          border: '1px solid rgba(98, 132, 202, 0.45)', borderRadius: '10px',
+          position: 'absolute', left: '252px', top: '462px', transform: 'none',
+          width: '520px', height: '118px',
+          flexDirection: 'column', background: 'linear-gradient(180deg, rgba(23, 31, 45, 0.97) 0%, rgba(13, 19, 29, 0.97) 100%)',
+          border: '1px solid rgba(148, 163, 184, 0.22)', borderRadius: '10px',
           padding: '6px', boxSizing: 'border-box', zIndex: 20,
         }}
       >
-        <div ref={chatBoxRef} style={{ flex: 1, overflowY: 'auto', fontSize: '12px', color: '#c9d6f2', marginBottom: '6px', background: 'rgba(8, 12, 26, 0.85)', border: '1px solid rgba(126, 156, 222, 0.35)', borderRadius: '4px', padding: '4px' }}>
+        <div ref={chatBoxRef} style={{ flex: 1, overflowY: 'auto', fontSize: '12px', color: '#c2ccdb', marginBottom: '6px', background: 'rgba(13, 19, 29, 0.9)', border: '1px solid rgba(148, 163, 184, 0.2)', borderRadius: '4px', padding: '4px' }}>
           {messages.map((m, i) => <div key={i}>{m}</div>)}
         </div>
         <div style={{ display: 'flex', gap: '6px' }}>
@@ -1081,7 +1082,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
         >
           <div
             className="gfw-window"
-            style={{ position: 'static', transform: 'none', width: '350px' }}
+            style={{ position: 'static', transform: 'none', width: '380px' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="gfw-title">消息</div>

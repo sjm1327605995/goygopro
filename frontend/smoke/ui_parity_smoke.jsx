@@ -14,7 +14,10 @@ const checks=window.__uiParitySmoke.checks;
 const check=(name,ok)=>{checks[name]=!!ok;};
 const wait=async fn=>{for(let i=0;i<200;i++){if(fn())return;await new Promise(r=>setTimeout(r,25));}throw Error('timeout');};
 const near=(a,b)=>Math.abs(a-b)<.00001;
-const pauseFrame=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+// 无头冒烟页被浏览器后台节流时 rAF 会降到 ~1fps，等两帧可能耗掉 2s，
+// 把只依赖 React 提交（MessageChannel）的断言全部拖过期。这里改用定时器让出，
+// 足以冲掉 React 的异步提交，又不受 rAF 节流影响。
+const pauseFrame=()=>new Promise(r=>setTimeout(r,32));
 (async()=>{try{
  await wait(()=>window.__cppStage);
  const {field3D:f,duelManager:m}=window.__cppStage;
@@ -135,7 +138,10 @@ const pauseFrame=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFr
  await new Promise(resolve=>setTimeout(resolve,220));
  check('lp-and-bar-hold-together',document.querySelector('#player-panel-lp').textContent==='1000'&&document.querySelector('#player-panel .lp-fill:not(.lp-fill-bg)').style.width==='100%');
  await wait(()=>document.querySelector('.phase-banner')?.textContent==='You Lose!');
- check('win-starts-after-zero-lp',document.querySelector('#player-panel-lp').textContent==='0'&&!document.querySelector('#lp-float-0'));
+ // 浮字/数字由 useLifePointFrame 的 rAF 每帧推进；后台节流时最后一帧可能晚到，
+ // 等它落定再断言，语义不变（横幅出现后数值必须归零、浮字必须消失）。
+ await wait(()=>!document.querySelector('#lp-float-0'));
+ check('win-starts-after-zero-lp',document.querySelector('#player-panel-lp').textContent==='0');
  check('damage-preserves-cpp-camera',near(f.camera.position.x,.4)&&near(f.camera.position.y,15.6)&&near(f.camera.position.z,16));
  queue.enqueue('duel:start',{playerType:0,lp0:1000,lp1:1000});
  check('new-duel-cancels-pending-replay',!samples.includes('single:replay'));
