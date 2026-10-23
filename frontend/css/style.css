@@ -1,12 +1,15 @@
 /* Tailwind 工具类（preflight 已关，见 tailwind.config.js；directives 放在最前，
    gfw 复古皮肤在 gframe-window.css 中后加载、优先级更高） */
+@import './masterduel-theme.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* YGOPro 3D Client - Master Duel 深蓝 / 中性炭黑设计系统
    单一事实源：所有皮肤层（style / gframe-window / duel-* / ui-kit）都从这里取色。
-   设计取向：扁平、8–10px 圆角、1px 淡边框、柔和阴影、玻璃面板、无霓虹光晕。 */
+   主菜单与共享窗口壳走 Master Duel 语言：近黑深空底、柠檬绿主强调 + 金色段位、
+   黑玻璃面板 + 1px 浅描边、斜切光面与紧缩拉丁字（--md-* 令牌）；
+   决斗 HUD 保持中性炭黑 + 深蓝主色。 */
 :root {
   /* 底色与面板面（中性炭黑，替代原钢铁蓝渐变） */
   --bg-dark: #0a0d14;
@@ -19,7 +22,7 @@
   --primary: #3b82f6;
   /* 强调色（金 = 选中/卡牌强调；gold-bright 用于高亮文字与描边） */
   --accent-gold: #eab308;
-  --accent-gold-bright: var(--accent-gold-bright);
+  --accent-gold-bright: #f1d786;
   --accent-red: #ef4444;
   --accent-green: #22c55e;
   /* 文字与描边 */
@@ -35,6 +38,26 @@
   --shadow-panel: 0 12px 32px rgba(0, 0, 0, 0.45);
   --shadow-pop: 0 18px 48px rgba(0, 0, 0, 0.55);
   --font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Microsoft YaHei', sans-serif;
+  /* Master Duel 语言令牌：墨蓝底 + 青/金细线 + 紧缩拉丁字。
+     主菜单与共享窗口壳（gframe-window / ui-kit）同源引用。 */
+  --md-ink-0: #050d18;
+  --md-ink-1: #0a1626;
+  --md-ink-2: #10233a;
+  --md-cyan: #4fd2ff;
+  --md-gold: #e8c46a;
+  --md-white: #f2f7ff;
+  --md-text-dim: #9fb4cb;
+  --md-line: rgba(79, 210, 255, 0.3);
+  --md-line-soft: rgba(79, 210, 255, 0.14);
+  --md-line-gold: rgba(232, 196, 106, 0.38);
+  --md-cyan-glow: rgba(79, 210, 255, 0.28);
+  /* Master Duel 主菜单强调色：荧光柠檬绿（菜单竖条/等级条/选中态） */
+  --md-lime: #c8ee4a;
+  --md-lime-dim: rgba(200, 238, 74, 0.55);
+  --md-chamfer: 14px;
+  --md-font-display: 'Bahnschrift Condensed', 'Bahnschrift SemiCondensed', 'Arial Narrow', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  /* 主菜单 UI 字体：比窗口标题更宽，接近 Master Duel 的方正文案 */
+  --md-font-ui: 'Bahnschrift', 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
 }
 
 * {
@@ -60,6 +83,48 @@ body, html {
   overflow: hidden;
 }
 
+/* 右上常驻工具按钮（音效/设置，物理像素定位，不随 DesignSpace 缩放）
+   Master Duel 首页右上角的圆形图标键：黑玻璃 + 细白环 + 白色线性图标 */
+.app-utility-btn {
+  position: fixed;
+  top: 16px;
+  z-index: 999;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 13, 0.76);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  color: #f2f6fc;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.45);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.app-utility-btn:hover {
+  background: rgba(12, 18, 26, 0.9);
+  border-color: rgba(200, 238, 74, 0.72);
+  color: #ecffb4;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4), 0 0 14px rgba(200, 238, 74, 0.22);
+}
+.app-utility-btn:focus-visible {
+  outline: 2px solid rgba(200, 238, 74, 0.75);
+  outline-offset: 2px;
+}
+.app-utility-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#btn-sound-toggle { right: 16px; }
+#btn-open-settings { right: 64px; }
+
 /* Screen Layers */
 .screen {
   position: absolute;
@@ -79,27 +144,44 @@ body, html {
 }
 
 /* ------------------------------------------------------------------
-   MAIN MENU SCREEN — 波 H：原版形态 = bg_menu.jpg 纯背景 + 居中小窗
-   （窗口结构与皮肤见 css/gframe-window.css）
+   MAIN MENU SCREEN — Master Duel 首页：近黑深空 + 右侧场馆/怪兽侧光，
+   左侧压暗承托竖排菜单，叠扫描线与斜切光面（构图见
+   css/menu-masterduel.css，窗口本身是全屏透明画布）
    ------------------------------------------------------------------ */
 #main-menu-screen {
   background:
-    radial-gradient(ellipse 80% 70% at 50% 38%, rgba(10, 13, 20, 0.18) 0%, rgba(8, 11, 18, 0.78) 60%, rgba(5, 7, 12, 0.96) 100%),
-    url('../textures/bg_menu.jpg') center/cover no-repeat;
+    linear-gradient(90deg, rgba(2, 4, 8, 0.985) 0%, rgba(2, 4, 8, 0.94) 22%,
+      rgba(2, 4, 8, 0.72) 46%, rgba(2, 4, 8, 0.56) 70%, rgba(2, 4, 8, 0.84) 100%),
+    linear-gradient(180deg, rgba(2, 4, 8, 0.56) 0%, rgba(2, 4, 8, 0.34) 40%, rgba(2, 4, 8, 0.9) 100%),
+    radial-gradient(ellipse 58% 54% at 72% 40%, rgba(60, 120, 220, 0.16) 0%, transparent 68%),
+    url('../textures/bg_menu.jpg') right center/cover no-repeat,
+    #030509;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   overflow: hidden;
 }
-/* 柔和的环境光斑（无霓虹描边，只做背景层次） */
+/* 扫描线 + 斜切冷光 + 右上冷光晕：Master Duel 的近黑舞台质感 */
 #main-menu-screen::before {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at 20% 16%, rgba(59, 130, 246, 0.2) 0%, transparent 42%),
-    radial-gradient(circle at 82% 84%, rgba(139, 92, 246, 0.14) 0%, transparent 40%);
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.026) 0 1px, transparent 1px 3px),
+    linear-gradient(115deg, transparent 41%, rgba(60, 120, 220, 0.1) 41.3%, rgba(60, 120, 220, 0.02) 53%, transparent 53.3%),
+    linear-gradient(295deg, transparent 57%, rgba(140, 90, 220, 0.075) 57.3%, transparent 70%),
+    radial-gradient(circle at 78% 28%, rgba(90, 160, 255, 0.12) 0%, transparent 46%);
+}
+/* 暗角 + 底部收束：菜单列与资讯卡从背景里浮出来 */
+#main-menu-screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 84% 86% at 52% 46%, transparent 46%, rgba(0, 0, 0, 0.66) 100%),
+    linear-gradient(0deg, rgba(2, 4, 8, 0.82) 0%, transparent 32%);
 }
 
 #lobby-screen::before {

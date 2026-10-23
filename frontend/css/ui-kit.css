@@ -1,7 +1,8 @@
 /* ==================================================================
    Mantine 统一主题覆盖层 —— 未分层 CSS，恒胜 @mantine/core/styles.css
    的 @layer mantine。所有 Mantine 控件与 gframe 窗口同源：
-   中性炭黑面板 + Master Duel 深蓝主色 + 金色强调，扁平无霓虹光晕。
+   中性炭黑面板 + Master Duel 深蓝主色 + 金色强调；窗口内按钮额外套
+   青金细线皮肤（.gfw-window 作用域），决斗 HUD 控件不受影响。
    ================================================================== */
 
 /* Mantine 全局变量对齐本游戏配色（dark scheme） */
@@ -64,6 +65,32 @@
   background: linear-gradient(180deg, #cc4141 0%, #ad3131 100%);
   border-color: rgba(239, 68, 68, 0.75);
   box-shadow: 0 3px 14px rgba(220, 38, 38, 0.26);
+}
+
+/* ---- 窗口内按钮语言同步（Master Duel）----
+   只作用于 .gfw-window（大厅/单人/录像/设置/主菜单），决斗 HUD 不在此作用域。
+   几何（高度/内距）不动；金/危险变体由 :not() 排除，继续走各自色板。 */
+.gfw-window .ui-btn {
+  border-radius: 2px;
+  font-family: var(--md-font-display, 'Bahnschrift Condensed', 'Arial Narrow', 'Segoe UI', 'Microsoft YaHei', sans-serif);
+  letter-spacing: 0.05em;
+}
+.gfw-window .mantine-Button-root.ui-btn:not(.ui-btn--gold):not(.ui-btn--danger):not(:disabled):not([data-disabled]) {
+  background: linear-gradient(180deg, #12243a 0%, #0a1626 100%);
+  border-color: rgba(79, 210, 255, 0.22);
+}
+.gfw-window .mantine-Button-root.ui-btn:not(.ui-btn--gold):not(.ui-btn--danger):not(:disabled):not([data-disabled]):hover {
+  background: linear-gradient(180deg, #17304b 0%, #0d1d30 100%);
+  border-color: rgba(79, 210, 255, 0.5);
+  box-shadow: inset 0 1px 0 rgba(242, 247, 255, 0.05), 0 0 10px rgba(79, 210, 255, 0.1);
+}
+.gfw-window .mantine-Button-root.ui-btn:not(.ui-btn--gold):not(.ui-btn--danger):not(:disabled):not([data-disabled]):active {
+  background: linear-gradient(180deg, #0d1d30 0%, #081422 100%);
+  border-color: rgba(79, 210, 255, 0.34);
+}
+.gfw-window .ui-btn:focus-visible {
+  outline: 2px solid rgba(79, 210, 255, 0.62);
+  outline-offset: 1px;
 }
 
 /* ---- 输入框（UiInput 注入 .ui-input 到 input 元素） ---- */

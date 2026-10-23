@@ -1,4 +1,5 @@
 const pw=require(process.env.PLAYWRIGHT_MODULE_PATH||'playwright');const fs=require('node:fs');
+fs.mkdirSync('tmp_dbg',{recursive:true});
 (async()=>{const browser=await pw.chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe'});
 const results=[];try{for(const name of process.argv.slice(2)){
  const page=await browser.newPage({viewport:{width:1024,height:640}});const errors=[];page.on('pageerror',e=>errors.push(e.message));

@@ -36,7 +36,7 @@ export default function DuelScreen({ mode, onNavigate }: DuelScreenProps) {
 
   return (
     <div id="duel-screen" className="screen active">
-      <DuelStage onExit={onNavigate} singleMode={mode === 'single'} />
+      <DuelStage layout="arena" onExit={onNavigate} singleMode={mode === 'single'} />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import GfwSelect from './ui/GfwSelect.tsx';
 import UiButton from '../ui/UiButton.tsx';
 import { UiInput } from '../ui/UiInput.tsx';
 import DesignSpace from '../ui/DesignSpace.tsx';
+import ScreenHeading from '../ui/ScreenHeading.tsx';
 import { presentationDelay } from '../net/presentation_queue.ts';
 import { sysString } from '../domain/sys_strings.ts';
 
@@ -353,11 +354,12 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
     <div
       id="replay-screen"
       className="screen active"
-      style={{ background: "url('../textures/bg_menu.jpg') center/cover no-repeat", flexDirection: 'column' }}
+      style={{ flexDirection: 'column' }}
     >
       <DuelStage onExit={onNavigate} showSurrender={false} interactive={false} compact onReady={handleStageReady} />
 
       <DesignSpace>
+      {!events.length && <ScreenHeading title="决斗回放" subtitle="REPLAY / 回顾每一个关键回合" />}
       <div className="gfw-window gfw-replay" style={{ display: events.length ? 'none' : 'block' }}>
         <div className="gfw-title">观看录像</div>
         {/* 内容区 396px（420-24）：

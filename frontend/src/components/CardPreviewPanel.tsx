@@ -14,7 +14,7 @@ import {formatCardName,formatCardTypeLine,formatCardStats,splitPendulumDescripti
 import {TYPE_MONSTER,TYPE_PENDULUM} from '../domain/constants.ts';
 import CardImageFrame from '../ui/CardImageFrame.tsx';
 
-export default function CardPreviewPanel() {
+export default function CardPreviewPanel({ fluidImage = false }: { fluidImage?: boolean } = {}) {
   const state = useSyncExternalStore(duelStore.subscribe, duelStore.getState);
   const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
   const insp = state.inspection;
@@ -51,7 +51,7 @@ export default function CardPreviewPanel() {
 
   return (
     <div id="card-preview-panel" className="card-preview-panel">
-      <CardImageFrame className="preview-image-box">
+      <CardImageFrame className="preview-image-box" fluid={fluidImage}>
         {img
           ? <img className="preview-image" src={img} alt="" />
           : <img className="preview-image" src="textures/cover.jpg" alt="" />}
@@ -75,6 +75,7 @@ export default function CardPreviewPanel() {
         </Tabs.List>
         {tab === 'info' ? (
           <Tabs.Content value="info" id="preview-info" className="preview-info">
+            {fluidImage && !code && <p className="arena-preview-empty">悬停场上卡片或手牌<br />查看卡片详情与效果</p>}
             <div id="preview-card-name" className="preview-name" title={info ? formatCardName(info) : undefined}>
               {info ? formatCardName(info) : ''}
             </div>

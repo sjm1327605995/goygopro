@@ -18,6 +18,7 @@ import LpFloatText from './LpFloatText.tsx';
 import CardTooltip from './CardTooltip.tsx';
 import DesignSpace from '../ui/DesignSpace.tsx';
 import CardListOverlay from './CardListOverlay.tsx';
+import '../../css/duel-arena.css';
 
 /**
  * Renders the 3D duel board + HUD and wires the imperative Three.js layer /
@@ -37,6 +38,7 @@ export interface StageHandle {
 }
 
 interface DuelStageProps {
+  layout?: 'classic' | 'arena';
   singleMode?: boolean;
   onExit?: (screen: string) => void;
   showSurrender?: boolean;
@@ -58,7 +60,9 @@ export default function DuelStage({
   compact = false,
   onReady,
   singleMode = false,
+  layout = 'classic',
 }: DuelStageProps) {
+  const arena = layout === 'arena' && !compact;
   const fieldRef = useRef<StageHandle | null>(null);
   // Kept in a ref so the mount effect does not depend on the callback identity.
   const onReadyRef = useRef(onReady);
@@ -78,7 +82,8 @@ export default function DuelStage({
       },
       (x: number, y: number, userData: any) => {
         if (manager) manager.onFieldCardClick(x, y, userData);
-      }
+      },
+      { arena }
     );
     // Real card art (pics/<code>.jpg in the app, YGOProDeck CDN in preview).
     field3D.cardImageProvider = (code: number) => WailsBridge.getCardImage(code);
@@ -96,10 +101,10 @@ export default function DuelStage({
       }
       fieldRef.current = null;
     };
-  }, [interactive]);
+  }, [interactive, arena]);
 
   return (
-    <div className="duel-stage" style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div className={`duel-stage${arena ? ' duel-stage--arena' : ''}`} style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div id="duel-canvas-container"></div>
 
       {/* 2D HUD 全部进 1024×640 设计坐标系（DesignSpace），随窗口按原版
@@ -107,12 +112,13 @@ export default function DuelStage({
           3D 场地点选不受影响。鼠标锚定的 ActionPopup/CardTooltip 用屏幕坐标，
           留在设计空间外。 */}
       <DesignSpace>
+      {arena && <div className="arena-identity" aria-hidden="true"><strong>DUEL FIELD</strong><span>决斗终端</span></div>}
       {/* P2 新面板：单一 store 驱动（原版 wCardImg/wInfos + lp.png 血条） */}
-      {!compact && <CardPreviewPanel />}
+      {!compact && <CardPreviewPanel fluidImage={arena} />}
       <PlayerPanel side="opponent" />
       <PlayerPanel side="player" />
       {/* P3：阶段条（BP/M2/EP 走语义化 Respond* 方法）；回放里阶段每步都变，闪光常亮 → compact 只留横幅 */}
-      {!compact && <PhaseStrip />}
+      {!compact && <PhaseStrip descriptive={arena} />}
       {compact && <PhaseStrip bannerOnly />}
 
       {/* P5：全部 2D HUD 走 store（hud.js 已删）；compact 下全部藏起，只留 LP 面板 */}

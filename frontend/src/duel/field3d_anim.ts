@@ -16,6 +16,11 @@ export function animateDrawCard(self: DuelField3D, player: number, cardCode: num
   if (!mesh) { onComplete?.(); return; }
   const target = {x:mesh.position.x,y:mesh.position.y,z:mesh.position.z};
   const deck = self.getZonePosition(player,'deck');
+  if (mesh.userData.arenaHand) {
+    const scale=mesh.scale.x;
+    mesh.scale.setScalar(1);
+    self.makeTween(mesh.scale).to({x:scale,y:scale,z:scale},10*1000/60).start();
+  }
   mesh.userData.drawing=true;
   mesh.position.set(deck.x,0.02,deck.z);
   self.makeTween(mesh.position).to(target,10*1000/60).onComplete(()=>{mesh.userData.drawing=false;onComplete?.();}).start();
