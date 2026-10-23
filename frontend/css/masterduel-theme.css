@@ -1,0 +1,41 @@
+/* Shared visual language; scoped away from the Three.js duel field geometry. */
+#lobby-screen.screen, #single-screen.screen, #replay-screen.screen, #deck-screen.screen {
+  background: linear-gradient(125deg,transparent 48%,#7a9ca30b 48.1%,#7a9ca304 72%,transparent 72.1%), radial-gradient(ellipse at 75% 15%,#1d3540,#0b141d 50%,#060b12);
+}
+#lobby-screen::before { background: linear-gradient(35deg,transparent 55%,#b8dc6c08 55.1%,transparent 85%); }
+.md-screen-heading { position: absolute; left: 36px; top: 25px; right: 140px; height: 43px; display: flex; gap: 13px; align-items: center; border-bottom: 1px solid #a8bdca26; padding-bottom: 12px; }
+.md-screen-heading > span { width: 3px; height: 27px; background: var(--md-lime,#c8ee4a); }
+.md-screen-heading h1 { font: 600 19px var(--md-font-ui); letter-spacing: .12em; color: #e8eff2; }
+.md-screen-heading p { margin-top: 3px; font-size: 7px; color: #879eaa; letter-spacing: .13em; }
+.md-screen-heading small { margin-left: auto; color: #637b89; font-size: 6px; letter-spacing: .15em; }
+.screen .gfw-window:not(.gfw-mainmenu), #settings-panel.gfw-window {
+  background: linear-gradient(135deg,#15232df5,#0a131cfb); border: 1px solid #b1c4d13d; border-radius: 2px;
+  box-shadow: 0 20px 65px #0009, inset 0 1px #e1f2ff0d;
+}
+.screen .gfw-window:not(.gfw-mainmenu) > .gfw-title, #settings-panel > .gfw-title {
+  background: linear-gradient(100deg,#293c42,#12222e); border-bottom: 1px solid #bfd58b42; box-shadow: inset 3px 0 var(--md-lime,#c8ee4a); clip-path: none; color: #e4ebe8; letter-spacing: .1em;
+}
+.screen .gfw-list, .screen .gfw-select, .screen .gfw-select-trigger, #settings-panel .gfw-select { background: #08111b; border-color: #a8bdca2b; border-radius: 1px; }
+.screen .gfw-list-item:hover { background: #c8ee4a10; }
+.screen .gfw-list-item.gfw-selected { background: #c8ee4a20; color: #e4f4c1; box-shadow: inset 2px 0 var(--md-lime,#c8ee4a); }
+.screen .gfw-window .ui-btn:not(.mdm-item):not(.ui-btn--gold):not(.ui-btn--danger):not(:disabled):not([data-disabled]), #settings-panel .ui-btn:not(.ui-btn--gold):not(:disabled) {
+  background: linear-gradient(#253842,#182a34); border-color: #9fb6bf50; color: #e0e9eb; border-radius: 1px;
+}
+.screen .gfw-window .ui-btn:not(.mdm-item):not(.ui-btn--gold):not(.ui-btn--danger):not(:disabled):hover, #settings-panel .ui-btn:not(.ui-btn--gold):not(:disabled):hover { background: #334737; border-color: #c8ee4a99; color: #e4ffa4; box-shadow: none; }
+.screen .gfw-window .ui-btn--gold:not(:disabled), #settings-panel .ui-btn--gold:not(:disabled) { background: #c8e978; border-color: #d7efad; color: #1b2915; }
+.screen .ui-input:focus, #settings-panel .ui-input:focus, .screen .gfw-select:focus { border-color: #c8ee4a99; box-shadow: 0 0 0 2px #c8ee4a17; }
+.screen .ui-btn:focus-visible, #settings-panel .ui-btn:focus-visible { outline: 2px solid #c8ee4a; outline-offset: 2px; }
+#settings-panel .settings-tab.active { color: #d8eea7; border-color: #c8ee4a; background: #c8ee4a10; }
+#settings-panel .settings-tab { font-family: inherit; background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; }
+#settings-panel .settings-tab.active { border-bottom-color: #c8ee4a; background: #c8ee4a10; box-shadow: none; }
+#settings-panel .settings-tab:focus-visible { outline: 2px solid #c8ee4a; outline-offset: 2px; }
+#settings-panel .settings-row:has(#settings-lflist-select) { grid-column: 1 / -1; }
+#settings-panel .settings-row-label { min-width: 0; }
+#settings-panel input[type='range'] { accent-color: #c8ee4a; }
+#settings-panel .mantine-Checkbox-input.ui-check:checked { background: #accf61; border-color: #d2ed9e; }
+#settings-panel .mantine-Checkbox-icon { color: #152218; }
+#deck-screen .deck-header, #deck-screen .deck-search-panel, #deck-screen .deck-area, #deck-screen .search-results, #deck-screen .inspector-infos { border-color: #a8bdca30; background: linear-gradient(135deg,#15232ded,#0a131cf5); }
+#deck-screen .deck-header-title, #deck-screen .deck-zone-title { color: #d3e5b7; }
+#deck-screen .deck-section-title { background: linear-gradient(90deg,#293c42,#14242f); color: #d7e5d0; border-color: #a8bdca3d; border-radius: 1px; box-shadow: inset 2px 0 #bddb71; }
+#app .app-utility-btn { border-radius: 3px; border-color: #a8bdca40; width: 34px; height: 34px; background: #101c26e6; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { .screen, .screen *, .app-utility-btn { animation: none !important; transition: none !important; } }

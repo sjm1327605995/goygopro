@@ -6,6 +6,7 @@ import GfwSelect from './ui/GfwSelect.tsx';
 import UiButton from '../ui/UiButton.tsx';
 import { UiInput, UiCheckbox } from '../ui/UiInput.tsx';
 import DesignSpace from '../ui/DesignSpace.tsx';
+import ScreenHeading from '../ui/ScreenHeading.tsx';
 
 interface LobbyProps {
   onNavigate: (screen: string) => void;
@@ -696,6 +697,7 @@ export default function Lobby({ onNavigate, onDuelStart }: LobbyProps) {
   return (
     <div id="lobby-screen" className="screen active">
       <DesignSpace>
+      <ScreenHeading title="联机大厅" subtitle="ONLINE DUEL / 寻找对手，开启决斗" />
       {/* ---- wLanWindow 联机模式：现窗口 620×470 @ (202,85)（css/gframe-window.css .gfw-lan）；
               内容区 446px，行序沿用原版 game.cpp:208-227（原窗 (220,100) 580×420）：
               昵称行 / lstHostList / 刷新 / 主机信息行 / 密码行 ---- */}

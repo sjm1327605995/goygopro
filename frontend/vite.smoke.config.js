@@ -30,6 +30,9 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
+        hands_smoke: resolve(root, 'hands_smoke.html'),
+        appearance_smoke: resolve(root, 'appearance_smoke.html'),
+        arena_smoke: resolve(root, 'arena_smoke.html'),
         ui_parity_smoke: resolve(root, 'ui_parity_smoke.html'),
         smoke: resolve(root, 'smoke.html'),
         replay_smoke: resolve(root, 'replay_smoke.html'),

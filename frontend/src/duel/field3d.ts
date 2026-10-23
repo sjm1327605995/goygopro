@@ -6,6 +6,8 @@
 import * as THREE from '../../libs/three.module.js';
 import * as TWEEN from '../../libs/tween.esm.js';
 import { settingsStore } from '../domain/settings.ts';
+import {appearanceStore, backgroundURL, sleeveURL} from '../domain/appearance.ts';
+import {createStoneSurface, createArenaArchitecture, createEnvironmentMask, disposeArenaArchitecture} from './arena_architecture.ts';
 import { ChainVisualizer } from './chain_visualizer.ts';
 import {
   LOC_NAMES, TYPE_LINK, TYPE_MONSTER, TYPE_XYZ, TYPE_TUNER,
@@ -15,6 +17,7 @@ import {
 } from '../domain/constants.ts';
 import { CARD_WIDTH, CARD_HEIGHT, CARD_DEPTH, ZONE_COORDS } from './field3d_geometry.ts';
 import { fieldZonePosition, handPose } from './original_geometry.ts';
+import {arenaHandLayout} from './arena_hand.ts';
 import { generateCardTexture as buildCardTexture } from './field3d_textures.ts';
 import {
   animateDrawCard as runDrawCard,
@@ -64,6 +67,7 @@ export class DuelField3D {
   fieldImageProvider: ((code:number)=>Promise<{url:string}|null>) | null = null;
   fieldSpellPlanes: any[] = [];
   fieldSpellSignature = '';
+  private fieldSpellRevision = 0;
   // Field spell art as the board background (the YGOPro field.png effect).
   fieldSpellPlane: any = null;
   fieldSpellTexture: any = null;
@@ -89,6 +93,24 @@ export class DuelField3D {
   chainTargetTexture: any = null;
   onHoverChange: ((mesh: any | null) => void) | null = null;
   disposed = false;
+  private resizeObserver: ResizeObserver | null = null;
+  private arenaSurface: any = null;
+  private arenaBaseTexture: any = null;
+  private arenaArchitecture: any = null;
+  private environmentMask: any = null;
+  private arenaPileMeshes: Record<string, any> = {};
+  private handPoint = new (THREE as any).Vector3();
+  private handFace = new (THREE as any).Quaternion();
+  private handFan = new (THREE as any).Quaternion();
+  private handXAxis = new (THREE as any).Vector3(1,0,0);
+  private handZAxis = new (THREE as any).Vector3(0,0,1);
+  private arenaZoneLines: any = null;
+  private appearanceUnsubscribe: (() => void) | null = null;
+  private settingsUnsubscribe: (() => void) | null = null;
+  private sleeveTexture: any = null;
+  private sceneBackgroundTexture: any = null;
+  private sleeveRequest = '';
+  private backgroundRequest = '';
   // ---- MSG_SELECT_PLACE 落点选择（原版 drawing.cpp:187-209 的虚线高亮）----
   // placeSelectMarks = 可选格的虚线描边面片（点击射线检测目标）；
   // disabledMarks = MSG_FIELD_DISABLED 禁用格的白叉（drawing.cpp:210-241）。
@@ -147,6 +169,7 @@ export class DuelField3D {
     containerElement: HTMLElement,
     onCardInspect: (code: number, info?: any) => void,
     onCardClick: (x: number, y: number, userData: any) => void,
+    private readonly presentation: { arena?: boolean } = {},
   ) {
     this.container = containerElement;
     this.onCardInspect = onCardInspect;
@@ -155,6 +178,9 @@ export class DuelField3D {
     this.initScene();
     this.initLights();
     this.initField();
+    this.applyAppearance();
+    this.appearanceUnsubscribe = appearanceStore.subscribe(() => this.applyAppearance());
+    this.settingsUnsubscribe = settingsStore.subscribe(() => this.refreshFieldSpell());
     this.chainVisualizer = new ChainVisualizer(this.scene, this);
     this.initEvents();
     this.animate();
@@ -163,7 +189,7 @@ export class DuelField3D {
   initScene(): void {
     this.scene = new (THREE as any).Scene();
     // YGOPro 的全屏背景图（gframe/game.cpp:1040 DrawBackImage(imgBackGround)）
-    this.scene.background = this.textureLoader.load('textures/bg.jpg', (tex: any) => {
+    this.scene.background = this.presentation.arena ? new (THREE as any).Color(0x080f18) : this.textureLoader.load('textures/bg.jpg', (tex: any) => {
       tex.colorSpace = THREE.SRGBColorSpace;
     });
     // 原版无雾（gframe 不设 scene fog），雾会把远端场地压暗
@@ -173,7 +199,7 @@ export class DuelField3D {
     const height = this.container.clientHeight || window.innerHeight;
 
     this.camera = new (THREE as any).PerspectiveCamera(45, width / height, 0.1, 100);
-    this.camera.position.set(0.4, 15.6, 16);
+    this.camera.position.set(0.4, this.presentation.arena ? 24 : 15.6, this.presentation.arena ? 11 : 16);
     this.camera.lookAt(0.4, 0, 0);
     this.applyViewOffset();
 
@@ -211,6 +237,14 @@ export class DuelField3D {
     // 游戏的观感，不是 YGOPro 的。保留一盏弱白方向光只为投影服务。
     const ambientLight = new (THREE as any).AmbientLight(0xffffff, 1.0);
     this.scene.add(ambientLight);
+    if (this.presentation.arena) {
+      ambientLight.intensity = .72;
+      this.scene.add(new (THREE as any).HemisphereLight(0xe4eee5,0x172430,1.6));
+      const key = new (THREE as any).DirectionalLight(0xffe4b1,2.2);
+      key.position.set(-8,18,-7);this.scene.add(key);
+      const fill = new (THREE as any).DirectionalLight(0x95c5dc,.9);
+      fill.position.set(10,8,6);this.scene.add(fill);
+    }
 
   }
 
@@ -239,6 +273,7 @@ export class DuelField3D {
     // 贴图 y=0 边对应盘面远端（P1 侧），PlaneGeometry 顶边在 −z，方向一致
     this.matMesh.position.set(0, 0, 0);
     this.scene.add(this.matMesh);
+    if (this.presentation.arena) this.initArenaSurface();
 
     // 只接收阴影的透明地面：卡牌影子落在背景上，不遮挡盘面。
     // 原版没有影子，这里留一层很淡的接触阴影增加立体感。
@@ -249,6 +284,204 @@ export class DuelField3D {
     shadowCatcher.position.y = -0.02;
     shadowCatcher.receiveShadow = true;
     this.scene.add(shadowCatcher);
+  }
+
+  /** Static geometry underneath the rules-driven mat; no per-frame postprocessing. */
+  private initArenaSurface(): void {
+    const texture = createStoneSurface();
+    this.arenaBaseTexture = texture;
+    const edge = new (THREE as any).MeshStandardMaterial({color: 0x253c3b,roughness:.9});
+    const top = new (THREE as any).MeshStandardMaterial({map: texture,roughness:.92,metalness:.08});
+    const surface = new (THREE as any).Mesh(new (THREE as any).BoxGeometry(20.4, 0.14, 16.4), [edge, edge, top, edge, edge, edge]);
+    surface.position.y = -0.15;
+    this.scene.add(surface);
+    this.arenaSurface = surface;
+    // The classic mat remains a picking target, but its connected white grid
+    // is replaced by individual engraved zones in the modern scene.
+    this.matMesh.material.opacity = 0;
+    this.matMesh.material.depthWrite = false;
+    this.matMesh.renderOrder = 2;
+    this.environmentMask = createEnvironmentMask();
+    this.rebuildArenaArchitecture();
+    this.rebuildArenaZoneLines();
+  }
+
+  private rebuildArenaArchitecture(): void {
+    if (!this.presentation.arena) return;
+    if (this.arenaArchitecture) { this.scene.remove(this.arenaArchitecture); disposeArenaArchitecture(this.arenaArchitecture); }
+    this.arenaArchitecture = createArenaArchitecture((seat,loc,seq=0)=>this.getZonePosition(seat,loc,seq),this.duelRule>=4);
+    this.scene.add(this.arenaArchitecture);
+  }
+
+  private rebuildArenaZoneLines(): void {
+    if (!this.presentation.arena) return;
+    if (this.arenaZoneLines) {
+      this.scene.remove(this.arenaZoneLines);
+      this.arenaZoneLines.geometry.dispose(); this.arenaZoneLines.material.dispose();
+    }
+    const points: number[] = [], seen = new Set<string>();
+    const outline = (position: {x:number;z:number} | null) => {
+      if (!position) return;
+      const key = `${position.x}:${position.z}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const corners = [[-.68,-1.03],[.68,-1.03],[.9,-.81],[.9,.81],[.68,1.03],[-.68,1.03],[-.9,.81],[-.9,-.81]];
+      corners.forEach(([x,z],i) => {
+        const next = corners[(i+1)%corners.length];
+        points.push(position.x+x,.025,position.z+z,position.x+next[0],.025,position.z+next[1]);
+      });
+    };
+    for (const seat of [0,1]) {
+      for (const loc of ['mzone','szone']) for (let seq=0;seq<(loc==='mzone'&&this.duelRule>=4?7:6);seq++) outline(this.getZonePosition(seat,loc,seq));
+      for (const loc of ['deck','extra']) outline(this.getZonePosition(seat,loc));
+    }
+    const geometry = new (THREE as any).BufferGeometry();
+    geometry.setAttribute('position',new (THREE as any).Float32BufferAttribute(points,3));
+    this.arenaZoneLines = new (THREE as any).LineSegments(geometry,new (THREE as any).LineBasicMaterial({color:0xd2c28d,transparent:true,opacity:.66,depthWrite:false}));
+    this.arenaZoneLines.renderOrder = 3;
+    this.arenaZoneLines.visible = true;
+    this.scene.add(this.arenaZoneLines);
+  }
+
+  private paintArenaBackground(image?: HTMLImageElement): void {
+    if (!this.arenaSurface) return;
+    const material = this.arenaSurface.material[2];
+    const previous = material.map;
+    if (!image) material.map = this.arenaBaseTexture;
+    else {
+      const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 820;
+      const ctx = canvas.getContext('2d')!;
+      const scale = Math.max(canvas.width/image.width, canvas.height/image.height);
+      const width = image.width*scale, height = image.height*scale;
+      ctx.drawImage(image,(canvas.width-width)/2,(canvas.height-height)/2,width,height);
+      ctx.fillStyle = '#07121b88'; ctx.fillRect(0,0,1024,820);
+      ctx.strokeStyle = '#9bc3cc77'; ctx.lineWidth = 3; ctx.strokeRect(8,8,1008,804);
+      ctx.strokeStyle = '#c8ee4a'; ctx.lineWidth = 7;
+      for (const [x,y,dx,dy] of [[16,16,1,1],[1008,16,-1,1],[16,804,1,-1],[1008,804,-1,-1]]) {
+        ctx.beginPath(); ctx.moveTo(x,y+dy*24); ctx.lineTo(x,y); ctx.lineTo(x+dx*36,y); ctx.stroke();
+      }
+      material.map = new (THREE as any).CanvasTexture(canvas);
+      material.map.colorSpace = THREE.SRGBColorSpace;
+    }
+    material.needsUpdate = true;
+    if (previous !== this.arenaBaseTexture) previous?.dispose();
+    this.refreshMatAppearance();
+  }
+
+  private refreshMatAppearance(): void {
+    const hasArt = this.fieldSpellPlanes.length > 0 || (this.presentation.arena && !!this.sceneBackgroundTexture);
+    if (this.matMesh) this.matMesh.material.map = hasArt ? this.transparentMatTexture : this.matTexture;
+    if (this.arenaZoneLines) this.arenaZoneLines.visible = true;
+  }
+
+  private applyAppearance(): void {
+    if (this.disposed) return;
+    const appearance = appearanceStore.getSnapshot();
+    const sleeve = appearance.sleeve === 'classic' ? '' : sleeveURL(appearance);
+    if (sleeve !== this.sleeveRequest) {
+      this.sleeveRequest = sleeve;
+      if (!sleeve) {
+        const previous = this.sleeveTexture;
+        this.sleeveTexture = null;
+        this.applyCardSleeves();
+        previous?.dispose();
+      } else {
+        const pending = this.textureLoader.load(sleeve, (texture: any) => {
+          if (this.disposed || this.sleeveRequest !== sleeve) { texture.dispose(); return; }
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+          const previous = this.sleeveTexture;
+          this.sleeveTexture = texture;
+          this.applyCardSleeves();
+          previous?.dispose();
+        }, undefined, () => {
+          pending.dispose();
+          if (!this.disposed && this.sleeveRequest === sleeve) {
+            this.sleeveTexture?.dispose(); this.sleeveTexture = null; this.applyCardSleeves();
+          }
+        });
+      }
+    }
+    if (this.presentation.arena) {
+      const background = backgroundURL(appearance);
+      if (background !== this.backgroundRequest) {
+        this.backgroundRequest = background;
+        if (!background) {
+          this.scene.background = new (THREE as any).Color(0x080f18);
+          this.sceneBackgroundTexture?.dispose(); this.sceneBackgroundTexture = null;
+          this.paintArenaBackground();
+        } else {
+          const pending = this.textureLoader.load(background, (texture: any) => {
+            if (this.disposed || this.backgroundRequest !== background) { texture.dispose(); return; }
+            texture.colorSpace = THREE.SRGBColorSpace;
+            this.sceneBackgroundTexture?.dispose();
+            this.sceneBackgroundTexture = texture;
+            this.scene.background = texture;
+            this.scene.backgroundIntensity = .5;
+            this.paintArenaBackground(texture.image);
+            this.fitSceneBackground();
+          }, undefined, () => {
+            pending.dispose();
+            if (!this.disposed && this.backgroundRequest === background) {
+              this.scene.background = new (THREE as any).Color(0x080f18);
+              this.sceneBackgroundTexture?.dispose(); this.sceneBackgroundTexture = null;
+              this.paintArenaBackground();
+            }
+          });
+        }
+      }
+    }
+    for (const plane of this.fieldSpellPlanes) {
+      if (this.presentation.arena) plane.material.opacity = appearance.environmentOpacity / 100;
+    }
+    this.refreshFieldSpell();
+  }
+
+  private cardBackFor(player: number | null): any {
+    return player === this.localSeat && this.sleeveTexture ? this.sleeveTexture
+      : player === 1 ? this.cardBackTexture2 : this.cardBackTexture;
+  }
+
+  private applyCardSleeves(): void {
+    for (const mesh of this.cardMeshes) {
+      const back = mesh.material?.[3];
+      if (back) { back.map = this.cardBackFor(mesh.userData.slot?.player ?? mesh.userData.sleeveSeat); back.needsUpdate = true; }
+    }
+    for (const mesh of Object.values(this.arenaPileMeshes)) {
+      mesh.material[2].map = this.cardBackFor(mesh.userData.seat);
+      mesh.material[2].needsUpdate = true;
+    }
+  }
+
+  private syncArenaPiles(counts: {deck:number;extra:number}[]): void {
+    if (!this.presentation.arena) return;
+    for (const seat of [0,1]) for (const pile of ['deck','extra'] as const) {
+      const key = `${seat}:${pile}`, count = counts[seat]?.[pile] || 0;
+      let mesh = this.arenaPileMeshes[key];
+      if (!mesh && count > 0) {
+        const edge = new (THREE as any).MeshBasicMaterial({color:0x9d9481});
+        const cover = new (THREE as any).MeshBasicMaterial({map:this.cardBackFor(seat)});
+        mesh = new (THREE as any).Mesh(new (THREE as any).BoxGeometry(CARD_WIDTH,.11,CARD_HEIGHT),[edge,edge,cover,edge,edge,edge]);
+        mesh.userData = {seat,pile}; mesh.rotation.y = seat === 1 ? Math.PI : 0;
+        this.scene.add(mesh);this.arenaPileMeshes[key] = mesh;
+      }
+      if (mesh) {
+        const position = this.getZonePosition(seat,pile);
+        mesh.visible = count > 0;
+        mesh.position.set(position.x,.04+Math.min(count,60)*.003,position.z);
+        mesh.scale.y = Math.max(.3,Math.min(count,60)/15);
+      }
+    }
+  }
+
+  private fitSceneBackground(): void {
+    const texture = this.sceneBackgroundTexture;
+    if (!texture?.image) return;
+    const aspect = this.container.clientWidth / Math.max(1, this.container.clientHeight);
+    const imageAspect = texture.image.width / texture.image.height;
+    texture.repeat.set(Math.min(1, aspect / imageAspect), Math.min(1, imageAspect / aspect));
+    texture.offset.set((1 - texture.repeat.x) / 2, (1 - texture.repeat.y) / 2);
+    texture.updateMatrix();
   }
 
   // Single source of truth for zone coordinates. External renderers (e.g. the
@@ -504,22 +737,24 @@ export class DuelField3D {
 
   /** 下侧座位 → 相机落点。开局落座、交换、换回共用同一套机位 */
   private cameraPoseFor(bottomSeat: number): { x: number; z: number } {
-    return bottomSeat === 1 ? { x:-0.6, z:-16 } : { x:0.4, z:16 };
+    const distance = this.presentation.arena ? 11 : 16;
+    return bottomSeat === 1 ? { x:-0.6, z:-distance } : { x:0.4, z:distance };
   }
 
   private moveCameraToBottomSeat(bottomSeat: number, instant: boolean): void {
     const { x,z } = this.cameraPoseFor(bottomSeat);
     if (instant) {
-      this.camera.position.set(x,15.6,z);
+      this.camera.position.set(x,this.presentation.arena?24:15.6,z);
       this.camera.lookAt(x,0,0);
       this.camera.updateMatrixWorld(true);
+      if (this.presentation.arena) this.applyViewOffset();
       return;
     }
     this.makeTween(this.camera.position)
-      .to({ x,z },500)
+      .to({ x,y:this.presentation.arena?24:15.6,z },500)
       .easing(TWEEN.Easing.Quadratic.InOut)
       .onUpdate(() => this.camera.lookAt(x,0,0))
-      .onComplete(() => this.camera.lookAt(x,0,0))
+      .onComplete(() => { this.camera.lookAt(x,0,0); if (this.presentation.arena) this.applyViewOffset(); })
       .start();
   }
 
@@ -799,28 +1034,32 @@ export class DuelField3D {
     const signature=codes.join(':');
     if(signature===this.fieldSpellSignature)return;
     this.fieldSpellSignature=signature;
+    const revision=++this.fieldSpellRevision;
     this.fieldSpellCode=codes[0]||codes[1];
     for(const plane of this.fieldSpellPlanes){this.scene.remove(plane);plane.geometry.dispose();plane.material.map?.dispose();plane.material.dispose();}
     this.fieldSpellPlanes=[];this.fieldSpellPlane=null;
-    if(this.matMesh)this.matMesh.material.map=this.matTexture;
+    this.refreshMatAppearance();
     if(!this.fieldSpellCode||!this.fieldImageProvider)return;
     const split=!!codes[0]&&!!codes[1]&&codes[0]!==codes[1];
     const entries=split?[{code:codes[0],seat:0},{code:codes[1],seat:1}]:[{code:this.fieldSpellCode,seat:-1}];
     for(const entry of entries){
       this.fieldImageProvider(entry.code).then(pic=>{
-        if(!pic?.url||this.disposed||this.fieldSpellSignature!==signature)return;
+        if(!pic?.url||this.disposed||this.fieldSpellRevision!==revision)return;
         const tex=this.textureLoader.load(pic.url,()=>{
-          if(this.disposed||this.fieldSpellSignature!==signature){tex.dispose();return;}
+          if(this.disposed||this.fieldSpellRevision!==revision){tex.dispose();return;}
           tex.colorSpace=THREE.SRGBColorSpace;
           // vFieldSpell1/2 UV ranges from materials.cpp, including the mirrored far half.
-          if(split){if(entry.seat===0){tex.repeat.set(1,.43636);tex.offset.set(0,.36364);}else{tex.repeat.set(-1,-.43636);tex.offset.set(1,.8);}}
-          const geo=new (THREE as any).PlaneGeometry(11,split?4.8:12.8);
-          const mat=new (THREE as any).MeshBasicMaterial({map:tex,depthWrite:false});
+          if(split){if(this.presentation.arena){if(entry.seat===1){tex.repeat.set(-1,-1);tex.offset.set(1,1);}}else if(entry.seat===0){tex.repeat.set(1,.43636);tex.offset.set(0,.36364);}else{tex.repeat.set(-1,-.43636);tex.offset.set(1,.8);}}
+          const geo=new (THREE as any).PlaneGeometry(this.presentation.arena?15.8:11,split?(this.presentation.arena?7.8:4.8):(this.presentation.arena?15.2:12.8));
+          const mat=new (THREE as any).MeshBasicMaterial({map:tex,depthWrite:false,
+            transparent:!!this.presentation.arena, opacity:this.presentation.arena?appearanceStore.getSnapshot().environmentOpacity/100:1,
+            alphaMap:this.presentation.arena?this.environmentMask:null});
           const plane=new (THREE as any).Mesh(geo,mat);plane.rotation.x=-Math.PI/2;
-          plane.position.set(-.1,.01,split?(entry.seat===0?4:-4):0);
+          plane.position.set(-.1,this.presentation.arena?-.01:.01,split?(entry.seat===0?4:-4):0);
+          if(this.presentation.arena)plane.renderOrder=1;
           this.scene.add(plane);this.fieldSpellPlanes.push(plane);this.fieldSpellPlane=this.fieldSpellPlanes[0];
-          this.matMesh.material.map=this.transparentMatTexture;
-        });
+          this.refreshMatAppearance();
+        },undefined,()=>tex.dispose());
       }).catch(()=>{});
     }
   }
@@ -951,7 +1190,7 @@ export class DuelField3D {
     });
     // 里侧卡背按控制方取原版双色（drawing.cpp:425 tCover[controler]）
     const backMat = new (THREE as any).MeshBasicMaterial({
-      map: player === 1 ? this.cardBackTexture2 : this.cardBackTexture,
+      map: this.cardBackFor(player),
     });
 
     const materials = [borderMat, borderMat, frontMat, backMat, borderMat, borderMat];
@@ -961,6 +1200,7 @@ export class DuelField3D {
     cardMesh.userData = {
       cardCode,
       cardInfo,
+      sleeveSeat: player,
       originalY: 0.05,
       positionState: 'ATK',
       slot: null
@@ -1069,6 +1309,8 @@ export class DuelField3D {
   // or the 2D hand dock, not individual meshes.
   moveCard(mesh: any, toPlayer: number, locName: string, seq: number, position = 0x1, { instant = false }: { instant?: boolean } = {}): void {
     if (!mesh) return;
+    mesh.material[3].map = this.cardBackFor(toPlayer);
+    mesh.material[3].needsUpdate = true;
 
     if (locName === 'mzone' || locName === 'szone') {
       const coord = this.getZonePosition(toPlayer, locName, seq);
@@ -1174,6 +1416,7 @@ export class DuelField3D {
   }
 
   syncHandRotations(): void {
+    if (this.presentation.arena) { this.layoutArenaHands(); return; }
     for (const seat of [0, 1] as const) {
       for (const mesh of this.handMeshes[seat]) {
         const rot = this.handRotationFor(mesh.userData.cardCode || 0);
@@ -1182,9 +1425,8 @@ export class DuelField3D {
     }
   }
 
-  // 双方手牌的 3D 直排（client_field.cpp GetCardLocation LOCATION_HAND：
-  // ≤6 张固定间距、更多压缩；零码 = 卡背）。正反面都朝向当前观察者，
-  // 避免二号位本地视角或北侧对手手卡出现旋转 180° 的图像。
+  // Classic hands use GetCardLocation's straight row; arena hands are laid out
+  // as camera-facing fans below. Zero codes always keep their hidden card back.
   setHands(codes: [number[], number[]]): void {
     for (const seat of [0,1] as const) {
       const meshes = this.handMeshes[seat];
@@ -1205,6 +1447,36 @@ export class DuelField3D {
         mesh.position.set(pose.x,pose.y,pose.z);
         const rot = this.handRotationFor(code);
         mesh.rotation.set(rot.x,rot.y,rot.z);
+      });
+    }
+    if (this.presentation.arena) this.layoutArenaHands();
+  }
+
+  private layoutArenaHands(): void {
+    if (!this.camera || !this.presentation.arena) return;
+    const width=this.container.clientWidth,height=this.container.clientHeight;
+    if (!width || !height) return;
+    this.camera.updateMatrixWorld(true);
+    for (const seat of [0,1]) {
+      const meshes=this.handMeshes[seat];
+      meshes.forEach((mesh:any,sequence:number)=>{
+        const near=seat===this.bottomSeat();
+        const hover=near&&mesh.userData.cardCode?(mesh.userData.arenaHover||0):0;
+        const pose=arenaHandLayout(sequence,meshes.length,width,height,near,hover,mesh.userData.arenaShuffle||0);
+        // A camera-facing plane in front of the board keeps proportions stable
+        // across perspective changes without changing the gameplay raycaster.
+        const distance=7-sequence*.004-hover*.3;
+        const projection=this.camera.projectionMatrix.elements;
+        const depth=-projection[10]+projection[14]/distance;
+        const position=this.handPoint.set(pose.x/width*2-1,1-pose.y/height*2,depth).unproject(this.camera);
+        if (!mesh.userData.drawing) mesh.position.copy(position);
+        const face=this.handFace.setFromAxisAngle(this.handXAxis,Math.PI/2+(mesh.userData.cardCode?0:Math.PI));
+        const fan=this.handFan.setFromAxisAngle(this.handZAxis,pose.angle);
+        mesh.quaternion.copy(this.camera.quaternion).multiply(fan).multiply(face);
+        const scale=pose.height*2*distance/(height*this.camera.projectionMatrix.elements[5]*CARD_HEIGHT);
+        mesh.userData.arenaHand = true;
+        if (!mesh.userData.drawing) mesh.scale.setScalar(scale);
+        mesh.renderOrder=20+sequence+(hover>0?100:0);
       });
     }
   }
@@ -1240,12 +1512,26 @@ export class DuelField3D {
 
   setHandHover(mesh: any, on: boolean): void {
     const slot = mesh.userData.slot;
+    if (this.presentation.arena) {
+      if (slot.player!==this.bottomSeat() || !mesh.userData.cardCode) return;
+      mesh.userData.arenaHoverTween?.stop();
+      mesh.userData.arenaHover ??= 0;
+      mesh.userData.arenaHoverTween=this.makeTween(mesh.userData).to({arenaHover:on?1:0},110).easing(TWEEN.Easing.Quadratic.Out).start();
+      return;
+    }
     const pose = handPose(slot.player,slot.seq,mesh.userData.handCount,on);
     this.makeTween(mesh.position).to({x:pose.x,y:pose.y,z:pose.z},5*1000/60).start();
   }
 
   shuffleHand(player: number): void {
     const meshes = this.handMeshes[player as 0|1];
+    if (this.presentation.arena) {
+      for (const mesh of meshes) {
+        mesh.userData.arenaShuffle=0;
+        this.makeTween(mesh.userData).to({arenaShuffle:1},90).chain(this.makeTween(mesh.userData).to({arenaShuffle:0},130).delay(100)).start();
+      }
+      return;
+    }
     for (const mesh of meshes) {
       const pose = handPose(player,mesh.userData.slot.seq,meshes.length);
       mesh.userData.shuffling = true;
@@ -1266,7 +1552,7 @@ export class DuelField3D {
     this.transparentMatTexture = this.textureLoader.load('textures/field-transparent'+suffix+'.png');
     this.matTexture.colorSpace = THREE.SRGBColorSpace;
     this.transparentMatTexture.colorSpace = THREE.SRGBColorSpace;
-    this.matMesh.material.map = this.fieldSpellPlanes.length > 0 ? this.transparentMatTexture : this.matTexture;
+    this.refreshMatAppearance();
     for (const seat of [0,1]) for (const loc of ['mzone','szone','grave','banish']) {
       this.cardsOnField[seat][loc].forEach((mesh:any,seq:number) => {
         if (!mesh) return;
@@ -1276,10 +1562,13 @@ export class DuelField3D {
       });
     }
     this.repositionGraveLockSprites();
+    this.rebuildArenaArchitecture();
+    this.rebuildArenaZoneLines();
   }
 
   setBottomSeat(seat: number, instant = false): void {
     this.localSeat = seat;
+    this.applyCardSleeves();
     this.syncHandRotations();
     this.moveCameraToBottomSeat(this.bottomSeat(), instant);
   }
@@ -1506,13 +1795,13 @@ export class DuelField3D {
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#000000';
     ctx.fillText(text, 50, 34);
-    ctx.fillStyle = '#ffff00';
+    ctx.fillStyle = this.presentation.arena ? '#f0e2bb' : '#ffff00';
     ctx.fillText(text, 48, 32);
     const tex = new (THREE as any).CanvasTexture(canvas);
     const sprite = new (THREE as any).Sprite(new (THREE as any).SpriteMaterial({
       map: tex, transparent: true, depthTest: false,
     }));
-    sprite.scale.set(1.05, 0.7, 1);
+    sprite.scale.set(this.presentation.arena ? .78 : 1.05, this.presentation.arena ? .52 : .7, 1);
     sprite.renderOrder = 10;
     sprite.userData.isPileCount = true;
     sprite.userData.pileText = text;
@@ -1520,6 +1809,7 @@ export class DuelField3D {
   }
 
   syncPileCounts(counts: ({ deck: number; grave: number; banish: number; extra: number; extraP?: number })[]): void {
+    this.syncArenaPiles(counts);
     for (const seat of [0, 1]) {
       for (const pile of ['deck', 'extra', 'grave', 'banish'] as const) {
         // 原版额外堆双数字（drawing.cpp:726-727,749-750）：总数 + 表侧数
@@ -1565,6 +1855,11 @@ export class DuelField3D {
   }
 
   clearPileCounts(): void {
+    for (const mesh of Object.values(this.arenaPileMeshes)) {
+      this.scene.remove(mesh);mesh.geometry.dispose();
+      for (const material of new Set<any>(mesh.material)) material.dispose();
+    }
+    this.arenaPileMeshes = {};
     for (const key of Object.keys(this.pileCountSprites)) {
       this.disposeTextSprite(this.pileCountSprites[key]);
     }
@@ -1584,7 +1879,8 @@ export class DuelField3D {
       const c = this.getZonePosition(seat,pile);
       if (!c) continue;
       const stack = (this.cardsOnField[seat] && this.cardsOnField[seat][pile]) || [];
-      sprite.position.set(c.x, c.y + 0.35 + Math.min(stack.length, 20) * 0.02, c.z);
+      const inset = this.presentation.arena && (pile === 'deck' || pile === 'extra') ? (c.x > 0 ? -.9 : .9) : 0;
+      sprite.position.set(c.x + inset, c.y + 0.35 + Math.min(stack.length, 20) * 0.02, c.z + (inset ? (seat === 0 ? .65 : -.65) : 0));
     }
   }
 
@@ -1806,6 +2102,10 @@ export class DuelField3D {
     };
 
     window.addEventListener('resize', this._onResize);
+    if (this.presentation.arena) {
+      this.resizeObserver = new ResizeObserver(this._onResize);
+      this.resizeObserver.observe(this.container);
+    }
     this.container.addEventListener('mousemove', this._onMouseMove);
     this.container.addEventListener('click', this._onClick);
     this.container.addEventListener('contextmenu', this._onContextMenu);
@@ -1908,6 +2208,29 @@ export class DuelField3D {
   // 右 0.45，中心偏左约 16.7%）：等效于把盘面往右推，给左侧 HUD 面板留位。
   // 用 three 的 setViewOffset 复刻；窄屏（面板隐藏）时取消偏移。
   applyViewOffset(): void {
+    if (this.presentation.arena) {
+      // Fit board edges and raised hands inside the actual canvas, including after
+      // a container-only resize. World coordinates and picking stay in sync.
+      this.camera.zoom = 1;
+      this.camera.updateProjectionMatrix();
+      this.camera.updateMatrixWorld(true);
+      const bounds: any[] = [];
+      for (const x of [-11.6, 11.6]) for (const z of [-9.4, 9.4]) bounds.push(new (THREE as any).Vector3(x, -.3, z));
+      for (const x of [-5.5, 5.5]) for (const z of [-9, 9]) for (const y of [0, 2.2]) bounds.push(new (THREE as any).Vector3(x, y, z));
+      const points = bounds.map(point => point.project(this.camera));
+      const minX = Math.min(...points.map(point => point.x)), maxX = Math.max(...points.map(point => point.x));
+      const minY = Math.min(...points.map(point => point.y)), maxY = Math.max(...points.map(point => point.y));
+      this.camera.zoom = Math.min(1.88 / (maxX - minX), 1.84 / (maxY - minY));
+      this.camera.updateProjectionMatrix();
+      // Recenter the fitted bounds; perspective foreshortening otherwise leaves
+      // a large empty band above the opponent and crowds the near-side hand.
+      this.camera.projectionMatrix.elements[8] += (minX + maxX) / 2 * this.camera.zoom;
+      this.camera.projectionMatrix.elements[9] += (minY + maxY) / 2 * this.camera.zoom;
+      // Leave the near spell/trap row above the enlarged hand fan.
+      this.camera.projectionMatrix.elements[9] -= .15;
+      this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
+      return;
+    }
     // game.cpp's fixed asymmetric projection; window resizing stretches it.
     this.camera.projectionMatrix.makePerspective(-1.8,0.9,0.84,-0.84,2,200);
     this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
@@ -1920,12 +2243,14 @@ export class DuelField3D {
     this.camera.updateProjectionMatrix();
     this.applyViewOffset();
     this.renderer.setSize(width, height);
+    this.fitSceneBackground();
   }
 
   animate(): void {
     if (this.disposed) return;
     requestAnimationFrame(() => this.animate());
     this.tweenGroup.update();
+    if (this.presentation.arena) this.layoutArenaHands();
     this.layoutOverlays();
     // 原版 attack.png 标记上下浮动（drawing.cpp atkdy 正弦）、
     // act.png 图标匀速自旋（原版 act_rot.Z 每帧 +0.02）
@@ -1968,7 +2293,33 @@ export class DuelField3D {
   // renderers, listeners, or GPU resources.
   dispose(): void {
     this.disposed = true;
+    this.appearanceUnsubscribe?.();
+    this.settingsUnsubscribe?.();
+    this.sleeveTexture?.dispose();
+    for (const plane of this.fieldSpellPlanes) {
+      this.scene.remove(plane); plane.geometry.dispose(); plane.material.map?.dispose(); plane.material.dispose();
+    }
+    if (this.fieldSpellPlanes.length) this.fieldSpellPlane = null;
+    this.fieldSpellPlanes = [];
     window.removeEventListener('resize', this._onResize);
+    this.resizeObserver?.disconnect();
+    if (this.arenaArchitecture) { this.scene.remove(this.arenaArchitecture); disposeArenaArchitecture(this.arenaArchitecture); this.arenaArchitecture = null; }
+    this.environmentMask?.dispose();
+    if (this.arenaZoneLines) {
+      this.scene.remove(this.arenaZoneLines);
+      this.arenaZoneLines.geometry.dispose(); this.arenaZoneLines.material.dispose();
+      this.arenaZoneLines = null;
+    }
+    if (this.arenaSurface) {
+      this.scene.remove(this.arenaSurface);
+      this.arenaSurface.geometry.dispose();
+      if (this.arenaSurface.material[2].map !== this.arenaBaseTexture) this.arenaBaseTexture?.dispose();
+      for (const mat of new Set<any>(this.arenaSurface.material)) {
+        mat.map?.dispose();
+        mat.dispose();
+      }
+      this.arenaSurface = null;
+    }
     if (this.container) {
       this.container.removeEventListener('mousemove', this._onMouseMove);
       this.container.removeEventListener('click', this._onClick);

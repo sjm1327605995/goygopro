@@ -104,13 +104,14 @@ export default function RightControls({ onSurrendered, onLeaveObserver, singleMo
       }}>
         {singleMode ? '退出' : teammateSurrender ? '投降(1/2)' : '投降'}
       </button>
-      <div className="chain-group">
+      <div className="chain-group" role="group" aria-label="连锁响应方式">
         {MODES.map((m) => (
           <button
             key={m.key}
             id={`chain-btn-${m.key}`}
             className={`chain-btn ${mode === m.key ? 'pressed' : ''}`}
             title={m.title}
+            aria-pressed={mode === m.key}
             onClick={() => pick(m.key)}
           >
             {m.label}

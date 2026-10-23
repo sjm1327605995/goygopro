@@ -5,12 +5,14 @@
 
    本文件同时是各窗口的像素落点事实源（1024×640 设计空间，绝对坐标；
    改窗口大小请同步窗口内注释与相关冒烟断言）：
-   - 标题栏：24px 高、白字 12px 左对齐
-   - 按钮：26px 高（主菜单 30px）
+   - 标题栏：24px 高、白字 12px 左对齐（高度被 ReplaySavePrompt/大厅
+     的 calc(100% - 24px) 依赖，不得改动）
+   - 按钮：26px 高（主菜单由 menu-masterduel.css 接管）
    - 输入：22px 高、12px 字
-   - 窗口：.gfw-mainmenu 420×480@(302,78) / .gfw-lan 620×470@(202,85) /
-     .gfw-create 400×470@(312,85) / .gfw-prepare 520×340@(252,110) /
-     .gfw-replay 580×420@(220,100) / .gfw-single 660×470@(182,85)
+   - 窗口：.gfw-lan 620×470@(202,85) / .gfw-create 400×470@(312,85) /
+     .gfw-prepare 520×340@(252,110) / .gfw-replay 580×420@(220,100) /
+     .gfw-single 660×470@(182,85)；主菜单为全屏透明画布，见
+     css/menu-masterduel.css
    ================================================================== */
 
 /* ---- 窗口外壳 ---- */
@@ -18,11 +20,14 @@
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(19, 26, 38, 0.94);
+  /* Master Duel 海军蓝玻璃：深墨蓝渐变 + 1px 青边 + 极轻内高光 */
+  background: linear-gradient(180deg, rgba(10, 22, 38, 0.96) 0%, rgba(5, 13, 24, 0.97) 100%);
   backdrop-filter: blur(16px);
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  box-shadow: var(--shadow-panel), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(79, 210, 255, 0.18);
+  border-radius: 2px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(79, 210, 255, 0.08),
+    inset 0 0 0 1px rgba(5, 13, 24, 0.5);
   color: var(--text-main);
   font-size: 13px;
   z-index: 20;
@@ -30,15 +35,20 @@
 }
 
 .gfw-title {
-  height: 24px;
-  background: linear-gradient(90deg, rgba(37, 99, 235, 0.24) 0%, rgba(19, 26, 38, 0.9) 65%);
+  height: 24px; /* 冻结：录像保存弹窗/大厅体高依赖 */
+  background: linear-gradient(100deg, rgba(79, 210, 255, 0.14) 0%, rgba(10, 22, 38, 0.92) 62%);
   color: #f1f5f9;
   font-size: 12px;
   font-weight: 600;
   display: flex;
   align-items: center;
   padding-left: 8px;
-  border-bottom: 1px solid rgba(59, 130, 246, 0.22);
+  padding-right: 18px;
+  border-bottom: 1px solid rgba(79, 210, 255, 0.22);
+  box-shadow: inset 2px 0 0 var(--md-gold, #e8c46a);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
+  font-family: var(--md-font-display, 'Bahnschrift Condensed', 'Arial Narrow', 'Segoe UI', 'Microsoft YaHei', sans-serif);
+  letter-spacing: 0.12em;
   user-select: none;
   white-space: nowrap;
   overflow: hidden;
@@ -48,10 +58,6 @@
 .gfw-body {
   padding: 8px;
   position: relative;
-}
-/* wMainMenu 按钮区：标题栏 24 + 6 = 原版按钮起点 y30；两侧 10px 留边 */
-.gfw-mainmenu .gfw-body {
-  padding: 6px 10px 0;
 }
 
 /* ---- 控件 ----
@@ -144,87 +150,8 @@
 }
 
 /* ---- 各窗口的固定宽度与顶部留白（docs 原型规格表） ---- */
-/* 主菜单：品牌化面板（原版 280×215 → 420×480，居中偏上）。
-   DesignSpace 内绝对定位（覆盖 .gfw-window 的 50%/translateX 居中）。 */
-.gfw-mainmenu { width: 420px; height: 480px; top: 78px; left: 302px; transform: none; }
-.gfw-mainmenu .gfw-title {
-  height: 28px;
-  padding-left: 14px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  color: #93c5fd;
-  background: linear-gradient(90deg, rgba(37, 99, 235, 0.32) 0%, rgba(19, 26, 38, 0.92) 70%);
-}
-.gfw-mainmenu .gfw-body {
-  display: flex;
-  flex-direction: column;
-  height: calc(100% - 28px);
-  padding: 18px 22px 14px;
-  box-sizing: border-box;
-}
-.menu-hero {
-  padding: 2px 0 16px;
-  margin-bottom: 18px;
-  border-bottom: 1px solid var(--border-color);
-}
-.menu-hero-kicker {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.3em;
-  color: #60a5fa;
-}
-.menu-hero-title {
-  margin: 5px 0 4px;
-  font-size: 34px;
-  line-height: 1.05;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  color: #f8fafc;
-}
-.menu-hero-title span {
-  background: linear-gradient(135deg, #60a5fa 10%, #8b5cf6 90%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-.menu-hero-sub {
-  margin: 0;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-}
-.menu-actions { gap: 10px; }
-.menu-actions .ui-btn {
-  height: 42px;
-  border-radius: 8px;
-  font-size: 14px;
-  letter-spacing: 0.05em;
-}
-/* 首要入口（联机）用主色实心，其余为炭黑次级按钮 */
-.menu-actions .ui-btn:first-child {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  border-color: rgba(96, 165, 250, 0.55);
-  color: #fff;
-  font-weight: 600;
-  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.26);
-}
-.menu-actions .ui-btn:first-child:hover {
-  background: linear-gradient(135deg, #4f8ef7 0%, #2f6fef 100%);
-  border-color: rgba(147, 197, 253, 0.75);
-}
-.menu-actions .ui-btn:last-child:hover {
-  border-color: rgba(239, 68, 68, 0.5);
-  color: #fca5a5;
-}
-.menu-foot {
-  margin-top: auto;
-  padding-top: 12px;
-  text-align: center;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-}
+/* 主菜单为全屏透明画布，结构与皮肤见 src/components/MainMenu.tsx +
+   css/menu-masterduel.css（此处不再保留 .gfw-mainmenu 几何）。 */
 /* 联机大厅三窗：在原版矩形上整体放大，留出卡片化留白 */
 .gfw-lan      { left: 202px; top: 85px; width: 620px; height: 470px; transform: none; }
 .gfw-create   { left: 312px; top: 85px; width: 400px; height: 470px; transform: none; }
@@ -286,16 +213,6 @@
   font-size: 12px;
 }
 
-/* ---- 主菜单几何：窗口 420×480 @ (302,78)（.gfw-mainmenu，见文件上方窗口表）；
-        按钮 30px 高由 UiButton size="compact-md" + fullWidth 承担，不再走类皮肤 ---- */
-
-/* 窗口内按钮纵排（主菜单 5 键：间距 5px） */
-.gfw-col {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
 /* ---- 老类名在窗口内的原型化（冒烟契约依赖 .form-input/.form-select/.btn 类名，
         保留类名、覆写皮肤；.gfw-window .btn 优先级高，压过 style.css 的 .btn） ---- */
 .gfw-window .form-input,
@@ -327,11 +244,6 @@
   font-weight: normal;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 1px 2px rgba(0, 0, 0, 0.35);
 }
-.gfw-mainmenu .btn:not(.ui-btn) {
-  height: 30px;
-  font-size: 13px;
-}
-
 /* modal-box 与 gfw-window 叠用时归零内距（设置面板走 position:static 内联覆盖） */
 .gfw-window.modal-box {
   padding: 0;

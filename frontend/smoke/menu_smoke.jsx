@@ -1,5 +1,5 @@
-// 波 H：主菜单 1:1 对齐 docs/layout_prototype.html 第 1 节 wMainMenu——
-// 320×210 窗口（20% 顶部留白）、版本标题、5 个纵排按钮；点联机切 lobby、退出经 bridge。
+// 主菜单冒烟：Master Duel 首页构图（左上玩家面板/左侧竖排菜单/左下资讯卡），
+// 但契约仍是窗口类名、版本标题、5 个按钮的文案与顺序；点联机切 lobby、退出经 bridge。
 import UiRoot from '../src/ui/UiRoot.tsx';
 import { createRoot } from 'react-dom/client';
 import React from 'react';
@@ -43,7 +43,7 @@ try {
   await waitFor(() => !!$('main-menu-screen'));
   record('menu-screen-renders', true);
 
-  // 原型窗口形态：gfw-mainmenu 尺寸 320×210（docs/layout_prototype.html 第 1 节）、标题为版本串
+  // 窗口形态：gfw-window + gfw-mainmenu（新皮肤下为全屏透明画布）、标题为版本串
   const win = $('main-menu-window');
   const cls = win && win.className;
   record('menu-window-shape', !!win && cls.includes('gfw-window') && cls.includes('gfw-mainmenu'));

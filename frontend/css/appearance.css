@@ -1,0 +1,41 @@
+#settings-panel:has(.appearance-panel) { width: 540px !important; max-width: calc(100vw - 24px); min-width: 0; }
+.appearance-panel { max-height: min(64vh, 570px); overflow-y: auto; padding: 12px 18px 8px; scrollbar-width: thin; scrollbar-color: #576d70 #0b1620; }
+.appearance-panel::-webkit-scrollbar { width: 5px; }
+.appearance-panel::-webkit-scrollbar-thumb { background: #718e68; border-radius: 0; }
+.appearance-preview { height: 138px; position: relative; overflow: hidden; background: radial-gradient(ellipse at 65% 10%,#254652,#0a1421 75%); background-size: cover; background-position: center; border: 1px solid #9cb9cd38; }
+.appearance-preview-label { position: absolute; left: 14px; top: 13px; display: flex; flex-direction: column; gap: 6px; color: #a9c87d; font: 500 8px var(--md-font-ui); letter-spacing: .2em; }
+.appearance-preview-label b { color: #dfe8e9; font-size: 15px; letter-spacing: .12em; }
+.appearance-mini-field { display: grid; grid-template-columns: repeat(5,1fr); gap: 5px; width: 205px; height: 87px; padding: 8px; position: absolute; right: 100px; top: 30px; background: #152a36e8; border: 1px solid #96b0ad80; transform: perspective(240px) rotateX(32deg) rotateZ(-10deg); }
+.appearance-mini-field i { border: 1px solid #91b2bd65; background: #07111a80; }
+.appearance-preview > img { position: absolute; right: 26px; top: 11px; height: 112px; width: 77px; object-fit: contain; transform: rotate(10deg); box-shadow: 0 8px 16px #0008; }
+.appearance-preview-note { position: absolute; bottom: 9px; left: 14px; color: #8ca4b0; font-size: 9px; }
+.appearance-section { padding-top: 15px; }
+.appearance-section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+.appearance-section-head h2 { font: 600 12px var(--md-font-ui); letter-spacing: .08em; color: #dce6df; }
+.appearance-section-head > span { color: #748d9b; font-size: 7px; letter-spacing: .18em; }
+.appearance-options { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px; }
+.appearance-options:has(> :nth-child(4)) { grid-template-columns: repeat(4,minmax(0,1fr)); }
+#settings-panel .appearance-option { display: flex; align-items: center; gap: 9px; padding: 7px; min-width: 0; cursor: pointer; background: #101e2a; border: 1px solid #91acbd30; border-radius: 1px; color: #9fb5c2; font-family: inherit; }
+#settings-panel .appearance-option:hover { border-color: #c8ee4a80; background: #1b2c32; }
+#settings-panel .appearance-option[aria-pressed='true'] { border-color: #c8ee4ab3; background: #c8ee4a0f; color: #e0f1c1; box-shadow: inset 0 -2px #b8d975; }
+#settings-panel .appearance-option:focus-visible, .appearance-upload label:focus-within { outline: 2px solid #c8ee4a; outline-offset: 2px; }
+.appearance-sleeves .appearance-option img { width: 35px; height: 51px; object-fit: cover; }
+.appearance-option span { font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#settings-panel .appearance-backgrounds .appearance-option { flex-direction: column; align-items: stretch; gap: 7px; }
+.appearance-backgrounds .appearance-option i { height: 45px; background: radial-gradient(ellipse at 75% 0%,#284c5c,#08111e); background-size: cover; background-position: center; }
+.appearance-backgrounds .appearance-option:first-child i { background: repeating-linear-gradient(0deg,transparent 0 11px,#0a1b1b80 11px 12px),repeating-linear-gradient(90deg,#59665c 0 18px,#253b34 18px 20px); border: 1px solid #9d8b56; }
+.appearance-upload { display: flex; gap: 9px; align-items: center; margin-top: 8px; min-height: 25px; }
+.appearance-upload label { position: relative; color: #b7d299; background: #b7d2990b; border: 1px solid #b7d29940; font-size: 10px; padding: 4px 8px; white-space: nowrap; cursor: pointer; }
+.appearance-upload input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+.appearance-upload > span { font-size: 9px; color: #8198a7; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; flex: 1; }
+#settings-panel .appearance-upload button, #settings-panel .appearance-bottom button { color: #a8bdc9; background: transparent; border: 0; font: 10px var(--md-font-ui); cursor: pointer; padding: 4px; }
+.appearance-environment { margin-top: 12px; border-top: 1px solid #a9bec624; }
+.appearance-environment .mantine-Checkbox-label { font-size: 11px; }
+.appearance-opacity { display: flex; align-items: center; gap: 12px; margin-top: 10px; font-size: 10px; color: #a8bec9; }
+.appearance-opacity input { flex: 1; min-width: 0; }
+.appearance-opacity output { width: 30px; text-align: right; color: #cae69f; font-variant-numeric: tabular-nums; }
+.appearance-environment p { color: #7f97a6; font-size: 10px; line-height: 1.7; margin-top: 10px; }
+.appearance-bottom { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; border-top: 1px solid #a9bec624; padding-top: 7px; font-size: 9px; color: #748d9b; }
+.appearance-error { position: sticky; top: 0; z-index: 1; color: #f2a5a5; background: #30212a; border: 1px solid #e89b9b60; padding: 8px; font-size: 11px; margin-bottom: 10px; line-height: 1.5; }
+#settings-panel .appearance-option:disabled { opacity: .5; cursor: wait; }
+@media (max-width: 480px) { .appearance-options { gap: 4px; } #settings-panel .appearance-sleeves .appearance-option { flex-direction: column; gap: 5px; } .appearance-mini-field { right: 70px; width: 150px; } .appearance-preview-label { font-size: 6px; } }

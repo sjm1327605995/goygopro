@@ -1,0 +1,80 @@
+/* Live-duel layout. The replay theater and classic parity fixtures keep their geometry. */
+:is(#app,#root) .duel-stage.duel-stage--arena {
+  --arena-panel: linear-gradient(145deg, #15232ff5, #0b131ef5);
+  --arena-line: #9cb9cd30;
+  --neos-accent: #c8ee4a;
+  --neos-accent-soft: #c8ee4a19;
+  background: #080f18;
+}
+.duel-stage--arena::before {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: 23.4375%;
+  background: linear-gradient(125deg, #162632, #0b131e 75%); border-right: 1px solid #a9c2d32b;
+  pointer-events: none;
+}
+.duel-stage.duel-stage--arena #duel-canvas-container {
+  position: absolute; left: 23.4375%; right: 0; top: 13.75%; bottom: 11.875%;
+  width: auto; height: auto;
+}
+.duel-stage--arena .arena-identity { left: 120px; top: 17px; width: 108px; display: flex; flex-direction: column; gap: 5px; pointer-events: none; }
+.arena-identity strong { color: #cadbdf; font: 600 12px var(--md-font-display); letter-spacing: .14em; }
+.arena-identity span { color: #768d9c; font-size: 8px; letter-spacing: .16em; }
+:is(#app,#root) .duel-stage.duel-stage--arena .card-preview-panel { display: block; left: 12px; top: 58px; width: 216px; height: 466px; }
+:is(#app,#root) .duel-stage.duel-stage--arena .preview-image-box { left: 0; top: 0; width: 216px; height: 244px; border: 1px solid var(--arena-line); border-radius: 2px; background: radial-gradient(ellipse at 50% 30%,#29424d,#0a131e 80%); }
+:is(#app,#root) .duel-stage.duel-stage--arena .preview-image-box .native-card-image { position: absolute; inset: 8px; display: flex; align-items: center; justify-content: center; }
+:is(#app,#root) .duel-stage.duel-stage--arena .preview-image { position: static; width: 100%; height: 100%; object-fit: contain; background: transparent; }
+.arena-preview-empty { margin: 18px 0; text-align: center; color: #7e95a4; font-size: 11px; line-height: 1.8; }
+:is(#app,#root) .duel-stage.duel-stage--arena .preview-winfos { left: 0; top: 253px; width: 216px; height: 213px; padding: 8px; border: 1px solid var(--arena-line); background: #0a141fc9; border-radius: 2px; }
+:is(#app,#root) .duel-stage.duel-stage--arena button.preview-tab { border-radius: 0; background: transparent; border: 0; border-bottom: 1px solid var(--arena-line); font-size: 10px; padding: 5px 0 8px; box-shadow: none; color: #8ea6b5; }
+:is(#app,#root) .duel-stage.duel-stage--arena button.preview-tab.active { color: #def2ae; border-bottom-color: #c8ee4a; background: #c8ee4a08; box-shadow: none; }
+:is(#app,#root) .duel-stage.duel-stage--arena .preview-info { gap: 6px; padding-top: 8px; }
+:is(#app,#root) .duel-stage.duel-stage--arena .preview-name { font-size: 12px; color: #e7eedb; text-align: left; }
+:is(#app,#root) .duel-stage.duel-stage--arena .preview-type,
+:is(#app,#root) .duel-stage.duel-stage--arena .preview-stats { font-size: 10px; }
+:is(#app,#root) .duel-stage.duel-stage--arena .preview-desc { font-size: 11px; line-height: 1.7; color: #b7c9d4; }
+:is(#app,#root) .duel-stage.duel-stage--arena .player-state-panel { top: 14px; width: 310px; height: 66px; padding: 7px 12px; border-radius: 2px; background: var(--arena-panel); border: 1px solid var(--arena-line); box-shadow: 0 4px 14px #0003; }
+:is(#app,#root) .duel-stage.duel-stage--arena #player-panel { left: 254px; }
+:is(#app,#root) .duel-stage.duel-stage--arena #opponent-panel { left: 700px; right: auto; }
+:is(#app,#root) .duel-stage.duel-stage--arena .player-state-panel.is-turn { border-color: #bbd97199; box-shadow: inset 2px 0 #c8ee4a, 0 4px 18px #0003; }
+:is(#app,#root) .duel-stage.duel-stage--arena .player-state-head { order: 0; line-height: 16px; margin: 0; }
+:is(#app,#root) .duel-stage.duel-stage--arena .player-state-name { max-width: 185px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; font-size: 11px; letter-spacing: .04em; }
+:is(#app,#root) .duel-stage.duel-stage--arena .player-turn-chip { display: inline-block; border-radius: 1px; padding: 0 5px; font-size: 8px; color: #d4e8a2; }
+:is(#app,#root) .duel-stage.duel-stage--arena .lp-frame { margin-top: 4px; height: 24px; border: 1px solid #8aabba30; border-radius: 1px; }
+:is(#app,#root) .duel-stage.duel-stage--arena .lp-value { font: 600 19px var(--md-font-display); letter-spacing: .05em; }
+:is(#app,#root) .duel-stage.duel-stage--arena .lp-track { inset: 0; opacity: .48; border-radius: 0; }
+:is(#app,#root) .duel-stage.duel-stage--arena .lp-fill { border-radius: 0; }
+:is(#app,#root) .duel-stage.duel-stage--arena .player-state-row { display: flex; gap: 5px; font-size: 7px; line-height: 10px; margin-top: 3px; }
+:is(#app,#root) .duel-stage.duel-stage--arena .pile-counter b { color: #b7c9d6; }
+:is(#app,#root) .duel-stage.duel-stage--arena .time-limit-bar { top: 27px; left: auto; right: 12px; width: 75px; height: 3px; border-radius: 0; z-index: 2; }
+:is(#app,#root) .duel-stage.duel-stage--arena #opponent-panel .time-limit-bar { left: 12px; right: auto; }
+:is(#app,#root) .duel-stage.duel-stage--arena .turn-block { left: 586px; top: 23px; width: 92px; height: 46px; padding-top: 11px; clip-path: none; border: 1px solid var(--arena-line); border-radius: 2px; background: #11202c; font: 600 22px var(--md-font-display); }
+:is(#app,#root) .duel-stage.duel-stage--arena .turn-block::before { content: 'TURN'; position: absolute; top: 6px; color: #a8c481; font: 500 7px var(--md-font-ui); letter-spacing: .22em; }
+:is(#app,#root) .duel-stage.duel-stage--arena .phase-strip { left: 628px; top: 586px; right: auto; width: 382px; height: 40px; }
+:is(#app,#root) .duel-stage.duel-stage--arena .phase-buttons { display: flex; align-items: center; gap: 8px; width: 100%; height: 40px; padding: 5px; border: 1px solid var(--arena-line); background: #101c28ed; }
+:is(#app,#root) .duel-stage.duel-stage--arena .phase-btn { position: static; width: auto; flex: 1; height: 28px; border-radius: 1px; font-size: 11px; }
+:is(#app,#root) .duel-stage.duel-stage--arena button.phase-btn.actionable { background: #c8ee4a19; border-color: #c8ee4a80; color: #dcecba; }
+:is(#app,#root) .duel-stage.duel-stage--arena button.phase-btn.actionable:hover { background: #c8ee4a; color: #172310; }
+:is(#app,#root) .duel-stage.duel-stage--arena .hint-bar { left: 402px; top: 91px; width: 460px; height: auto; min-height: 26px; padding: 5px 12px; line-height: 1.5; white-space: normal; font-size: 11px; border-radius: 2px; border-color: #c8ee4a50; background: #111e2aec; }
+:is(#app,#root) .duel-stage.duel-stage--arena .right-controls { left: 12px; top: 540px; width: 216px; height: 87px; }
+:is(#app,#root) .duel-stage.duel-stage--arena .chain-group { left: 0; top: 0; width: 216px; display: flex; flex-direction: row; gap: 4px; }
+:is(#app,#root) .duel-stage.duel-stage--arena .chain-btn { width: 69px; height: 27px; border-radius: 1px; font-size: 9px; }
+:is(#app,#root) .duel-stage.duel-stage--arena button.chain-btn.pressed { background: #c8ee4a20; color: #e0f3b7; border-color: #c8ee4a80; box-shadow: none; }
+:is(#app,#root) .duel-stage.duel-stage--arena .surrender-btn,
+:is(#app,#root) .duel-stage.duel-stage--arena .leave-game-btn { position: absolute; left: 0; bottom: 0; width: 216px; height: 27px; border-radius: 1px; font-size: 10px; color: #ba9398; border-color: #ad6e743d; background: #221d26; }
+:is(#app,#root) .duel-stage.duel-stage--arena #shuffle-hand-btn { left: 0; top: 31px; width: 216px; height: 23px; }
+:is(#app,#root) .duel-stage.duel-stage--arena #spectator-swap-btn { position: static; width: 216px; margin: 0; }
+:is(#app,#root) .duel-stage.duel-stage--arena .surrender-confirm { position: fixed; }
+:is(#app,#root) .duel-stage.duel-stage--arena .chat-overlay { left: 254px; right: auto; bottom: 14px; width: 358px; }
+:is(#app,#root) .duel-stage.duel-stage--arena .chat-overlay input { height: 28px; border-radius: 1px; border-color: var(--arena-line); background: #0f1c28; font-size: 10px; }
+:is(#app,#root) .duel-stage.duel-stage--arena .chat-messages { max-height: 90px; }
+:is(#app,#root) .duel-stage.duel-stage--arena .chat-line { font-size: 10px; background: #0b1723e6; }
+:is(#app,#root) .duel-stage.duel-stage--arena .card-select-bar { left: 458px; top: 542px; width: 350px; height: 30px; }
+:is(#app,#root) .duel-stage.duel-stage--arena .card-select-bar button { width: 100%; height: 30px; }
+:is(#app,#root) .duel-stage.duel-stage--arena button:focus-visible { outline: 2px solid #c8ee4a; outline-offset: 2px; }
+#app:has(#duel-screen) #btn-open-settings { left: 12px; right: auto; }
+#app:has(#duel-screen) #btn-sound-toggle { left: 54px; right: auto; }
+/* The classic parity layer hides these globally; the arena reserves a toolbar. */
+:is(#app,#root) #app:has(#duel-screen .duel-stage--arena) #btn-open-settings,
+:is(#app,#root) #app:has(#duel-screen .duel-stage--arena) #btn-sound-toggle { display: flex !important; }
+@media (prefers-reduced-motion: reduce) {
+  .duel-stage--arena *, .duel-stage--arena *::before { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

@@ -1,0 +1,81 @@
+/* Master Duel inspired home. Geometry follows the existing 1024 × 640 canvas. */
+#main-menu-screen.screen {
+  background: radial-gradient(ellipse at 77% 40%, #153443 0%, #0b1721 30%, #060b12 66%);
+}
+#main-menu-screen.screen::before {
+  background: repeating-linear-gradient(0deg, #ffffff02 0 1px, transparent 1px 4px), linear-gradient(125deg, transparent 45%, #6e9cba0a 45.1%, #6e9cba04 70%, transparent 70.1%);
+}
+#main-menu-screen.screen::after { background: linear-gradient(0deg, #03070ed9, transparent 35%); }
+#main-menu-window.gfw-window {
+  inset: 0; width: 1024px; height: 640px; transform: none; border: 0;
+  border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none; overflow: hidden;
+}
+#main-menu-window .gfw-body { position: absolute; inset: 0; padding: 0; }
+#main-menu-window .gfw-title {
+  position: absolute; right: 36px; bottom: 10px; z-index: 5; height: auto; padding: 0;
+  background: none; border: 0; box-shadow: none; clip-path: none; color: #657585;
+  font-size: 7px; letter-spacing: .12em;
+}
+.mdm-stage { position: absolute; inset: 0; pointer-events: none; }
+.mdm-stage-slab { position: absolute; top: -160px; left: 520px; width: 220px; height: 950px; transform: rotate(35deg); border-left: 1px solid #a9c9e019; background: #98c6e005; }
+.mdm-stage-slab--b { left: 880px; width: 90px; background: #c8ee4a04; }
+.mdm-stage-line { position: absolute; width: 460px; height: 1px; right: -40px; top: 130px; background: #afc7d82b; transform: rotate(-45deg); }
+.mdm-stage-line--b { top: 510px; right: 80px; width: 140px; background: #c8ee4a65; }
+.mdm-topbar { position: absolute; inset: 26px 36px auto; height: 62px; z-index: 4; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #b5c9d51c; padding-bottom: 17px; }
+.mdm-player { display: flex; align-items: center; gap: 12px; }
+.mdm-avatar { width: 42px; height: 42px; display: grid; place-items: center; background: linear-gradient(135deg,#263c45,#0d161e); border: 1px solid #bddb7180; clip-path: polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px); }
+.mdm-avatar-initial { color: var(--md-lime); font: 500 23px var(--md-font-display); }
+.mdm-player-copy { display: flex; flex-direction: column; gap: 5px; }
+.mdm-player-name { color: #edf3f6; font-size: 14px; font-weight: 600; letter-spacing: .06em; }
+.mdm-level { font-size: 7px; color: #899ba9; letter-spacing: .15em; }
+.mdm-topright { margin-right: 100px; display: flex; align-items: center; gap: 22px; }
+.mdm-brand { font: 600 16px var(--md-font-display); letter-spacing: .17em; color: #edf2f5; }
+.mdm-status { display: flex; gap: 10px; align-items: center; }
+.mdm-status-item { color: #7b909f; font-size: 7px; letter-spacing: .12em; display: flex; align-items: center; gap: 5px; }
+.mdm-status-item + .mdm-status-item { border-left: 1px solid #ffffff26; padding-left: 10px; }
+.mdm-chip-dot { width: 4px; height: 4px; background: var(--md-lime); border-radius: 50%; }
+.mdm-intro { position: absolute; top: 123px; left: 48px; z-index: 3; }
+.mdm-eyebrow { display: block; color: #bbd976; font: 500 8px var(--md-font-ui); letter-spacing: .24em; }
+.mdm-intro h1 { margin-top: 14px; font: 700 35px/1.3 var(--md-font-ui); letter-spacing: .055em; color: #f1f4f4; }
+.mdm-intro h1 span { color: var(--md-lime); }
+.mdm-intro-sub { margin-top: 12px; font-size: 10px; color: #8a9ca9; letter-spacing: .07em; }
+#main-menu-window .mdm-menu { position: absolute; top: 285px; left: 48px; width: 330px; display: flex; flex-direction: column; gap: 6px; z-index: 4; }
+#main-menu-window .mdm-item.ui-btn {
+  position: relative; width: 100%; height: 40px; min-height: 0; padding: 0 18px;
+  border: 1px solid #c3d2df26; border-left: 2px solid #9cae7780; border-radius: 0;
+  background: linear-gradient(100deg,#1e3039c9,#101b2490); box-shadow: none;
+  font: 600 14px var(--md-font-ui); color: #e8edf0; letter-spacing: .12em;
+  transition: background .18s, border-color .18s, transform .18s;
+}
+#main-menu-window .mdm-item .mantine-Button-inner { justify-content: flex-start; }
+#main-menu-window .mdm-item .mantine-Button-label { overflow: visible; }
+#main-menu-window .mdm-item--lan.ui-btn { height: 58px; margin-bottom: 4px; border: 1px solid #d8f595; background: linear-gradient(105deg,#d0ec78,#a5cf46); color: #182315; font-size: 24px; clip-path: polygon(0 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%); }
+#main-menu-window .mdm-item--exit.ui-btn { width: 110px; height: 28px; border: none; background: transparent; padding-left: 0; color: #8796a2; font-size: 10px; }
+#main-menu-window .mdm-item::after { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); font: 500 7px var(--md-font-ui); letter-spacing: .16em; color: #8faaa9; pointer-events: none; }
+#main-menu-window .mdm-item--lan::after { content: 'DUEL  ↗'; color: #30451c; font-size: 11px; }
+#main-menu-window .mdm-item--single::after { content: 'SOLO / 02'; }
+#main-menu-window .mdm-item--replay::after { content: 'REPLAY / 03'; }
+#main-menu-window .mdm-item--deck::after { content: 'DECK / 04'; }
+#main-menu-window .mdm-item.ui-btn:hover { border-color: #c8ee4a9c; background: #33483b; color: #e4ffa4; transform: translateX(4px); box-shadow: none; }
+#main-menu-window .mdm-item--lan.ui-btn:hover { background: #dcf89c; color: #182315; }
+#main-menu-window .mdm-item.ui-btn:focus-visible { outline: 2px solid #edffbd; outline-offset: 2px; }
+.mdm-showcase { position: absolute; left: 430px; top: 90px; width: 580px; height: 488px; z-index: 2; pointer-events: none; }
+.mdm-monster-art { position: absolute; inset: 5px -10px 20px; background: url('../textures/blue-eyes-art.webp') center/cover; mix-blend-mode: screen; filter: saturate(.6) contrast(1.16); mask-image: radial-gradient(ellipse 52% 54% at 50% 47%,#000 28%,#000b 52%,transparent 91%); animation: mdm-reveal .9s ease-out both; }
+.mdm-orbit { position: absolute; width: 430px; height: 430px; top: 18px; left: 68px; border: 1px solid #a5d0d92b; border-radius: 50%; transform: rotate(-25deg) scaleY(.84); }
+.mdm-orbit--inner { inset: 45px auto auto 94px; width: 378px; height: 378px; border-style: dashed; border-color: #c8ee4a24; }
+.mdm-orbit--outer::before, .mdm-orbit--outer::after { content: ''; position: absolute; width: 5px; height: 5px; background: #c8ee4a; box-shadow: 0 0 12px #c8ee4a80; left: 62px; top: 62px; }
+.mdm-orbit--outer::after { left: auto; top: auto; bottom: 62px; right: 62px; }
+.mdm-art-index { position: absolute; top: 34px; right: 16px; writing-mode: vertical-rl; font-size: 6px; letter-spacing: .25em; color: #68858f; }
+.mdm-showcase figcaption { position: absolute; left: 98px; bottom: 8px; display: flex; flex-direction: column; gap: 10px; border-left: 2px solid #c8ee4a; padding-left: 15px; }
+.mdm-showcase figcaption strong { font: 600 25px var(--md-font-ui); letter-spacing: .22em; color: #e8f0f1; }
+.mdm-monster-stats { display: flex; align-items: center; gap: 7px; color: #8dabb6; font: 400 8px var(--md-font-ui); letter-spacing: .1em; }
+.mdm-monster-stats i { width: 18px; height: 1px; background: #83999b; margin: 0 5px; }
+.mdm-monster-stats b { color: #d8e5e5; font-weight: 500; }
+.mdm-topics { position: absolute; bottom: 61px; left: 48px; width: 330px; border-top: 1px solid #a8bdca30; padding-top: 10px; z-index: 3; }
+.mdm-topics-head { display: flex; justify-content: space-between; color: #92a5ae; font-size: 7px; letter-spacing: .18em; }
+.mdm-topics-head span:last-child { color: #596e7b; font-size: 6px; }
+.mdm-topics-title { margin-top: 10px; color: #c7d4dc; font-size: 11px; }
+.mdm-topics-sub { margin-top: 5px; color: #718794; font-size: 8px; }
+#main-menu-window .menu-foot { position: absolute; bottom: 27px; left: 36px; right: 36px; display: flex; justify-content: space-between; padding-top: 12px; border-top: 1px solid #a8bdca1c; color: #5e7380; font-size: 6px; letter-spacing: .14em; }
+@keyframes mdm-reveal { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { #main-menu-window *, #main-menu-window *::after { animation: none; transition: none; } }

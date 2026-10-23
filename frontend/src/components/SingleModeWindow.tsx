@@ -3,6 +3,7 @@ import { WailsBridge } from '../wails_bridge.ts';
 import UiButton from '../ui/UiButton.tsx';
 import { UiCheckbox } from '../ui/UiInput.tsx';
 import DesignSpace from '../ui/DesignSpace.tsx';
+import ScreenHeading from '../ui/ScreenHeading.tsx';
 
 /**
  * 波 J：单人模式窗口 — 布局源自原版 wSinglePlay（game.cpp:848-890）。
@@ -47,9 +48,9 @@ export default function SingleModeWindow({ onNavigate, onStart }: SingleModeWind
     <div
       id="single-screen"
       className="screen active"
-      style={{ background: "url('../textures/bg_menu.jpg') center/cover no-repeat" }}
     >
       <DesignSpace>
+      <ScreenHeading title="单人模式" subtitle="SOLO / 磨练战术，解开残局" />
       <div className="gfw-window gfw-single">
         <div className="gfw-title">单人模式</div>
         {/* 内容区 446px（470-24 标题）；坐标沿用原版窗口相对 y-24

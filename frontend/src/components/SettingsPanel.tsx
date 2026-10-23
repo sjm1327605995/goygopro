@@ -13,6 +13,7 @@ import UiButton from '../ui/UiButton.tsx';
 import { UiCheckbox } from '../ui/UiInput.tsx';
 import GfwSelect from './ui/GfwSelect.tsx';
 import { WailsBridge } from '../wails_bridge.ts';
+import AppearancePanel from './AppearancePanel.tsx';
 
 /** 原版 chkLFlist+cbLFlist（game.cpp:473-480）：勾选启用禁限卡表并选表，
  *  表序号写入 default_lflist（use_lflist=0 = N/A 无限制） */
@@ -104,7 +105,7 @@ function SpeedRow({ k, label }: { k: string; label: string }) {
 }
 
 export default function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [tab, setTab] = useState<'system' | 'helper'>('system');
+  const [tab, setTab] = useState<'system' | 'helper' | 'appearance'>('system');
 
   return (
     <GameDialog open={open}>
@@ -112,16 +113,21 @@ export default function SettingsPanel({ open, onClose }: { open: boolean; onClos
         <div id="settings-panel" className="modal-box settings-panel gfw-window" style={{ position: 'static', transform: 'none', width: '460px' }}>
           <div className="gfw-title">环境设置</div>
           <div className="settings-tabs">
-            <div
+            <button
+              type="button"
+              aria-pressed={tab === 'system'}
               className={`settings-tab${tab === 'system' ? ' active' : ''}`}
               data-tab="system"
               onClick={() => setTab('system')}
-            >系统设定</div>
-            <div
+            >系统设定</button>
+            <button
+              type="button"
+              aria-pressed={tab === 'helper'}
               className={`settings-tab${tab === 'helper' ? ' active' : ''}`}
               data-tab="helper"
               onClick={() => setTab('helper')}
-            >辅助功能</div>
+            >辅助功能</button>
+            <button type="button" aria-pressed={tab === 'appearance'} className={`settings-tab${tab === 'appearance' ? ' active' : ''}`} data-tab="appearance" onClick={() => setTab('appearance')}>决斗外观</button>
           </div>
           {tab === 'system' ? (
             <div className="settings-body" data-page="system">
@@ -139,7 +145,7 @@ export default function SettingsPanel({ open, onClose }: { open: boolean; onClos
               <CheckRow k="music_mode" label="随机播放音乐" hint="music_mode：BGM 各场景多套音型随机（原版 chkMusicMode）" />
               <LFListRow />
             </div>
-          ) : (
+          ) : tab === 'appearance' ? <AppearancePanel /> : (
             <div className="settings-body" data-page="helper">
               <CheckRow k="automonsterpos" label="自动选择怪兽卡片位置" />
               <CheckRow k="autospellpos" label="自动选择魔陷卡片位置" />

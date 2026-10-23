@@ -16,7 +16,7 @@ import { DesignScaleContext } from '../ui/DesignSpace.tsx';
 import { PHASE_ABBR } from '../domain/original_phases.ts';
 import { PHASE_BATTLE, PHASE_MAIN2, PHASE_END } from '../domain/constants.ts';
 
-export default function PhaseStrip({ bannerOnly = false }: { bannerOnly?: boolean } = {}) {
+export default function PhaseStrip({ bannerOnly = false, descriptive = false }: { bannerOnly?: boolean; descriptive?: boolean } = {}) {
   const state = useSyncExternalStore(duelStore.subscribe, duelStore.getState);
   const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot);
   const scale = useContext(DesignScaleContext);
@@ -94,21 +94,21 @@ export default function PhaseStrip({ bannerOnly = false }: { bannerOnly?: boolea
             disabled={!canBP}
             style={{display:canBP?'block':'none',left:160}}
             onClick={onBP}
-          >ＢＰ</button>
+          >{descriptive ? '战斗阶段' : 'ＢＰ'}</button>
           <button
             id="phase-btn-m2"
             className={`phase-btn${(phase & PHASE_MAIN2) ? ' current-phase' : ''}${canM2 ? ' actionable' : ''}`}
             disabled={!canM2}
             style={{display:canM2?'block':'none',left:160}}
             onClick={onM2}
-          >Ｍ２</button>
+          >{descriptive ? '主要阶段 2' : 'Ｍ２'}</button>
           <button
             id="phase-btn-ep"
             className={`phase-btn${(phase & PHASE_END) ? ' current-phase' : ''}${canEP ? ' actionable' : ''}`}
             disabled={!canEP}
             style={{display:canEP?'block':'none',left:320}}
             onClick={onEP}
-          >ＥＰ</button>
+          >{descriptive ? '结束回合' : 'ＥＰ'}</button>
         </div>
       )}
       {bannerNode}

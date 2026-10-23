@@ -109,30 +109,34 @@ export default function App() {
     <div id="app">
       <button
         id="btn-sound-toggle"
-        style={{
-          position: 'fixed', top: '16px', right: '16px', zIndex: 999,
-          background: 'rgba(0,0,0,0.6)', border: '1px solid var(--border-cyan)',
-          borderRadius: '50%', width: '40px', height: '40px', color: '#fff',
-          fontSize: '18px', cursor: 'pointer', display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-        }}
+        className="app-utility-btn"
+        aria-label={muted ? '开启音效' : '静音'}
+        aria-pressed={!muted}
         onClick={toggleMute}
       >
-        {muted ? '🔇' : '🔊'}
+        <svg className="app-utility-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z" />
+          {muted ? (
+            <path d="M16 9l5 6M21 9l-5 6" />
+          ) : (
+            <>
+              <path d="M16 8.5a5 5 0 0 1 0 7" />
+              <path d="M18.6 6a8.5 8.5 0 0 1 0 12" />
+            </>
+          )}
+        </svg>
       </button>
       <button
         id="btn-open-settings"
-        style={{
-          position: 'fixed', top: '16px', right: '64px', zIndex: 999,
-          background: 'rgba(0,0,0,0.6)', border: '1px solid var(--border-cyan)',
-          borderRadius: '50%', width: '40px', height: '40px', color: '#fff',
-          fontSize: '18px', cursor: 'pointer', display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-        }}
+        className="app-utility-btn"
+        aria-label="环境设置"
         onClick={() => setSettingsOpen(true)}
         title="环境设置"
       >
-        ⚙
+        <svg className="app-utility-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3.2" />
+          <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.86a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.96 4.5a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.03z" />
+        </svg>
       </button>
 
       {screen === 'menu' && (
