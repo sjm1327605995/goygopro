@@ -1,69 +1,66 @@
-/* gframe's 1024x640 GUI geometry and Irrlicht's classic controls.
-   Scoped to the two screens being ported; texture artwork is unchanged. */
-:is(#app,#root) #deck-screen, :is(#app,#root) .duel-stage { font-family:'Microsoft YaHei',sans-serif; font-size:12px; }
+/* ==================================================================
+   原 C++ gframe 的像素几何（仅几何/交互语义，皮肤已全部退役）。
+
+   历史背景：这份文件曾是 Irrlicht 灰色斜面的精确复刻，凭着
+   `:is(#app,#root)` 的高特异性最后覆盖所有皮肤。UI 重做后皮肤统一由
+   style.css / ui-kit.css / duel-original.css / duel-neos.css 提供，
+   这里只保留冒烟测试锁定的排版坐标与不可替代的素材引用：
+
+   - 卡组界面的行坐标 / 搜索结果格 / 卡表 atlas（lim.png）
+   - 原版手牌无障碍折叠层、native-card-image 图片铺满规则
+   - 卡组/决斗界面隐藏全局设置与音量按钮的语义
+
+   决斗 HUD 的像素落点已迁至 duel-original.css 末尾的「HUD 像素落点」
+   区块——HUD 几何的唯一事实源在那里，本文件不再覆盖。
+   ================================================================== */
+
+/* ---- 鼠标事件分派：预览面板让 3D/卡表可点，信息区自身可滚动 ---- */
 :is(#app,#root) #deck-screen .card-inspector { pointer-events:none; }
-:is(#app,#root) #deck-screen .inspector-pic-frame, :is(#app,#root) #deck-screen .inspector-infos { pointer-events:auto; }
-:is(#app,#root) #deck-screen .inspector-pic-frame, :is(#app,#root) .preview-image-box { background:rgba(192,192,192,.75); border:1px solid #808080; border-radius:0; box-shadow:none; }
-:is(#app,#root) #deck-screen .inspector-infos, :is(#app,#root) .preview-winfos { border-radius:0; background:rgba(192,192,192,.88); color:#000; box-shadow:none; }
-:is(#app,#root) #deck-screen .inspector-details, :is(#app,#root) #deck-screen .inspector-meta, :is(#app,#root) #deck-screen .inspector-desc, :is(#app,#root) .preview-info, :is(#app,#root) .preview-type, :is(#app,#root) .preview-attr, :is(#app,#root) .preview-desc, :is(#app,#root) .preview-log-line { color:#000; font-weight:normal; }
-:is(#app,#root) #deck-screen .inspector-name, :is(#app,#root) .preview-name { color:#000; background:none; border:0; text-shadow:none; font-size:12px; font-weight:normal; }
-:is(#app,#root) #deck-screen .inspector-tab, :is(#app,#root) .preview-tab { border-radius:0; color:#000; border:1px solid #808080; background:#c0c0c0; font-size:12px; }
-:is(#app,#root) #deck-screen .inspector-tab.active, :is(#app,#root) .preview-tab.active { color:#000; background:#dedede; }
-:is(#app,#root) #deck-screen .deck-header, :is(#app,#root) #deck-screen .deck-search-panel { border-radius:0; box-shadow:none; background:rgba(192,192,192,.88); border:1px solid #808080; }
-:is(#app,#root) #deck-screen .deck-header { padding:0; gap:0; }
+:is(#app,#root) #deck-screen .inspector-pic-frame,
+:is(#app,#root) #deck-screen .inspector-infos { pointer-events:auto; }
+
+/* ---- 卡组界面：原版 wDeck 的绝对坐标 ---- */
 :is(#app,#root) #deck-screen .deck-header-row { position:absolute; left:5px; width:285px; height:25px; }
 :is(#app,#root) #deck-screen .deck-header-row:nth-of-type(2) { top:5px; }
 :is(#app,#root) #deck-screen .deck-header-row:nth-of-type(3) { top:35px; }
 :is(#app,#root) #deck-screen .deck-header-row:nth-of-type(4) { top:65px; }
 :is(#app,#root) #deck-screen .deck-header-row:nth-of-type(5) { top:95px; }
-:is(#app,#root) #deck-screen .gfw-label { color:#000; font-size:12px; }
-:is(#app,#root) #deck-screen .ui-btn, :is(#app,#root) #deck-screen .form-select, :is(#app,#root) #deck-screen .form-input, :is(#app,#root) .duel-stage button:not(.hand-card-item) {
-  color:#000; border-radius:0; background:#c0c0c0; border:1px solid;
-  border-color:#fff #404040 #404040 #fff; box-shadow:inset -1px -1px #808080;
-  text-shadow:none; font-family:inherit; font-weight:normal; transition:none; animation:none;
+:is(#app,#root) #deck-screen .deck-header { padding:0; gap:0; }
+
+/* 禁止张数徽标走 lim.png 图集（冒烟断言 background-image 含 lim） */
+:is(#app,#root) #deck-screen .deck-limit-badge {
+  width:20px; height:20px; top:0; left:0; border:0; border-radius:0;
+  background-image:url('../textures/lim.png'); background-size:40px 40px;
+  background-color:transparent;
 }
-:is(#app,#root) #deck-screen .ui-input { background:#fff; color:#000; border:1px solid #808080; border-radius:0; }
-:is(#app,#root) #deck-screen .ui-btn:hover, :is(#app,#root) .duel-stage button:not(.hand-card-item):hover { background:#c0c0c0; box-shadow:inset -1px -1px #808080; }
-:is(#app,#root) #deck-screen .ui-btn:active, :is(#app,#root) .duel-stage button.pressed, :is(#app,#root) .duel-stage button.current { border-color:#404040 #fff #fff #404040; box-shadow:inset 1px 1px #808080; }
-:is(#app,#root) .duel-stage button:disabled { color:#808080; cursor:default; }
-:is(#app,#root) #deck-screen .deck-limit-badge { width:20px; height:20px; top:0; left:0; border:0; border-radius:0; background-image:url('../textures/lim.png'); background-size:40px 40px; background-color:transparent; }
 :is(#app,#root) #deck-screen .deck-limit-0 { background-position:0 0; }
 :is(#app,#root) #deck-screen .deck-limit-1 { background-position:-20px 0; }
 :is(#app,#root) #deck-screen .deck-limit-2 { background-position:0 -20px; }
 :is(#app,#root) #deck-screen .deck-count-badge { display:none; }
+
 :is(#app,#root) #deck-screen .deck-results { position:absolute; left:804px; top:136px; display:block; }
 :is(#app,#root) #deck-screen #deck-result-count { width:122px; height:21px; }
-:is(#app,#root) #deck-screen .deck-sort-row { position:absolute; left:126px; top:-4px; width:90px; height:24px; background:#c0c0c0; padding:2px 5px 2px 10px; }
+:is(#app,#root) #deck-screen .deck-sort-row { position:absolute; left:126px; top:-4px; width:90px; height:24px; padding:2px 5px 2px 10px; }
 :is(#app,#root) #deck-result-sort { width:75px; }
 :is(#app,#root) #deck-screen .search-results-grid { position:absolute; left:0; top:23px; width:216px; height:471px; padding:5px; }
-:is(#app,#root) #deck-screen .deck-result-row { flex-shrink:0; width:100%; height:66px; padding:0; border:0; border-radius:0; box-shadow:none; background:none; gap:5px; }
-:is(#app,#root) #deck-screen .deck-result-row:hover { background:rgba(0,0,0,.5); box-shadow:none; border:0; transform:none; }
+:is(#app,#root) #deck-screen .deck-result-row { flex-shrink:0; width:100%; height:66px; padding:0; border:0; gap:5px; }
 :is(#app,#root) #deck-screen .deck-result-thumb { width:44px; height:64px; min-width:44px; }
-:is(#app,#root) #deck-screen .deck-result-name { font-weight:normal; font-size:12px; }
-:is(#app,#root) #deck-screen .deck-result-stats, :is(#app,#root) #deck-screen .deck-section-title .badge { color:#fff; }
-:is(#app,#root) .original-hand-accessibility { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; pointer-events:none; }
+:is(#app,#root) #deck-screen .deck-result-name { font-size:12px; }
+:is(#app,#root) #deck-screen .deck-result-stats,
+:is(#app,#root) #deck-screen .deck-section-title .badge { color:#fff; }
+
+/* ---- 原版手牌的无障碍折叠层（保留视觉隐藏语义，不参与布局） ---- */
+:is(#app,#root) .original-hand-accessibility {
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip-path:inset(50%); white-space:nowrap; pointer-events:none;
+}
 :is(#app,#root) .original-hand-accessibility .hand-card-item { width:1px; height:1px; transform:none; }
-:is(#app,#root) .duel-stage .phase-strip { left:480px; top:310px; right:auto; width:375px; height:20px; display:block; }
-:is(#app,#root) .duel-stage .phase-buttons { position:relative; width:375px; height:20px; display:block; }
-:is(#app,#root) .duel-stage .phase-btn { position:absolute; top:0; left:0; width:50px; height:20px; font-size:12px; padding:0; }
-:is(#app,#root) .duel-stage #phase-status { cursor:default; opacity:1; }
-:is(#app,#root) .duel-stage .phase-banner { right:auto; bottom:auto; color:#fff; font-size:var(--banner-font-size,48px); line-height:1; }
-:is(#app,#root) .duel-stage .turn-block { position:fixed; left:632px; top:10px; width:56px; height:40px; transform:none; }
-:is(#app,#root) .duel-stage #player-panel { left:329px; top:10px; width:300px; }
-:is(#app,#root) .duel-stage #opponent-panel { left:691px; right:auto; top:10px; width:300px; }
-:is(#app,#root) .duel-stage .player-state-row, :is(#app,#root) .duel-stage .player-turn-chip { display:none; }
+
+/* 卡图铺满容器（真实卡图，不做程序化绘制） */
 :is(#app,#root) .native-card-image img { position:static; display:block; width:100%; height:100%; border:0; padding:0; border-radius:0; object-fit:contain; }
-:is(#app,#root) .duel-stage .hint-bar { left:500px; top:60px; width:320px; height:30px; transform:none; padding:0; line-height:30px; font-size:12px; border-radius:0; box-shadow:none; }
-:is(#app,#root) .duel-stage .right-controls { left:205px; top:5px; width:90px; }
-:is(#app,#root) .duel-stage .surrender-btn, :is(#app,#root) .duel-stage .leave-game-btn { height:75px; width:90px; font-size:12px; }
-:is(#app,#root) .duel-stage .chain-group { gap:5px; padding-top:20px; }
-:is(#app,#root) .duel-stage .chain-btn { width:90px; height:35px; font-size:12px; }
-:is(#app,#root) .duel-stage .chain-group { position:absolute; left:0; top:95px; padding:0; margin-top:0; gap:5px; }
-:is(#app,#root) .duel-stage .card-select-bar { left:205px; top:230px; bottom:auto; transform:none; width:90px; height:35px; padding:0; background:none; box-shadow:none; border:0; border-radius:0; }
-:is(#app,#root) .duel-stage .card-select-bar span { display:none; }
-:is(#app,#root) .duel-stage .card-select-bar button { width:90px; height:35px; }
-:is(#app,#root) #deck-screen #deck-manage-modal, :is(#app,#root) #deck-screen #dm-query { background:rgba(192,192,192,.88); color:#000; border-radius:0; box-shadow:none; }
-:is(#app,#root) #deck-screen #deck-manage-modal .modal-title { background:rgba(0,0,128,.88); color:#fff; height:24px; padding:2px 5px; font-weight:normal; }
-:is(#app,#root) .duel-stage #shuffle-hand-btn { position:absolute; left:0; top:225px; }
-:is(#app,#root) .duel-stage .modal-box, :is(#app,#root) .duel-stage .surrender-confirm { border-radius:0; box-shadow:none; background:rgba(192,192,192,.88); color:#000; }
-:is(#app,#root) #app:has(#deck-screen) #btn-open-settings, :is(#app,#root) #app:has(#deck-screen) #btn-sound-toggle, :is(#app,#root) #app:has(#duel-screen) #btn-open-settings, :is(#app,#root) #app:has(#duel-screen) #btn-sound-toggle { display:none !important; }
+
+/* ---- 全局设置/音量入口在卡组与决斗界面隐藏（原版菜单语义） ---- */
+:is(#app,#root) #app:has(#deck-screen) #btn-open-settings,
+:is(#app,#root) #app:has(#deck-screen) #btn-sound-toggle,
+:is(#app,#root) #app:has(#duel-screen) #btn-open-settings,
+:is(#app,#root) #app:has(#duel-screen) #btn-sound-toggle { display:none !important; }

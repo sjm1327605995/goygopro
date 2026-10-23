@@ -231,11 +231,14 @@ const setInputVal = (el, v) => {
     record('replay-swap-flips-store', duelStore.getState().lp[0] === lpBeforeSwap[1]
       && duelStore.getState().lp[1] === lpBeforeSwap[0], JSON.stringify(duelStore.getState().lp));
     const fSwap = window.__theaterProbe.field;
-    await waitFor(() => fSwap.camera.position.z < 0, 'camera flips');
+    // 本地座 1 未交换时相机本就在 -Z；交换后应到 +Z，换回再回 -Z。
+    // 不能写死 z<0/z>0——那会漏掉「交换其实没搬相机」的情况。
+    const localSide = fSwap.localSeat === 1 ? -1 : 1;
+    await waitFor(() => fSwap.camera.position.z * localSide < 0, 'camera flips');
     record('replay-swap-flips-camera', true);
     swapBtn.click();
     await waitFor(() => duelStore.getState().viewSwapped === false
-      && fSwap.camera.position.z > 0, 'view restored');
+      && fSwap.camera.position.z * localSide > 0, 'view restored');
     record('replay-swap-back', duelStore.getState().lp[0] === lpBeforeSwap[0]);
 
     // btnReplayExit：退出回放 → 列表窗恢复可见（原版退回 wReplay 列表态）

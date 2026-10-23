@@ -5,9 +5,9 @@ import { UiCheckbox } from '../ui/UiInput.tsx';
 import DesignSpace from '../ui/DesignSpace.tsx';
 
 /**
- * 波 J：单人模式窗口 — 1:1 对齐原版 wSinglePlay（game.cpp:848-890）。
- * 580×420 窗口、左侧谜题列表（10,10→350,350）、右侧「主要信息：」面板
- * （360,10→550,30 + 360,40→560,160）、回卡组顶端复选框（1238）、
+ * 波 J：单人模式窗口 — 布局源自原版 wSinglePlay（game.cpp:848-890）。
+ * 现窗口 660×470（css/gframe-window.css .gfw-single）；左侧谜题列表
+ * (14,10) 400×420、右侧「主要信息：」标签/卡面自 430 起、回卡组顶端复选框（1238）、
  * 确定（1211）/退出（1210）。
  * 原版的人机模式 tab 仅在 enable_bot_mode 时创建；无 bot.conf 的构建里
  * 窗口只有残局列表 —— 这里对应无 bot 模式的形态。
@@ -52,14 +52,14 @@ export default function SingleModeWindow({ onNavigate, onStart }: SingleModeWind
       <DesignSpace>
       <div className="gfw-window gfw-single">
         <div className="gfw-title">单人模式</div>
-        {/* 内容区 396px（420-24 标题）；坐标 = 原版窗口相对 y-24
+        {/* 内容区 446px（470-24 标题）；坐标沿用原版窗口相对 y-24
             （原版 tab 控件偏移 +20 已含在下列数值里，game.cpp:850/880-886） */}
-        <div className="gfw-body" style={{ padding: 0, position: 'relative', height: '396px' }}>
-          {/* 谜题列表 lstSinglePlayList (10,30)-(350,370) 340×340 */}
+        <div className="gfw-body" style={{ padding: 0, position: 'relative', height: '446px' }}>
+          {/* 谜题列表：左侧大列表 */}
           <div
             id="single-list"
-            className="gfw-list"
-            style={{ position: 'absolute', left: 10, top: 6, width: 340, height: 340 }}
+            className="gfw-list single-list"
+            style={{ position: 'absolute', left: 14, top: 10, width: 400, height: 420 }}
           >
             {singles.map((s) => (
               <div
@@ -72,29 +72,18 @@ export default function SingleModeWindow({ onNavigate, onStart }: SingleModeWind
               </div>
             ))}
             {!singles.length && (
-              <div className="gfw-list-item" style={{ color: '#7b89ab' }}>（没有找到谜题脚本）</div>
+              <div className="gfw-list-item" style={{ color: '#64748b' }}>（没有找到谜题脚本）</div>
             )}
           </div>
 
-          {/* 主要信息：stSinglePlayInfo 标签 (360,30) + 文本 (360,60)-(560,180) 200×120 */}
-          <div className="gfw-label" style={{ position: 'absolute', left: 360, top: 6, width: 190 }}>
-            主要信息：
-          </div>
-          <div
-            id="single-info"
-            style={{
-              position: 'absolute', left: 360, top: 36, width: 200, height: 120,
-              fontSize: 13, color: '#c9d6f2', whiteSpace: 'pre-wrap', overflowY: 'auto',
-            }}
-          >
-            {selectedInfo ? selectedInfo.message : ''}
+          {/* 主要信息：右侧卡片 */}
+          <div className="gfw-label single-info-label">主要信息</div>
+          <div id="single-info" className="single-info-card">
+            {selectedInfo ? selectedInfo.message : '选择左侧谜题查看说明。'}
           </div>
 
-          {/* chkSinglePlayReturnDeckTop（SysString 1238，(360,280)-(560,300)） */}
-          <label
-            className="gfw-label"
-            style={{ position: 'absolute', left: 360, top: 256, width: 200, display: 'flex', gap: 6, alignItems: 'center' }}
-          >
+          {/* chkSinglePlayReturnDeckTop（SysString 1238） */}
+          <label className="gfw-label single-return-row">
             <UiCheckbox
               id="single-return-decktop"
               checked={returnDeckTop}
@@ -103,27 +92,20 @@ export default function SingleModeWindow({ onNavigate, onStart }: SingleModeWind
             不洗切时回卡组改为回顶端
           </label>
 
-          {/* 确定 btnLoadSinglePlay (459,321)-(569,346) / 退出 btnSinglePlayCancel (459,351)-(569,376) */}
+          {error && <div id="single-error" className="single-error">{error}</div>}
+
+          {/* 确定 btnLoadSinglePlay / 退出 btnSinglePlayCancel */}
           <UiButton
             id="single-start"
-           
-            style={{ position: 'absolute', left: 459, top: 297, width: 110, height: 25 }}
+            style={{ position: 'absolute', left: 430, top: 390, width: 105, height: 34 }}
             disabled={!selected}
             onClick={start}
           >确定</UiButton>
           <UiButton
             id="single-exit"
-           
-            style={{ position: 'absolute', left: 459, top: 327, width: 110, height: 25 }}
+            style={{ position: 'absolute', left: 545, top: 390, width: 100, height: 34 }}
             onClick={() => onNavigate('menu')}
           >退出</UiButton>
-
-          {error && (
-            <div
-              id="single-error"
-              style={{ position: 'absolute', left: 360, top: 176, width: 200, color: '#f38989', fontSize: 12 }}
-            >{error}</div>
-          )}
         </div>
       </div>
       </DesignSpace>

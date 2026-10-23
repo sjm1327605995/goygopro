@@ -17,7 +17,7 @@
   top: 0;
   width: 302px;
   height: 640px;
-  color: #e8e8d0;
+  color: #e8edf5;
   font-size: 12px;
   z-index: 30;
   pointer-events: none; /* 只读列不挡场地；内部交互件各自恢复 auto */
@@ -31,7 +31,7 @@
   width: 198px;
   height: 272px;
   background: rgba(192, 192, 192, 0.75);
-  border: 1px solid #5a6a8a;
+  border: 1px solid #2b3648;
   box-sizing: border-box;
   pointer-events: auto;
 }
@@ -51,7 +51,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #4a4a4a;
+  color: #64748b;
   font-size: 12px;
 }
 
@@ -62,8 +62,8 @@
   top: 275px;
   width: 300px;
   height: 364px;
-  background: rgba(13, 17, 32, 0.97);
-  border: 1px solid #6a7a9a;
+  background: rgba(13, 19, 29, 0.97);
+  border: 1px solid #2b3648;
   border-radius: 2px;
   box-sizing: border-box;
   display: flex;
@@ -81,16 +81,17 @@
 .preview-tab {
   flex: 1;
   padding: 3px 0;
-  background: #1a2233;
-  border: 1px solid #3a4a6a;
-  color: #a8b4cc;
+  background: #1b2434;
+  border: 1px solid #334155;
+  color: #94a3b8;
   font-size: 12px;
   cursor: pointer;
 }
 
 .preview-tab.active {
-  background: #2a3a5a;
-  color: #ffe66a;
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.26), rgba(37, 99, 235, 0.14));
+  color: var(--accent-gold-bright);
+  box-shadow: inset 0 -2px 0 var(--primary);
 }
 
 .preview-info {
@@ -104,18 +105,18 @@
 
 .preview-name {
   font-weight: 700;
-  color: #ffe66a;
+  color: var(--accent-gold-bright);
   font-size: 13px;
   text-align: center; /* stName EGUIA_CENTER */
 }
 
 .preview-type,
 .preview-attr {
-  color: #a8b4cc;
+  color: #94a3b8;
 }
 
 .preview-stats {
-  color: #ffd0a0;
+  color: var(--accent-gold-bright);
   font-weight: 600;
 }
 
@@ -125,7 +126,7 @@
   min-height: 0;
   overflow-y: auto;
   line-height: 1.5;
-  color: #c8d0e0;
+  color: #c2ccdb;
   white-space: pre-wrap;
 }
 
@@ -142,7 +143,7 @@
 
 .preview-log-line {
   line-height: 1.4;
-  color: #c8d0e0;
+  color: #c2ccdb;
 }
 
 .preview-log-line.log-damage {
@@ -171,7 +172,7 @@
   background: transparent;
   border: none;
   border-radius: 0;
-  color: #e8e8d0;
+  color: #e8edf5;
   font-size: 12px;
   z-index: 30;
   pointer-events: none;
@@ -222,7 +223,7 @@
 }
 
 .player-turn-chip {
-  color: #ffd0a0;
+  color: #93c5fd;
   font-size: 11px;
 }
 
@@ -303,7 +304,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ffff00;
+  color: var(--accent-gold-bright);
   font-weight: 700;
   font-size: 15px;
   text-shadow: 1px 1px 0 #000, 2px 1px 2px #000;
@@ -320,16 +321,16 @@
 }
 
 .player-timer {
-  color: #a8b4cc;
+  color: #94a3b8;
   font-variant-numeric: tabular-nums;
 }
 
 .pile-counter {
-  color: #a8b4cc;
+  color: #94a3b8;
 }
 
 .pile-counter b {
-  color: #ffe66a;
+  color: var(--accent-gold-bright);
   font-weight: 700;
 }
 
@@ -355,7 +356,7 @@
   justify-content: center;
   font-size: 26px;
   font-weight: 900;
-  color: #ffe000;
+  color: var(--accent-gold-bright);
   text-shadow: 1px 1px 2px #000;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.05) 55%, rgba(255, 255, 255, 0.3));
   clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
@@ -384,10 +385,10 @@
   pointer-events: auto;
   width: 50px;
   height: 20px;
-  background: rgba(16, 22, 38, 0.92);
-  border: 1px solid #6a7a9a;
+  background: rgba(19, 26, 38, 0.92);
+  border: 1px solid #2b3648;
   border-radius: 2px;
-  color: #cfd6e6;
+  color: #c2ccdb;
   cursor: pointer;
   font-size: 12px;
   padding: 0;
@@ -403,10 +404,10 @@
   width: 50px;
   height: 20px;
   padding: 0;
-  background: rgba(16, 22, 38, 0.92);
-  border: 1px solid #6a7a9a;
+  background: rgba(19, 26, 38, 0.92);
+  border: 1px solid #2b3648;
   border-radius: 2px;
-  color: #6a7a96;
+  color: #94a3b8;
   font-size: 13px;
   font-weight: 700;
   cursor: not-allowed;
@@ -424,26 +425,26 @@
 .phase-btn.current-phase {
   opacity: 1;
   color: #ffffff;
-  border-color: #cfd6e6;
-  background: rgba(60, 72, 100, 0.95);
-  box-shadow: inset 0 0 6px rgba(255, 255, 255, 0.35);
+  border-color: rgba(96, 165, 250, 0.75);
+  background: rgba(59, 130, 246, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.18);
 }
 
 .phase-btn.actionable {
-  color: #ffe66a;
-  border-color: #ffe66a;
-  background: #2a3a1a;
+  color: var(--accent-gold-bright);
+  border-color: var(--accent-gold-bright);
+  background: rgba(234, 179, 8, 0.14);
   cursor: pointer;
   animation: phase-flash 1s ease-in-out infinite alternate;
 }
 
 .phase-btn.actionable:hover {
-  background: #3a4a2a;
+  background: rgba(234, 179, 8, 0.24);
 }
 
 @keyframes phase-flash {
-  from { box-shadow: 0 0 2px rgba(255, 230, 106, 0.4); }
-  to { box-shadow: 0 0 10px rgba(255, 230, 106, 0.8); }
+  from { box-shadow: 0 0 2px rgba(250, 204, 21, 0.25); }
+  to { box-shadow: 0 0 8px rgba(250, 204, 21, 0.45); }
 }
 
 /* 48pt 阶段/胜负横幅（原版 showcard 大字动画） */
@@ -521,28 +522,33 @@
   width: 320px;
   max-width: 60vw;
   padding: 6px 18px;
-  background: rgba(255, 255, 255, 0.92);
-  color: #202020;
+  background: rgba(13, 19, 29, 0.9);
+  backdrop-filter: blur(8px);
+  color: var(--text-main);
   font-size: 16px;
   font-weight: 700;
   text-align: center;
-  border: 1px solid #888;
-  border-radius: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
   z-index: 150;
   pointer-events: none;
   white-space: nowrap;
 }
 
-/* ---- 弹窗整体：原版深蓝窗体 + 金边 ---- */
+/* ---- 弹窗整体：炭黑毛玻璃 + 金边内高光（全站唯一 .modal-box 皮肤） ---- */
 .modal-box {
-  border: 1px solid #b89a5a;
-  box-shadow: 0 0 0 2px rgba(20, 26, 44, 0.9), 0 16px 48px rgba(0, 0, 0, 0.9);
-  background: rgba(16, 22, 38, 0.97);
-  border-radius: 4px;
+  background: rgba(19, 26, 38, 0.97);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  backdrop-filter: blur(14px);
+  box-shadow:
+    inset 0 1px 0 rgba(250, 204, 21, 0.18),
+    0 0 0 2px rgba(20, 26, 44, 0.9),
+    0 24px 64px rgba(0, 0, 0, 0.85);
 }
 
 .modal-title {
-  color: #ffe66a;
+  color: var(--accent-gold-bright);
   text-shadow: 1px 1px 2px #000;
 }
 
@@ -558,8 +564,8 @@
   right: 0;
   bottom: 0;
   padding: 3px 5px;
-  background: rgba(8, 10, 18, 0.82);
-  color: #cfe4ff;
+  background: rgba(6, 9, 15, 0.82);
+  color: #e2e8f4;
   font-size: 10px;
   line-height: 1.3;
   max-height: 3.9em;
@@ -571,8 +577,8 @@
   top: 3px;
   left: 4px;
   padding: 1px 6px;
-  background: rgba(8, 10, 18, 0.85);
-  color: #ffe66a;
+  background: rgba(6, 9, 15, 0.85);
+  color: var(--accent-gold-bright);
   font-size: 12px;
   font-weight: 900;
   border-radius: 3px;
@@ -585,7 +591,7 @@
   right: 5px;
   font-size: 18px;
   font-weight: 900;
-  color: #ffe66a;
+  color: var(--accent-gold-bright);
   text-shadow: 1px 1px 3px #000;
 }
 
@@ -603,14 +609,14 @@
   width: 137px;
   height: 137px;
   padding: 0;
-  background: #0b1120;
-  border: 1px solid #5a6a8a;
+  background: #0d131d;
+  border: 1px solid #2b3648;
   border-radius: 4px;
   cursor: pointer;
   overflow: hidden;
 }
 
-.pos-opt:hover { border-color: #ffe66a; }
+.pos-opt:hover { border-color: var(--accent-gold-bright); }
 
 .pos-opt-img {
   display: block;
@@ -639,14 +645,14 @@
   width: 95px;
   height: 134px;
   padding: 0;
-  border: 1px solid #5a6a8a;
+  border: 1px solid #2b3648;
   border-radius: 4px;
   cursor: pointer;
   background-size: cover;
   background-position: center;
 }
 
-.rps-hand-btn:hover { border-color: #ffe66a; box-shadow: 0 0 10px rgba(255, 230, 106, 0.6); }
+.rps-hand-btn:hover { border-color: var(--accent-gold-bright); box-shadow: 0 0 10px rgba(250, 204, 21, 0.6); }
 
 .rps-hand-rock    { background-image: url('/textures/f2.jpg'); }
 .rps-hand-scissors{ background-image: url('/textures/f1.jpg'); }
@@ -665,15 +671,15 @@
   width: 100%;
   padding: 10px 14px;
   text-align: left;
-  background: #1c2540;
-  color: #e8e8d0;
-  border: 1px solid #3a4a6a;
+  background: #1b2434;
+  color: #e8edf5;
+  border: 1px solid #334155;
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
 }
 
-.opt-list .num-opt:hover { border-color: #ffe66a; }
+.opt-list .num-opt:hover { border-color: var(--accent-gold-bright); }
 
 .opt-pager {
   display: flex;
@@ -684,7 +690,7 @@
 
 .opt-pager .btn { min-width: 64px; }
 
-#opt-page-label { color: #9fb0d0; font-size: 13px; }
+#opt-page-label { color: #94a3b8; font-size: 13px; }
 
 /* ---- 宣言卡牌（wANCard：卡图候选 + 密码输入行） ---- */
 .announce-card-row {
@@ -697,7 +703,7 @@
   flex: 1;
   background: #0f172a;
   border: 1px solid #334155;
-  color: #e8e8d0;
+  color: #e8edf5;
   padding: 8px;
   border-radius: 4px;
 }
@@ -733,22 +739,22 @@
   width: 90px;
   height: 35px;
   padding: 0;
-  background: #1c2540;
-  color: #9fb0d0;
-  border: 1px solid #3a4a6a;
+  background: #1b2434;
+  color: #94a3b8;
+  border: 1px solid #334155;
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
 }
 
-.chain-btn:hover { border-color: #ffe66a; color: #e8e8d0; }
+.chain-btn:hover { border-color: var(--accent-gold-bright); color: #e8edf5; }
 
 /* 单选按下态（原版 isPushButton：同键再点取消） */
 .chain-btn.pressed {
-  background: #2a3a60;
-  color: #ffe66a;
-  border-color: #ffe66a;
-  box-shadow: 0 0 8px rgba(255, 230, 106, 0.4) inset;
+  background: #232e42;
+  color: var(--accent-gold-bright);
+  border-color: var(--accent-gold-bright);
+  box-shadow: 0 0 8px rgba(250, 204, 21, 0.4) inset;
 }
 
 /* btnLeaveGame (205,5)-(295,80)：90×75 竖长大钮 */
@@ -756,30 +762,30 @@
   width: 90px;
   height: 75px;
   padding: 0;
-  background: #3a1c1c;
-  color: #e8a0a0;
-  border: 1px solid #6a3a3a;
-  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.38);
+  border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
 }
 
-.surrender-btn:hover { border-color: #ff6a6a; color: #ffd0d0; }
+.surrender-btn:hover { background: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #fee2e2; }
 
 /* 观战者的 btnLeaveGame（duelclient.cpp:653-656 SysString 1350「离开」） */
 .leave-game-btn {
   width: 90px;
   height: 75px;
   padding: 0;
-  background: #2a2a3a;
-  color: #c8c8e0;
-  border: 1px solid #5a5a7a;
-  border-radius: 4px;
+  background: #1b2434;
+  color: #c2ccdb;
+  border: 1px solid #334155;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
 }
 
-.leave-game-btn:hover { border-color: #9a9aff; color: #e0e0ff; }
+.leave-game-btn:hover { background: #232e42; border-color: var(--primary); color: #fff; }
 
 /* btnSpectatorSwap (205,100)-(295,135) */
 #spectator-swap-btn {
@@ -793,7 +799,7 @@
 /* 原版 DrawSelectionLine 的黄色高亮（0xffffff00）：组队赛队友已请求投降时
    btnLeaveGame 常亮黄框提醒（drawing.cpp:579-580） */
 .btn-hint-glow {
-  outline: 2px solid #ffff00;
+  outline: 2px solid var(--accent-gold-bright);
   outline-offset: 2px;
 }
 
@@ -808,7 +814,7 @@
   height: 140px;
   box-sizing: border-box;
   background: rgba(10, 14, 28, 0.96);
-  border: 1px solid #ffe66a;
+  border: 1px solid var(--accent-gold-bright);
   border-radius: 6px;
   padding: 12px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
@@ -817,7 +823,7 @@
 
 .surrender-confirm-title {
   font-size: 14px;
-  color: #e8e8d0;
+  color: #e8edf5;
   margin-bottom: 10px;
   white-space: nowrap;
 }
@@ -828,13 +834,13 @@
 /* ---- 选满闪黄（原版确认按钮 selected==max 的 gold 提示动画） ---- */
 @keyframes btnFlashGold {
   0%, 100% { box-shadow: none; }
-  50% { box-shadow: 0 0 12px rgba(255, 230, 106, 0.9); }
+  50% { box-shadow: 0 0 10px rgba(250, 204, 21, 0.55); }
 }
 
 .btn-flash-gold {
   animation: btnFlashGold 0.8s ease-in-out infinite;
-  border-color: #ffe66a !important;
-  color: #ffe66a;
+  border-color: var(--accent-gold-bright) !important;
+  color: var(--accent-gold-bright);
 }
 
 /* ---- 聊天（原版 wChat (307,615)-(1024,640)：底部全宽输入条，
@@ -865,7 +871,7 @@
 .chat-line {
   font-size: 13px;
   line-height: 1.5;
-  color: #e8e8d0;
+  color: #e8edf5;
   background: rgba(0, 0, 0, 0.55);
   padding: 2px 8px;
   border-radius: 2px;
@@ -898,22 +904,27 @@
 
 .chat-input-row { pointer-events: auto; }
 
-/* 原版 ebChatInput 是 irrlicht 默认白底编辑框，整条横贯窗口底部；
-   深色底会直接融进 3D 场地的暗区看起来像"缺了一条输入框" */
+/* 原版 ebChatInput 是 irrlicht 默认白底编辑框；新皮肤换成深色玻璃输入条，
+   与 HUD 面板同源（几何由 stage/ui_parity 冒烟断言锁定）。 */
 .chat-overlay input {
   width: 100%;
   box-sizing: border-box;
   height: 25px;
-  background: #f2f2f2;
-  border: 1px solid #8a8a8a;
-  border-radius: 0;
-  color: #111;
+  background: rgba(13, 19, 29, 0.92);
+  border: 1px solid var(--border-accent);
+  border-radius: 6px;
+  box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.08);
+  color: var(--text-main);
   padding: 3px 10px;
   font-size: 13px;
 }
 
-.chat-overlay input::placeholder { color: #777; }
-.chat-overlay input:focus { border-color: #444; outline: none; }
+.chat-overlay input::placeholder { color: #64748b; }
+.chat-overlay input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
+  outline: none;
+}
 
 /* ---- 换副卡组（STOC_CHANGE_SIDE 后，三局两胜局间） ---- */
 .side-decking {
@@ -928,8 +939,8 @@
 
 .side-decking-box {
   min-width: 340px;
-  background: #10182e;
-  border: 2px solid #ffe66a;
+  background: #131a26;
+  border: 2px solid var(--accent-gold-bright);
   border-radius: 8px;
   padding: 24px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.9);
@@ -941,11 +952,11 @@
 .side-decking-title {
   font-size: 20px;
   font-weight: 700;
-  color: #ffe66a;
+  color: var(--accent-gold-bright);
   text-align: center;
 }
 
-.side-decking-hint { font-size: 13px; color: #9fb0d0; text-align: center; }
+.side-decking-hint { font-size: 13px; color: #94a3b8; text-align: center; }
 
 .side-decking-error { font-size: 13px; color: #ff6a6a; text-align: center; }
 
@@ -958,7 +969,7 @@
 
 .side-deck-section-title {
   display: flex; justify-content: space-between; align-items: center;
-  font-size: 13px; color: #cdd8f0;
+  font-size: 13px; color: #c2ccdb;
 }
 
 .side-deck-count { font-size: 12px; }
@@ -967,20 +978,20 @@
 
 .side-deck-grid {
   display: flex; flex-wrap: wrap; gap: 3px; min-height: 44px;
-  background: #0a0f1e; border: 1px solid #2a3a5e; border-radius: 6px; padding: 4px;
+  background: #0b1018; border: 1px solid #232e42; border-radius: 6px; padding: 4px;
 }
 
 .side-deck-chip {
   width: 34px; height: 48px; border-radius: 3px; overflow: hidden;
-  border: 1px solid #3a4a6e; background: #0f172a; flex-shrink: 0;
+  border: 1px solid #334155; background: #0f172a; flex-shrink: 0;
 }
 
 .side-deck-chip-fallback {
   width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
-  font-size: 8px; color: #38bdf8; text-align: center; padding: 1px; word-break: break-all;
+  font-size: 8px; color: #60a5fa; text-align: center; padding: 1px; word-break: break-all;
 }
 
-.side-deck-empty { font-size: 11px; color: #5a6a8e; padding: 4px; }
+.side-deck-empty { font-size: 11px; color: #64748b; padding: 4px; }
 
 /* ------------------------------------------------------------------
    DrawSpec 特效（原版 drawing.cpp:851）+ stTip 悬浮提示
@@ -1080,7 +1091,7 @@
   min-width: 150px;
   padding: 10px 16px;
   background: rgba(10, 12, 20, 0.88);
-  border: 1px solid rgba(184, 154, 90, 0.6);
+  border: 1px solid rgba(234, 179, 8, 0.6);
   border-radius: 6px;
   text-align: center;
 }
@@ -1096,7 +1107,7 @@
 }
 .battle-name {
   font-size: 13px;
-  color: #e8ddc0;
+  color: #e8edf5;
   margin-bottom: 6px;
   max-width: 220px;
   overflow: hidden;
@@ -1104,14 +1115,14 @@
   white-space: nowrap;
 }
 .battle-stat { display: flex; justify-content: center; gap: 14px; }
-.battle-atk { font-size: 26px; font-weight: 700; color: #ff6b4a; text-shadow: 0 0 8px rgba(255, 107, 74, 0.5); }
-.battle-def { font-size: 26px; font-weight: 700; color: #4aa8ff; text-shadow: 0 0 8px rgba(74, 168, 255, 0.5); }
+.battle-atk { font-size: 26px; font-weight: 700; color: #ff6b4a; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.65); }
+.battle-def { font-size: 26px; font-weight: 700; color: #4aa8ff; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.65); }
 .battle-clash { text-align: center; }
 .battle-vs {
   font-size: 24px;
   font-weight: 800;
-  color: #ffe66a;
-  text-shadow: 0 0 10px rgba(255, 230, 106, 0.7);
+  color: var(--accent-gold-bright);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
   animation: battle-vs-anim 0.5s ease-out;
 }
 @keyframes battle-vs-anim {
@@ -1141,22 +1152,14 @@
    预览列 300px、LP 条顶 8px、hint top 60、chat 底 4px 等全部保持）
    ================================================================== */
 
-/* ---- 弹窗：深蓝毛玻璃 + 金边内高光，标题金线下划 ---- */
+/* ---- 弹窗：标题金线下划 ---- */
 .modal-dialog-content { outline: none; }
-
-.modal-box {
-  backdrop-filter: blur(14px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 230, 106, 0.18),
-    0 0 0 2px rgba(20, 26, 44, 0.9),
-    0 24px 64px rgba(0, 0, 0, 0.85);
-}
 
 .modal-title {
   font-size: 18px;
   letter-spacing: 2px;
   padding-bottom: 10px;
-  border-bottom: 1px solid rgba(184, 154, 90, 0.45);
+  border-bottom: 1px solid rgba(234, 179, 8, 0.45);
 }
 
 .modal-box > p {
@@ -1169,7 +1172,7 @@
 .preview-tab:focus-visible,
 .chain-btn:focus-visible,
 .phase-btn:focus-visible {
-  outline: 2px solid rgba(255, 230, 106, 0.7);
+  outline: 2px solid rgba(250, 204, 21, 0.7);
   outline-offset: 2px;
 }
 
@@ -1185,7 +1188,7 @@
 .preview-log::-webkit-scrollbar-thumb,
 .modal-cards-grid::-webkit-scrollbar-thumb,
 #duel-log-list::-webkit-scrollbar-thumb {
-  background: #2a3a5a;
+  background: #232e42;
   border-radius: 4px;
 }
 
@@ -1193,7 +1196,7 @@
 .preview-log::-webkit-scrollbar-thumb:hover,
 .modal-cards-grid::-webkit-scrollbar-thumb:hover,
 #duel-log-list::-webkit-scrollbar-thumb:hover {
-  background: #3a4a6a;
+  background: #334155;
 }
 
 .preview-desc::-webkit-scrollbar-track,
@@ -1223,11 +1226,6 @@
   letter-spacing: 6px;
   text-indent: 6px; /* 抵消 letter-spacing 造成的偏移，保持文字居中 */
   transition: color 0.15s ease, background 0.15s ease;
-}
-
-.preview-tab.active {
-  background: linear-gradient(180deg, #2e4066, #22304e);
-  box-shadow: inset 0 -2px 0 #ffe66a;
 }
 
 /* ---- LP：数字等宽避免跳动；名字行加一点呼吸 ---- */
@@ -1292,23 +1290,23 @@
 }
 
 .card-tile.selected {
-  box-shadow: 0 0 0 2px rgba(255, 230, 106, 0.35), 0 0 18px rgba(255, 230, 106, 0.5);
+  box-shadow: 0 0 0 2px var(--accent-gold-bright), 0 6px 18px rgba(0, 0, 0, 0.55);
 }
 
 .card-tile-name {
-  background: linear-gradient(180deg, rgba(8, 10, 18, 0) 0%, rgba(8, 10, 18, 0.88) 38%);
+  background: linear-gradient(180deg, rgba(8, 10, 18, 0) 0%, rgba(6, 9, 15, 0.88) 38%);
   padding-top: 10px;
 }
 
 /* ---- 提示条：柔和投影 ---- */
 .hint-bar {
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
-  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  border-radius: 8px;
 }
 
 /* ---- 阶段按钮：可点击态加过渡，折叠钮悬浮态 ---- */
 .phase-fold { transition: color 0.15s ease, border-color 0.15s ease; }
-.phase-fold:hover { color: #ffe66a; border-color: #ffe66a; }
+.phase-fold:hover { color: var(--accent-gold-bright); border-color: var(--accent-gold-bright); }
 
 .phase-btn { transition: box-shadow 0.2s ease; }
 
@@ -1319,101 +1317,12 @@
 
 .opt-list .num-opt:hover {
   transform: translateX(2px);
-  background: #223052;
+  background: #1f2937;
 }
-
-/* ---- 聊天输入：占位符颜色与面板协调 ---- */
-.chat-overlay input::placeholder { color: #5a6a8a; }
 
 /* ---- 手牌图块阴影（浮在 3D 场地上，加投影提高层次） ---- */
 .hand-card-item .hand-card-img {
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
-}
-
-/* ==================================================================
-   波 A：环境设置面板（原版 wInfos tabSystem/tabHelper 两页签的
-   Web 化；复用 modal-box 深蓝毛玻璃 + 金线主题）
-   ================================================================== */
-.settings-panel {
-  min-width: 360px;
-  max-width: 420px;
-}
-
-.settings-tabs {
-  display: flex;
-  gap: 4px;
-  margin: 12px 0 4px;
-  border-bottom: 1px solid rgba(184, 154, 90, 0.45);
-}
-
-.settings-tab {
-  padding: 8px 18px;
-  font-size: 14px;
-  color: #9db2d8;
-  cursor: pointer;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 6px 6px 0 0;
-  user-select: none;
-  transition: color 0.15s ease, background 0.15s ease;
-}
-
-.settings-tab:hover { color: #ffe66a; }
-
-.settings-tab.active {
-  color: #ffe66a;
-  background: rgba(0, 0, 0, 0.35);
-  border-color: rgba(184, 154, 90, 0.45);
-}
-
-.settings-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 2px 4px;
-  max-height: 340px;
-  overflow-y: auto;
-}
-
-.settings-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  font-size: 14px;
-  color: #cfd9ee;
-  user-select: none;
-}
-
-.settings-row input[type='checkbox'] {
-  width: 16px;
-  height: 16px;
-  accent-color: #b89a5a;
-  cursor: pointer;
-  flex: none;
-}
-
-.settings-row-label { flex: 1; }
-
-.settings-row input[type='range'] {
-  flex: 1;
-  accent-color: #b89a5a;
-  cursor: pointer;
-}
-
-.settings-row-value {
-  min-width: 34px;
-  text-align: right;
-  color: #ffe66a;
-  font-variant-numeric: tabular-nums;
-}
-
-.settings-footer {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 12px;
-  margin-top: 4px;
-  border-top: 1px solid rgba(184, 154, 90, 0.45);
 }
 
 /* ---- select_card 场上点选控制条（纯场上询问时替代弹窗：
@@ -1427,16 +1336,17 @@
   align-items: center;
   gap: 14px;
   padding: 8px 16px;
-  background: rgba(16, 20, 32, 0.88);
-  border: 1px solid rgba(250, 204, 21, 0.55);
-  border-radius: 6px;
+  /* 不透明底：HUD 小控件不做 backdrop-filter，避免常驻模糊采样 */
+  background: rgba(13, 19, 29, 0.96);
+  border: 1px solid var(--border-accent);
+  border-radius: 10px;
   z-index: 160;
   white-space: nowrap;
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.55);
 }
 
 .card-select-bar span {
-  color: #fde68a;
+  color: #e8edf5;
   font-size: 14px;
   font-weight: 700;
 }
@@ -1450,7 +1360,7 @@
   text-align: center;
   font-size: 48px;
   font-weight: 700;
-  color: #ffff66;
+  color: var(--accent-gold-bright);
   text-shadow: 2px 2px 0 #000, -1px -1px 0 #000;
   pointer-events: none;
   z-index: 900;
@@ -1499,8 +1409,9 @@
 .wcs-pos {
   height: 20px;
   margin-bottom: 5px;
-  background: #f4f4f4;
-  color: #202020;
+  background: #0d131d;
+  color: #94a3b8;
+  border-radius: 3px;
   font-size: 11px;
   line-height: 20px;
   text-align: center;
@@ -1544,12 +1455,13 @@
   cursor: pointer;
   background: transparent;
   color: var(--text-muted);
-  border: 1px solid rgba(184, 154, 90, 0.45);
-  border-radius: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
 }
 .wcs-min-btn:hover {
   color: #fff;
-  border-color: var(--gold, #c9a227);
+  border-color: var(--primary);
+  background: rgba(59, 130, 246, 0.14);
 }
 .wcs-window.wcs-minimized {
   height: auto;
@@ -1731,3 +1643,36 @@
 }
 .modal-ftselect #ft-first-btn { top: 30px; }
 .modal-ftselect #ft-second-btn { top: 60px; }
+
+/* ==================================================================
+   决斗 HUD 像素落点（唯一事实源）
+
+   本节自 cpp-parity.css 迁入，保留 `:is(#app,#root)` 特异性以便稳定压过
+   上方同名基础规则的几何值。文件的加载顺序与基础规则位置都不再影响结果：
+   要改 HUD 几何，只改这里。
+
+   坐标沿用原版 1024×640 设计空间（stXxx 的 game.cpp 落点）：
+   - 阶段条 (480,310)-(855,330)；回合块 (632,10)-(688,50)
+   - LP 面板 (329,10)/(691,10) 各 300 宽；提示条 (500,60)-(820,90)
+   - 右列控制 (205,5) 90 宽；链按钮组 (205,100)；选卡条 (205,230)
+   ================================================================== */
+:is(#app,#root) .duel-stage .phase-strip { left:480px; top:310px; right:auto; width:375px; height:20px; display:block; }
+:is(#app,#root) .duel-stage .phase-buttons { position:relative; width:375px; height:20px; display:block; }
+:is(#app,#root) .duel-stage .phase-btn { position:absolute; top:0; left:0; width:50px; height:20px; font-size:12px; padding:0; }
+:is(#app,#root) .duel-stage #phase-status { cursor:default; opacity:1; }
+:is(#app,#root) .duel-stage .phase-banner { right:auto; bottom:auto; font-size:var(--banner-font-size,48px); line-height:1; }
+:is(#app,#root) .duel-stage .turn-block { position:fixed; left:632px; top:10px; width:56px; height:40px; transform:none; }
+:is(#app,#root) .duel-stage #player-panel { left:329px; top:10px; width:300px; }
+:is(#app,#root) .duel-stage #opponent-panel { left:691px; right:auto; top:10px; width:300px; }
+:is(#app,#root) .duel-stage .player-state-row,
+:is(#app,#root) .duel-stage .player-turn-chip { display:none; }
+:is(#app,#root) .duel-stage .hint-bar { left:500px; top:60px; width:320px; height:30px; transform:none; padding:0; line-height:30px; font-size:12px; }
+:is(#app,#root) .duel-stage .right-controls { left:205px; top:5px; width:90px; }
+:is(#app,#root) .duel-stage .surrender-btn,
+:is(#app,#root) .duel-stage .leave-game-btn { height:75px; width:90px; font-size:12px; }
+:is(#app,#root) .duel-stage .chain-btn { width:90px; height:35px; font-size:12px; }
+:is(#app,#root) .duel-stage .chain-group { position:absolute; left:0; top:95px; padding:0; margin-top:0; gap:5px; }
+:is(#app,#root) .duel-stage .card-select-bar { left:205px; top:230px; bottom:auto; transform:none; width:90px; height:35px; padding:0; }
+:is(#app,#root) .duel-stage .card-select-bar span { display:none; }
+:is(#app,#root) .duel-stage .card-select-bar button { width:90px; height:35px; }
+:is(#app,#root) .duel-stage #shuffle-hand-btn { position:absolute; left:0; top:225px; }

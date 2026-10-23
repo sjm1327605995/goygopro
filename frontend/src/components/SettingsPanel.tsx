@@ -109,7 +109,7 @@ export default function SettingsPanel({ open, onClose }: { open: boolean; onClos
   return (
     <GameDialog open={open}>
       {open ? (
-        <div id="settings-panel" className="modal-box settings-panel gfw-window" style={{ position: 'static', transform: 'none', width: '360px' }}>
+        <div id="settings-panel" className="modal-box settings-panel gfw-window" style={{ position: 'static', transform: 'none', width: '460px' }}>
           <div className="gfw-title">环境设置</div>
           <div className="settings-tabs">
             <div

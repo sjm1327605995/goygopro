@@ -493,18 +493,41 @@ export class DuelField3D {
   // 相机绕到场地另一侧（等效场地旋转 180°）：卡牌朝向/守备方向随观看侧
   // 自然正确，3D 座标与 ZONE_COORDS 不变。2D HUD 的座位显示由 store 的
   // viewSwapped 负责（localSeat 翻转），这里搬相机并同步手卡朝向。
+  //
+  // 相机落点必须由「当前下侧座位」决定，不能只看 on：本地座 1 的未交换
+  // 视角本就在 -Z，交换再换回来时应回到 -Z，否则手牌会翻到远端、朝向也
+  // 与 handRotationFor 的下侧判定相反（手牌视角错乱的根因）。
+  /** 当前视角下处于屏幕下侧的座位（0/1）——相机与手牌朝向共用这一判定 */
+  private bottomSeat(): number {
+    return this.viewSwapped ? 1 - this.localSeat : this.localSeat;
+  }
+
+  /** 下侧座位 → 相机落点。开局落座、交换、换回共用同一套机位 */
+  private cameraPoseFor(bottomSeat: number): { x: number; z: number } {
+    return bottomSeat === 1 ? { x:-0.6, z:-16 } : { x:0.4, z:16 };
+  }
+
+  private moveCameraToBottomSeat(bottomSeat: number, instant: boolean): void {
+    const { x,z } = this.cameraPoseFor(bottomSeat);
+    if (instant) {
+      this.camera.position.set(x,15.6,z);
+      this.camera.lookAt(x,0,0);
+      this.camera.updateMatrixWorld(true);
+      return;
+    }
+    this.makeTween(this.camera.position)
+      .to({ x,z },500)
+      .easing(TWEEN.Easing.Quadratic.InOut)
+      .onUpdate(() => this.camera.lookAt(x,0,0))
+      .onComplete(() => this.camera.lookAt(x,0,0))
+      .start();
+  }
+
   setViewSwapped(on: boolean): void {
     if (this.viewSwapped === on) return;
     this.viewSwapped = on;
     this.syncHandRotations();
-    const targetZ = on ? -12.5 : 12.5;
-    const lookZ = on ? -0.3 : 0.3;
-    this.makeTween(this.camera.position)
-      .to({ x:targetZ>0?0.4:-0.6,z:targetZ },500)
-      .easing(TWEEN.Easing.Quadratic.InOut)
-      .onUpdate(() => this.camera.lookAt(targetZ>0?0.4:-0.6,0,0))
-      .onComplete(() => this.camera.lookAt(targetZ>0?0.4:-0.6,0,0))
-      .start();
+    this.moveCameraToBottomSeat(this.bottomSeat(), false);
   }
 
   // ---- HINT_ZONE 区域高亮（绿色实线+浅填充，与 select_place 蓝虚线区分）----
@@ -1144,8 +1167,7 @@ export class DuelField3D {
 
   handRotationFor(code: number): { x: number; y: number; z: number } {
     const tilt = 0.798056;
-    const bottomSeat = this.viewSwapped ? 1 - this.localSeat : this.localSeat;
-    if (bottomSeat !== 1) {
+    if (this.bottomSeat() !== 1) {
       return { x: code ? tilt : Math.PI + tilt, y: 0, z: 0 };
     }
     return { x: code ? -tilt : Math.PI - tilt, y: Math.PI, z: 0 };
@@ -1257,14 +1279,9 @@ export class DuelField3D {
   }
 
   setBottomSeat(seat: number, instant = false): void {
-    const swap = seat === 1;
     this.localSeat = seat;
     this.syncHandRotations();
-    if (instant) {
-      this.camera.position.set(swap?-0.6:0.4,15.6,swap?-16:16);
-      this.camera.lookAt(swap?-0.6:0.4,0,0);
-      this.camera.updateMatrixWorld(true);
-    }
+    this.moveCameraToBottomSeat(this.bottomSeat(), instant);
   }
 
   // ---- 墓地禁查（drawing.cpp:564-575 的 tNegated 贴图）----

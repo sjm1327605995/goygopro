@@ -331,6 +331,11 @@ export class DuelManager {
       this.endFieldSelection();
       this.field3D.clearBoard?.();
       this.playerSlot = (data.playerType || 0) & 0x0f;
+      // 新一局视角复位（reducer 已清 viewSwapped）：先复位再落座，
+      // 否则 setBottomSeat 会按上一局残留的 viewSwapped 推出错误机位，
+      // 随后 setViewSwapped(false) 再补一段从错误侧转回来的 tween。
+      this._lastViewSwapped = false;
+      this.field3D.setViewSwapped(false);
       this.field3D.setBottomSeat?.(this.playerSlot,true);
       this.field3D.setDuelRule?.(data.duelRule || 5);
       this.handCounts = [0, 0];
@@ -338,9 +343,6 @@ export class DuelManager {
       this.equipPairs.clear();
       this.targetPairs.clear();
       this.chainTargets = [];
-      // 新一局视角复位（reducer 已清 viewSwapped，这里同步 3D 相机）
-      this._lastViewSwapped = false;
-      this.field3D.setViewSwapped(false);
     });
 
     // MSG_PLAYER_HINT 的 CARD_QUESTION（duelclient.cpp:3757-3768）：

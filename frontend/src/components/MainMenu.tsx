@@ -22,7 +22,12 @@ export default function MainMenu({ onDuel, onPractice, onDeck, onReplay, onQuit 
         <div id="main-menu-window" className="gfw-window gfw-mainmenu">
           <div className="gfw-title">{MENU_VERSION}</div>
           <div className="gfw-body">
-            <div className="gfw-col">
+            <div className="menu-hero">
+              <div className="menu-hero-kicker">YU-GI-OH! ONLINE</div>
+              <h1 className="menu-hero-title">决斗<span>链接</span></h1>
+              <p className="menu-hero-sub">在线对战 · 卡组构筑 · 录像回放</p>
+            </div>
+            <div className="gfw-col menu-actions">
               {/* 原版按钮 (10,30) 起 260×30 纵向间距 35（高 30 + 间隙 5） */}
               <UiButton id="menu-btn-lan" size="compact-md" fullWidth onClick={onDuel}>联机模式</UiButton>
               <UiButton id="menu-btn-single" size="compact-md" fullWidth onClick={onPractice}>单人模式</UiButton>
@@ -30,6 +35,7 @@ export default function MainMenu({ onDuel, onPractice, onDeck, onReplay, onQuit 
               <UiButton id="menu-btn-deck" size="compact-md" fullWidth onClick={onDeck}>编辑卡组</UiButton>
               <UiButton id="menu-btn-exit" size="compact-md" fullWidth onClick={onQuit}>退出</UiButton>
             </div>
+            <div className="menu-foot">© goygopro · ocgcore</div>
           </div>
         </div>
       </DesignSpace>

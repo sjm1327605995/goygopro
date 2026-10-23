@@ -368,7 +368,7 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
         <div style={{ position: 'relative', height: '396px' }}>
           <div id="replay-list" className="gfw-list" style={{ position: 'absolute', left: '10px', top: '6px', width: '340px', height: '370px' }}>
             {replays.length === 0 && (
-              <div className="gfw-list-item" style={{ color: '#7b89ab' }}>（没有录像文件）</div>
+              <div className="gfw-list-item" style={{ color: '#64748b' }}>（没有录像文件）</div>
             )}
             {replays.map((n) => (
               <div
@@ -381,7 +381,7 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
           <div className="gfw-label" style={{ position: 'absolute', left: '360px', top: '6px', fontWeight: 'bold' }}>录像信息：</div>
           <div
             id="replay-info"
-            style={{ position: 'absolute', left: '360px', top: '36px', width: '210px', height: '260px', overflow: 'auto', whiteSpace: 'pre-wrap', fontSize: '12px', lineHeight: 1.5, background: 'rgba(8, 12, 26, 0.85)', color: '#c9d6f2', border: '1px solid rgba(126, 156, 222, 0.35)', borderRadius: '4px', padding: '4px 6px', boxSizing: 'border-box' }}
+            style={{ position: 'absolute', left: '360px', top: '36px', width: '210px', height: '260px', overflow: 'auto', whiteSpace: 'pre-wrap', fontSize: '12px', lineHeight: 1.6, background: 'rgba(13, 19, 29, 0.9)', color: '#c2ccdb', border: '1px solid rgba(148, 163, 184, 0.2)', borderRadius: '8px', padding: '10px', boxSizing: 'border-box' }}
           >{selected && info ? infoText(info) : '（未选择录像）'}</div>
           <div className="gfw-label" style={{ position: 'absolute', left: '360px', top: '251px' }}>播放起始于回合：</div>
           <UiInput
@@ -395,7 +395,7 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
           {toast && (
             <span
               id="replay-toast"
-              style={{ position: 'absolute', left: '360px', top: '303px', background: '#e2f0d9', border: '1px solid #4c7a3f', color: '#1e4620', fontSize: '12px', padding: '2px 10px' }}
+              style={{ position: 'absolute', left: '360px', top: '303px', background: 'rgba(34, 197, 94, 0.16)', border: '1px solid rgba(34, 197, 94, 0.45)', color: '#86efac', fontSize: '12px', padding: '3px 12px', borderRadius: '6px' }}
             >{toast}</span>
           )}
           {/* 原版右下按钮组：提取卡组 1369 / 删除 1361 / 载入 1348 / 重命名 1362 / 退出 1347 */}
@@ -405,7 +405,7 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
           <UiButton id="replay-rename-btn" style={{ position: 'absolute', left: '360px', top: '361px', width: '100px' }} onClick={renameReplay} disabled={!selected}>重命名</UiButton>
           <UiButton style={{ position: 'absolute', left: '470px', top: '361px', width: '100px' }} onClick={() => { pause(); onNavigate('menu'); }}>退出</UiButton>
           {truncated && (
-            <div style={{ position: 'absolute', left: '10px', top: '378px', fontSize: '11px', color: '#b35c00' }}>回放已截断：缺少卡牌脚本。</div>
+            <div style={{ position: 'absolute', left: '10px', top: '378px', fontSize: '11px', color: '#fbbf24' }}>回放已截断：缺少卡牌脚本。</div>
           )}
         </div>
       </div>
@@ -418,7 +418,7 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
         <div
           id="replay-control-panel"
           className="gfw-window"
-          style={{ left: '205px', top: '143px', width: '90px', height: '130px', transform: 'none', borderRadius: '4px' }}
+          style={{ left: '205px', top: '143px', width: '90px', height: '130px', transform: 'none', borderRadius: '10px' }}
         >
           <UiButton
             style={{ position: 'absolute', left: '5px', top: '5px', width: '80px', height: '20px', padding: 0, fontSize: '12px' }}
@@ -472,13 +472,13 @@ export default function ReplayTheater({ onNavigate }: ReplayTheaterProps) {
             </div>
             <div
               id="replay-progress-track"
-              style={{ width: '100%', height: '8px', background: 'rgba(8, 12, 26, 0.85)', border: '1px solid rgba(126, 156, 222, 0.35)', borderRadius: '4px', overflow: 'hidden', cursor: stageReady ? 'pointer' : 'default', boxSizing: 'border-box' }}
+              style={{ width: '100%', height: '8px', background: 'rgba(13, 19, 29, 0.9)', border: '1px solid rgba(148, 163, 184, 0.2)', borderRadius: '999px', overflow: 'hidden', cursor: stageReady ? 'pointer' : 'default', boxSizing: 'border-box' }}
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 seekToRatio((e.clientX - rect.left) / rect.width);
               }}
             >
-              <div style={{ width: `${progressPct}%`, height: '100%', background: '#4c5a74' }}></div>
+              <div style={{ width: `${progressPct}%`, height: '100%', background: 'linear-gradient(90deg, #2563eb, #60a5fa)' }}></div>
             </div>
           </div>
 
