@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -12,15 +11,10 @@ import (
 	"github.com/sjm1327605995/goygopro/ocgcore"
 )
 
-// TestEngineAPIMatchesVendoredSource verifies that the LOADED ocgcore binary
-// (prebuilt ocgcore.dll / libocgcore.so) registers exactly the Lua API that
-// the vendored source/ygopro/ocgcore source declares. The repository ships a
-// prebuilt engine binary, so a stale binary could silently lack functions that
-// current card scripts call — the scripts would then fail at runtime with
-// "attempt to call a nil value". This test closes that gap: it extracts every
-// registered function name from libduel/libcard/libgroup/libeffect/libdebug
-// and asks the live engine's Lua state whether each name resolves.
-func TestEngineAPIMatchesVendoredSource(t *testing.T) {
+// TestEngineAPIMatchesReference verifies that the loaded ocgcore binary
+// registers every Lua API captured from the reference Fluorohydride/ygopro
+// engine in referenceEngineAPI.
+func TestEngineAPIMatchesReference(t *testing.T) {
 	root, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
@@ -38,32 +32,7 @@ func TestEngineAPIMatchesVendoredSource(t *testing.T) {
 		t.Skipf("ocgcore library not available: %v", err)
 	}
 
-	// Extract "{ "Name", scriptlib::<prefix>..." registrations per namespace.
-	type ns struct {
-		table string // Lua global table name
-		lib   string // source file
-	}
-	namespaces := []ns{
-		{"Duel", "libduel.cpp"},
-		{"Card", "libcard.cpp"},
-		{"Group", "libgroup.cpp"},
-		{"Effect", "libeffect.cpp"},
-		{"Debug", "libdebug.cpp"},
-	}
-	re := regexp.MustCompile(`\{\s*"([A-Za-z0-9_]+)"\s*,\s*scriptlib::`)
-	expected := map[string][]string{}
-	for _, n := range namespaces {
-		src, err := os.ReadFile(filepath.Join(root, "source", "ygopro", "ocgcore", n.lib))
-		if err != nil {
-			t.Fatalf("read %s: %v", n.lib, err)
-		}
-		for _, m := range re.FindAllStringSubmatch(string(src), -1) {
-			expected[n.table] = append(expected[n.table], m[1])
-		}
-		if len(expected[n.table]) == 0 {
-			t.Fatalf("extracted no %s functions from %s — regex out of date", n.table, n.lib)
-		}
-	}
+	expected := referenceEngineAPI
 
 	// Probe script: every expected name must resolve in the live Lua state.
 	var b strings.Builder
@@ -113,7 +82,7 @@ Debug.Message("API_PROBE_OK")
 		d.Process()
 	}
 	if !strings.Contains(got, "API_PROBE_OK") {
-		t.Fatalf("loaded ocgcore binary does not match vendored source API:\n%s", got)
+		t.Fatalf("loaded ocgcore binary does not match reference API:\n%s", got)
 	}
-	t.Logf("loaded engine registers all %d Lua API functions declared by vendored source", len(expected["Duel"])+len(expected["Card"])+len(expected["Group"])+len(expected["Effect"])+len(expected["Debug"]))
+	t.Logf("loaded engine registers all %d reference Lua API functions", len(expected["Duel"])+len(expected["Card"])+len(expected["Group"])+len(expected["Effect"])+len(expected["Debug"]))
 }

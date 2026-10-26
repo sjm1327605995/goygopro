@@ -11,7 +11,7 @@ export const CARD_HEIGHT = 2.0;
 export const CARD_DEPTH = 0.03;
 
 // Field Zone coordinate definitions
-// 区域坐标 = YGOPro 原版布局（source/ygopro/gframe/materials.cpp 的
+// 区域坐标 = YGOPro 原版布局（Fluorohydride/ygopro gframe/materials.cpp 的
 // vField* 四边形，权威依据），换算 world = ((qx-4)*2, qy*2)：
 // 原版地垫四边形是 x -1..9 / y -4..4 的 10×8，中心 (4,0) 平移到世界原点，
 // 整体 ×2 使地垫铺满 20×16 的可视范围。卡片尺寸对应原版 vCardFront

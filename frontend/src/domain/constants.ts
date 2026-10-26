@@ -3,8 +3,8 @@
  *
  * 此前这些表在 duel_manager.js、replay_apply.js、ai_simulator.js、hud.js、
  * field3d.ts、DeckBuilder.jsx 里各抄了一份；任何一份改了其它份不会跟着变。
- * 全部取值依据 ocgcore（common.go / constant.go）与 vendored YGOPro 引擎源码，
- * 改动前先核对 source/ygopro 或 ocgcore 的对应定义。
+ * 全部取值依据 ocgcore（common.go / constant.go）与 YGOPro 原版引擎，
+ * 改动前先核对 Fluorohydride/ygopro 或 ocgcore 的对应定义。
  */
 
 // ---- 卡片位置（ocgcore POS_*，见 ocgcore/constant.go）----

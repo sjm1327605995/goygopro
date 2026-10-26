@@ -12,7 +12,7 @@ import (
 // live in that table as codec-decoded structs; this residual switch only covers
 // messages whose body codec cannot express and that have no UI consumer。
 // It mirrors the skip offsets of the C++ ReplayMode::ReplayAnalyze
-// (source/ygopro/gframe/replay_mode.cpp) so the parser never loses message
+// (Fluorohydride/ygopro gframe/replay_mode.cpp) so the parser never loses message
 // alignment, even for messages the UI ignores.
 //
 // It returns an error for message types whose layout is unknown; callers should

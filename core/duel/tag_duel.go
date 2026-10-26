@@ -526,7 +526,7 @@ func (tag *TagDuel) TagTimer() {
 		return
 	}
 	// 原版 TagTimer 非超时路径每秒 event_add 重新武装定时器
-	//（source/ygopro/gframe/tag_duel.cpp:1740-1741）；漏掉这行会让
+	//（Fluorohydride/ygopro gframe/tag_duel.cpp:1740-1741）；漏掉这行会让
 	// tag 计时器走一秒后停走，超时判负永不触发。
 	tag.ETimer = timerWheel.AfterFunc(time.Second, tag.TagTimer)
 }

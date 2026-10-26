@@ -10,8 +10,7 @@ import (
 // 结构体定义，由 core/codec 按字段顺序编解码（LittleEndian）：定长字段
 // 直接按线宽读写；变长列表用 codec.Count8 标记字段作计数前缀（编码自动
 // 回填 len(slice)，Count 字段须声明在目标 slice 之前）。所有布局的权威
-// 依据是本仓库自带的引擎源码 source/ygopro/ocgcore/（编译进 ocgcore.dll
-// 的那一套）：
+// 依据是 Fluorohydride/ygopro 的 ocgcore/（编译进 ocgcore.dll 的那一套）：
 //
 //   - processor.cpp / operations.cpp / playerop.cpp / field.cpp / libduel.cpp
 //     中的 write_buffer 序列；

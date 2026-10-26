@@ -1,6 +1,6 @@
 package protocol
 
-// 黄金往返测试：按引擎源码（source/ygopro/ocgcore/*.cpp）的 write_buffer 序列
+// 黄金往返测试：按引擎源码（Fluorohydride/ygopro 的 ocgcore/*.cpp）的 write_buffer 序列
 // 手工构造线上字节 → Unpack → 字段断言 → Pack → 与原始字节全等。
 // "一切以结构体为准"由此变成可执行事实：布局漂移会让任何一条用例立刻变红。
 
