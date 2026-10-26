@@ -23,6 +23,8 @@ dist/
 frontend/dist/
 frontend/smoke-dist/
 frontend/.vite/
+__pycache__/
+*.pyc
 
 # OS
 .DS_Store
