@@ -143,10 +143,13 @@ frontend/css/       公共主题、传统布局和竞技场样式
 frontend/smoke/     浏览器冒烟页的驱动与固定资源
 frontend/textures/  内置卡背、背景、场地与状态标记
 tools/              浏览器验证与调试脚本
+resources/          外部规则脚本的来源与固定版本清单
 docs/               重构记录、协议设计与原版对照说明
 source/ygopro/      对照用的原版源码
 ```
 
 修改协议结构时同步检查 Go 编解码、Wails DTO、转发事件名单和 reducer；生成文件应通过对应 `go:generate` 指令更新。修改场地与手牌时保留座位/序号映射，并验证视角交换、隐藏信息和实际点选。新增纹理与实例化几何需要覆盖场景重建及退出时的资源释放。
+
+运行时 `script/` 通过外部 Git 获取并被本项目忽略，版本记录在 `resources/scripts.json`。程序仍从该目录加载规则；单机示例 `single/` 是本项目保留的入口脚本，不能用外部规则目录代替。
 
 详细历史与差距记录见 [重构状态](refactor-status.md)、[协议路由设计](packet-router-design.md) 和 [原版对照 TODO](cpp-parity-todo.md)。

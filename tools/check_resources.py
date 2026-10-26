@@ -30,7 +30,10 @@ def audit(root: Path) -> dict:
                 for block in iter(lambda: stream.read(1024 * 1024), b""):
                     digest.update(block)
             values.update(size=path.stat().st_size, sha256=digest.hexdigest())
-        add(relative, "OK" if present else "ERROR", "存在且非空" if present else "缺失或为空", **values)
+        detail = "存在且非空" if present else "缺失或为空"
+        if not present and relative.startswith("script/"):
+            detail += "；规则已外置，可按文档运行 python tools/fetch_scripts.py"
+        add(relative, "OK" if present else "ERROR", detail, **values)
         return present
 
     database = root / "cards.cdb"

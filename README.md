@@ -39,12 +39,16 @@
 推荐 Windows、Go 1.25+、Node.js 20+ 和 WebView2。从仓库根目录执行：
 
 ```powershell
+# 首次克隆、script/ 尚不存在时执行；需要 Python 3.9+，也可按资源文档手工 Git 获取。
+python tools/fetch_scripts.py
 npm --prefix frontend ci
 npm --prefix frontend run build
 go run ./cmd/wails
 ```
 
 桌面运行还需要匹配的 `cards.cdb`、`script/`、`single/`、卡组和原生引擎；离线显示卡图需要自己的 `pics/`。**代码克隆不等于全部运行资源已齐全，单独启动 Vite 也不会运行真实单机引擎。** 具体准备步骤、只复制 exe 的分发结构，以及只读检查工具均见[资源准备文档](docs/setup-and-troubleshooting.md)。
+
+规则脚本由 [Fluorohydride/ygopro-scripts](https://github.com/Fluorohydride/ygopro-scripts) 提供，不再存放在本仓库中。[版本清单](resources/scripts.json) 固定获取版本，`script/` 作为本机外部资源被 Git 忽略；获取工具不会覆盖已有脚本目录。
 
 `npm run dev` 后直接在浏览器打开的是 Mock 演示模式：单机不会执行 Lua，卡片搜索也不是完整本地卡库。开发真实功能时，请使用上述桌面入口，或运行 `wails3 dev` 后操作桌面窗口。
 

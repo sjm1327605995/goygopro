@@ -4,6 +4,8 @@
 
 下面的命令均从仓库根目录执行。启动方式、分发目录和原生依赖见资源准备文档。浏览器演示、浏览器测试与真实桌面对局分别验证不同环节。
 
+原生验证前应先准备外部脚本：新工作树可运行 `python tools/fetch_scripts.py`，具体版本见 `resources/scripts.json`。已有脚本不会被工具覆盖。
+
 ## 验证方式
 
 ### 类型检查与构建
@@ -41,3 +43,10 @@ node tools/ui_smoke_suite.cjs menu lobby netplay_lobby single deck settings widg
 ```
 
 结果写入 `tmp_dbg/ui-smoke-results.json`。重点用例：`hands` 覆盖 1 / 5 / 12 张牌、逐张拾取、魔陷区避让、悬停稳定性、视角交换与重复卡牌精确应答；`appearance` 覆盖图片卡套、本机保存、环境叠加、缺图与异步竞态回退。
+
+## 仓库资源边界
+
+- 外部 Lua 不再提交；固定来源、版本清单与获取工具保留在仓库中。
+- 旧客户端只剩的截图、`frontend/smoke/shots/` 产物、重复根纹理、未引用的备用 vendor 包和语言数据库副本不再跟踪。
+- 保留 `frontend/textures/`、三个实际使用的 ESM vendor 文件、`docs/images/` 展示图、固定冒烟卡图、默认卡库及原生引擎、参考源码和测试录像。
+- 删除版本跟踪会精简当前目录树，但不会移除过去提交里的 Git 对象。这里只做正常提交，不重写历史；只需当前版本的新用户可用 `git clone --depth 1`。

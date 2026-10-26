@@ -56,7 +56,7 @@ Boolean(window._wails)
 | 内容 | 当前状态 | 是否仅靠 Git 就有 |
 | --- | --- | --- |
 | `cards.cdb` | 8,050,688 字节；`datas`、`texts` 各 14,981 行，关联卡片 14,981 张 | 当前已跟踪；虽然 `.gitignore` 写有该文件，但已跟踪文件仍会克隆 |
-| `script/` | 13,540 个已跟踪文件，含共享脚本和卡片规则 | 是；不可只复制几个 `c<卡号>.lua` |
+| `script/` | 已外置，从 Fluorohydride/ygopro-scripts 获取完整共享脚本和卡片规则 | **否**；按 `resources/scripts.json` 准备，不可只复制几个卡片脚本 |
 | `single/` | `青眼一击.lua`、`魔导师的初阵.lua` | 是；完整工作树、正确路径下应能列出这两项 |
 | `deck/` | `e2e_test.ydk` 示例 | 是；自己的其他卡组不会自动出现 |
 | `ocgcore.dll`、`libocgcore.so` | 已跟踪的原生引擎文件 | 当前提交包含；与主机架构、系统依赖及 Lua API 是否兼容仍需验证 |
@@ -64,6 +64,8 @@ Boolean(window._wails)
 | `pics/` | 被忽略，0 个已跟踪文件 | **否**；这里可能只有办公室机器的 CDN 缓存 |
 | `frontend/dist/`、`node_modules/` | 构建产物和依赖目录，已忽略 | 否；新机器需要安装依赖并构建，或随分发包一起提供 `dist` |
 | `system.conf`、运行时录像、自定义外观 | 本机运行数据 | 否；外观存在该浏览器 / WebView 的本地存储中 |
+
+清理后只保留默认使用的 `cards.cdb`，不再分发重复的语言数据库副本。旧 Go 客户端截图、测试截图产物、重复的根目录 `textures/` 与未使用的 Three.js 备选包也已移出 Git；运行素材以 `frontend/textures/` 为准。参考源码和测试录像仍保留，因为它们有对照与测试用途。
 
 在两台机器上分别运行并比较提交：
 
@@ -77,7 +79,32 @@ git -c core.quotepath=false ls-files -- single deck
 
 ## 3. 源码方式启动
 
-Windows 桌面建议准备 Go 1.25+、Node.js 20+ 和 WebView2。先进入包含 `cards.cdb` 与 `script/` 的仓库根目录：
+Windows 桌面建议准备 Go 1.25+、Node.js 20+ 和 WebView2。先进入项目根目录（`cards.cdb` 所在目录），再按下面步骤准备外部 `script/`：
+
+### 首次准备外部规则脚本
+
+首次克隆不再自带 `script/`。安装了 Python 3.9+ 和 Git 时，可从项目根目录运行：
+
+```powershell
+python tools/fetch_scripts.py
+```
+
+工具按 [resources/scripts.json](../resources/scripts.json) 中的完整提交 SHA 获取独立的脚本工作树。已有非空 `script/` 时会拒绝覆盖；现有脚本可用时无需执行。网络失败留下的未完成目录也不会被自动删除，请检查后手动继续 Git 获取。
+
+不用 Python 时，等价的手工操作如下；仅用于 `script/` 不存在的新工作树：
+
+```powershell
+git init script
+git -C script remote add origin https://github.com/Fluorohydride/ygopro-scripts.git
+git -C script fetch --depth 1 origin 0be9a8ac948f6ac38f4ed3ba45d439290d04415a
+git -C script checkout --detach FETCH_HEAD
+```
+
+这个上游提交已用当前 Windows 引擎和卡库验证：两个内置残局均能加载到首个引擎询问。它不代表全部卡片和旧录像都已验证兼容。使用其他版本时应一起核对引擎、卡库与 Lua，避免无记录地跟随上游最新提交。
+
+从早期版本升级时，先备份自定义或需要固定版本的脚本。Git 拉取“移除跟踪文件”的提交时可能移除原来干净的受跟踪文件；更新后按上述方式获取外部脚本。本次清理工作区中的旧资源保留在本机，但它们不再被推送。
+
+### 构建并启动桌面
 
 ```powershell
 Set-Location E:\workspace\goygopro
@@ -105,7 +132,7 @@ goygopro/
 ├── ocgcore.dll                # Windows 示例，需匹配架构及其依赖
 ├── cards.cdb
 ├── strings.conf
-├── script/                   # 全套共享及卡片 Lua，和引擎/卡库配套
+├── script/                   # 从上游另取，不由本仓库跟踪；与引擎/卡库配套
 │   ├── constant.lua
 │   ├── utility.lua
 │   ├── procedure.lua
@@ -123,6 +150,8 @@ goygopro/
 ```
 
 可以在资源根目录启动 exe，或让 exe 放在资源根目录 / 其下的 `bin/` 中。不要把 `frontend/src/` 当成已经构建的 `dist/`；当前入口会回退查找源码 `index.html`，但静态文件服务不会代替 Vite 编译 TSX。
+
+分发给其他机器时仍要带上获取后的 Lua 文件；“不纳入源码仓库”不等于“运行时不需要”。`script/.git` 是开发元数据，无需随运行包提供。
 
 原生动态库不能跨操作系统混用，位数需与 Go 程序匹配。即使 DLL 文件存在，“找不到指定模块”也可能来自该库的系统依赖缺失。库能加载也不等于 Lua API 匹配。应复制同一套可用引擎、数据库与脚本，不应随意混合不同客户端的资源版本。
 

@@ -26,6 +26,25 @@ frontend/.vite/
 __pycache__/
 *.pyc
 
+# External rules: fetch from Fluorohydride/ygopro-scripts (see resources/scripts.json).
+/script/
+
+# Unused language copies and legacy client/debug artifacts.
+/cards-*.cdb
+/textures/
+/client/gscenes/
+/client/gui/testdata/
+/frontend/smoke/shots/
+
+# Unused alternative vendor bundles; runtime uses the three ESM files only.
+/frontend/libs/*.min.js
+/frontend/libs/three.cjs
+/frontend/libs/three.tsl.js
+/frontend/libs/three.webgpu.js
+/frontend/libs/three.webgpu.nodes.js
+/frontend/libs/OrbitControls.js
+/frontend/libs/tween.umd.js
+
 # OS
 .DS_Store
 Thumbs.db
