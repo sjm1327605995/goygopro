@@ -281,8 +281,7 @@ export const WailsBridge = {
     if (isWails) {
       return await callWails("StartSingle", name, returnDeckTop);
     }
-    console.log("[MockBridge] StartSingle:", name, returnDeckTop);
-    return { success: true, name };
+    return { success: false, error: '浏览器演示不能运行 Lua 残局，请使用 Wails 桌面窗口。' };
   },
 
   stopSingle() {

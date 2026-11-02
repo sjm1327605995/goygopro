@@ -10,6 +10,7 @@ import SourceWindow from '../ui/SourceWindow.tsx';
 import DeckManageModal from './DeckManageModal.tsx';
 import BigCardPanel from './BigCardPanel.tsx';
 import CardAvailabilityBadge from './CardAvailabilityBadge.tsx';
+import '../../css/runtime-help.css';
 import { compareDeckCards, type DeckSortMode } from '../domain/deck_sort.ts';
 import {formatCardName,formatCardType,formatCardTypeLine,formatCardStats} from '../domain/card_information.ts';
 import {
@@ -242,6 +243,9 @@ type SectionCounts = Record<DeckSection, Record<number, number>>;
 
 export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: string) => void }) {
   const [deckList, setDeckList] = useState<string[]>([]);
+  const [deckLoading,setDeckLoading]=useState(true);
+  const [deckLoadError,setDeckLoadError]=useState('');
+  const [deckReload,setDeckReload]=useState(0);
   const [categoryList,setCategoryList]=useState<string[]>([]);
   const [currentDeck, setCurrentDeck] = useState<DeckList>({ name: '新卡组', main: [], extra: [], side: [] });
   const [deckName, setDeckName] = useState('新卡组');
@@ -300,6 +304,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   };
   const [sortMode, setSortMode] = useState<DeckSortMode>('level');
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchState,setSearchState]=useState<'idle'|'loading'|'done'|'error'>('idle');
   const searchVersion=useRef(0);
   const [inspected, setInspected] = useState<any>(null);
   const inspectVersion=useRef(0);
@@ -332,18 +337,27 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   const decksInCategory = deckList.filter((n) => (category === '' ? !n.includes('/') : n.startsWith(category + '/')));
 
   useEffect(() => {
+    let alive=true;setDeckLoading(true);setDeckLoadError('');
     (async () => {
-      const list = await WailsBridge.listDecks();
-      setDeckList(list || []);
-      setCategoryList(await WailsBridge.listDeckCategories());
-      if (list && list.length > 0) {
-        await settingsStore.load();
-        const s = settingsStore.getSnapshot();
-        const remembered = s.lastcategory ? `${s.lastcategory}/${s.lastdeck}` : String(s.lastdeck || '');
-        await loadDeck(list.includes(remembered) ? remembered : list[0]);
-      }
+      try {
+        const list = (await WailsBridge.listDecks())||[];
+        if(!alive)return;
+        setDeckList(list || []);
+        const categories=await WailsBridge.listDeckCategories();
+        if(!alive)return;
+        setCategoryList(categories);
+        if (list && list.length > 0) {
+          await settingsStore.load();
+          const s = settingsStore.getSnapshot();
+          if(!alive)return;
+          const remembered = s.lastcategory ? `${s.lastcategory}/${s.lastdeck}` : String(s.lastdeck || '');
+          await loadDeck(list.includes(remembered) ? remembered : list[0]);
+        }
+      } catch {if(alive)setDeckLoadError('无法加载卡组。请检查桌面服务和 deck/ 目录后重试。');}
+      finally {if(alive)setDeckLoading(false);}
     })();
-  }, []);
+    return()=>{alive=false;};
+  }, [deckReload]);
 
   useEffect(() => {
     if (!inspected) { setInspectedPic(null); return; }
@@ -418,14 +432,18 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
     && !window.confirm('当前卡组有未保存的修改，确定丢弃？');
 
   const loadDeck = async (name: string): Promise<void> => {
-    const deck = await WailsBridge.loadDeck(name);
-    if (deck) {
-      applyDeck(deck, { modified: false });
-      setDeckName(deck.name || name);
-      // 分类跟随卡组名（gframe lastcategory 语义；'' = 未分类）
-      setCategory(name.includes('/') ? name.split('/')[0] : '');
-      setLoadedDeck(name);
-    }
+    setDeckLoadError('');
+    try {
+      const deck = await WailsBridge.loadDeck(name);
+      if(!deck)throw new Error('missing deck');
+      if (deck) {
+        applyDeck(deck, { modified: false });
+        setDeckName(deck.name || name);
+        // 分类跟随卡组名（gframe lastcategory 语义；'' = 未分类）
+        setCategory(name.includes('/') ? name.split('/')[0] : '');
+        setLoadedDeck(name);
+      }
+    } catch {setDeckLoadError('无法读取所选卡组，请检查 deck/ 文件或重新选择卡组。');}
   };
 
   const saveDeck = async (): Promise<void> => {
@@ -479,6 +497,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   // 运算符输入/效果/箭头全部复位，弹窗一并收起）
   const clearFilters = (): void => {
     searchVersion.current++;
+    setSearchState('idle');
     setSearchResults([]);
     setSearchKeyword('');
     setTypeFilter('0');
@@ -537,40 +556,46 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   const effectMask = [...effectBits].reduce((acc, b) => acc + b, 0);
   const performSearch = async (): Promise<void> => {
     const version=++searchVersion.current;
-    // 种类/副种类 → type 参数（deck_con.cpp:1486-1530 的语义）：
-    // 怪兽 = 子集掩码（(type & mask) == mask，Go 侧现有语义）；
-    // 魔陷选了副种类 = 精确相等（type == mask，前端后置过滤）。
-    const t1 = parseInt(typeFilter, 10);
-    const t2 = parseInt(type2Filter, 10);
-    let type = 0;
-    let typeExact = 0;
-    if (t1 === 1) type = t2 || TYPE_MONSTER;
-    else if (t1 === 2) { if (t2) typeExact = t2; else type = TYPE_SPELL; }
-    else if (t1 === 3) { if (t2) typeExact = t2; else type = TYPE_TRAP; }
-    // 禁限过滤在前端后置（lfContent 已同步到本机），此时放宽服务端
-    // 条数上限，避免先截断后过滤导致漏卡
-    let results = await WailsBridge.searchCards({
-      keyword: searchKeyword.trim(),
-      multiKeywords: Number(settingsStore.get('search_multiple_keywords')) || 0,
-      type,
-      race: isMonsterKind ? parseInt(raceFilter, 10) || 0 : 0,
-      attribute: isMonsterKind ? parseInt(attrFilter, 10) || 0 : 0,
-      levelFilter: isMonsterKind ? starFilter.trim() : '',
-      atkFilter: isMonsterKind ? atkFilter.trim() : '',
-      defFilter: isMonsterKind && !isLinkType2 ? defFilter.trim() : '',
-      scaleFilter: isMonsterKind ? scaleFilter.trim() : '',
-      effect: effectMask,
-      linkMarks,
-      allResults: true,
-    });
-    results = results || [];
-    if(version!==searchVersion.current)return;
-    if (typeExact) results = results.filter((c: any) => c.type === typeExact);
-    setSearchResults(applyLimitFilter(results));
-    if (!settingsStore.get('separate_clear_button')) {
-      setRaceFilter('0');setAttrFilter('0');setLimitFilter('0');
-      setStarFilter('');setAtkFilter('');setDefFilter('');setScaleFilter('');
-      setEffectBits(new Set());setLinkMarks(0);
+    setSearchState('loading');
+    try {
+      // 种类/副种类 → type 参数（deck_con.cpp:1486-1530 的语义）：
+      // 怪兽 = 子集掩码（(type & mask) == mask，Go 侧现有语义）；
+      // 魔陷选了副种类 = 精确相等（type == mask，前端后置过滤）。
+      const t1 = parseInt(typeFilter, 10);
+      const t2 = parseInt(type2Filter, 10);
+      let type = 0;
+      let typeExact = 0;
+      if (t1 === 1) type = t2 || TYPE_MONSTER;
+      else if (t1 === 2) { if (t2) typeExact = t2; else type = TYPE_SPELL; }
+      else if (t1 === 3) { if (t2) typeExact = t2; else type = TYPE_TRAP; }
+      // 禁限过滤在前端后置（lfContent 已同步到本机），此时放宽服务端
+      // 条数上限，避免先截断后过滤导致漏卡
+      let results = await WailsBridge.searchCards({
+        keyword: searchKeyword.trim(),
+        multiKeywords: Number(settingsStore.get('search_multiple_keywords')) || 0,
+        type,
+        race: isMonsterKind ? parseInt(raceFilter, 10) || 0 : 0,
+        attribute: isMonsterKind ? parseInt(attrFilter, 10) || 0 : 0,
+        levelFilter: isMonsterKind ? starFilter.trim() : '',
+        atkFilter: isMonsterKind ? atkFilter.trim() : '',
+        defFilter: isMonsterKind && !isLinkType2 ? defFilter.trim() : '',
+        scaleFilter: isMonsterKind ? scaleFilter.trim() : '',
+        effect: effectMask,
+        linkMarks,
+        allResults: true,
+      });
+      results = results || [];
+      if(version!==searchVersion.current)return;
+      if (typeExact) results = results.filter((c: any) => c.type === typeExact);
+      setSearchResults(applyLimitFilter(results));
+      setSearchState('done');
+      if (!settingsStore.get('separate_clear_button')) {
+        setRaceFilter('0');setAttrFilter('0');setLimitFilter('0');
+        setStarFilter('');setAtkFilter('');setDefFilter('');setScaleFilter('');
+        setEffectBits(new Set());setLinkMarks(0);
+      }
+    } catch {
+      if(version===searchVersion.current){setSearchResults([]);setSearchState('error');}
     }
   };
 
@@ -1121,6 +1146,10 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
           <span className="badge badge-attr">{currentDeck.main.length}</span>
         </div>
         {renderSection(currentDeck.main, 'main')}
+        {(!!deckLoadError||(currentDeck.main.length===0&&(deckLoading||!deckList.length)))&&<div className="deck-load-message" role={deckLoadError?'alert':'status'}>
+          {deckLoading?'正在读取本地卡组…':deckLoadError||'还没有卡组。搜索卡片后点击添加，再输入名称保存；桌面端也可把 .ydk 文件放进 deck/。'}
+          {deckLoadError&&<div><UiButton onClick={()=>{if(!discardGuard())setDeckReload(value=>value+1);}}>重新读取</UiButton></div>}
+        </div>}
         <div className="deck-section-title ds-title-extra">
           <span>额外卡组：</span>
           <span className="badge badge-type">{currentDeck.extra.length}</span>
@@ -1151,6 +1180,13 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
             draggedRef.current = null;
             if (d?.section !== undefined && d.index !== undefined) removeCardFromDeck(d.section, d.index);
           }}>
+            {searchState==='loading'&&<div className="deck-empty-state" role="status">正在搜索卡片…</div>}
+            {searchState==='error'&&<div className="deck-empty-state" role="alert"><strong>卡片检索失败</strong>请检查桌面服务与 cards.cdb 后重试。<br/><UiButton onClick={()=>void performSearch()}>重新搜索</UiButton></div>}
+            {searchState!=='loading'&&searchState!=='error'&&sortedResults.length===0&&<div className="deck-empty-state" role="status">
+              <strong>{searchState==='idle'?'从搜索开始':'没有匹配的卡片'}</strong>
+              {searchState==='idle'?'输入卡号或卡名后按 Enter，或点击搜索。':'请清空筛选后重试；桌面端仍无结果时，检查 cards.cdb。'}
+              {!WailsBridge.isWails&&<p>当前为浏览器演示，只含少量英文样例。可试卡号 89631139；完整卡库与本地保存请使用桌面窗口。</p>}
+            </div>}
             {sortedResults.map((card, i) => (
               <SearchResultChip
                 key={`${card.code}-${i}`}

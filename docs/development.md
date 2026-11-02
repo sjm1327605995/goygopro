@@ -39,10 +39,12 @@ npm --prefix frontend run preview -- --outDir smoke-dist --host 127.0.0.1 --port
 npm --prefix frontend install --no-save --package-lock=false playwright
 $env:PLAYWRIGHT_MODULE_PATH = (Resolve-Path frontend/node_modules/playwright).Path
 # Chrome 不在默认路径或使用其他平台时，另设 CHROME_PATH 为浏览器可执行文件。
-node tools/ui_smoke_suite.cjs menu lobby netplay_lobby single deck settings widgets prompts arena hands appearance stage practice theater replay ui_parity
+node tools/ui_smoke_suite.cjs runtime menu lobby netplay_lobby single deck settings widgets prompts arena hands appearance stage practice theater replay ui_parity
 ```
 
 结果写入 `tmp_dbg/ui-smoke-results.json`。重点用例：`hands` 覆盖 1 / 5 / 12 张牌、逐张拾取、魔陷区避让、悬停稳定性、视角交换与重复卡牌精确应答；`appearance` 覆盖图片卡套、本机保存、环境叠加、缺图与异步竞态回退。
+
+`runtime` 覆盖浏览器模式标识、命令复制、单机不误入空场地、目录读取失败与重试、重复启动保护、双击目标残局、空卡组说明、检索失败恢复及旧请求竞态。
 
 ## 仓库资源边界
 

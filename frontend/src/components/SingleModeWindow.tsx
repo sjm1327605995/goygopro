@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { WailsBridge } from '../wails_bridge.ts';
 import UiButton from '../ui/UiButton.tsx';
 import { UiCheckbox } from '../ui/UiInput.tsx';
 import DesignSpace from '../ui/DesignSpace.tsx';
 import ScreenHeading from '../ui/ScreenHeading.tsx';
+import '../../css/runtime-help.css';
 
 /**
  * 波 J：单人模式窗口 — 布局源自原版 wSinglePlay（game.cpp:848-890）。
@@ -24,22 +25,38 @@ export default function SingleModeWindow({ onNavigate, onStart }: SingleModeWind
   const [selected, setSelected] = useState<string | null>(null);
   const [returnDeckTop, setReturnDeckTop] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [listError,setListError]=useState<string|null>(null);
+  const [loading,setLoading]=useState(true);
+  const [starting,setStarting]=useState(false);
+  const pending=useRef(false);
+  const alive=useRef(true);
+  const listVersion=useRef(0);
+
+  const loadSingles=async()=>{
+    const version=++listVersion.current;setLoading(true);setListError(null);
+    try {
+      const list=(await WailsBridge.listSingles())||[];
+      if(!alive.current||version!==listVersion.current)return;
+      setSingles(list);setSelected(previous=>list.some(s=>s.name===previous)?previous:list[0]?.name||null);
+    } catch {if(alive.current&&version===listVersion.current)setListError('无法读取残局列表。请检查桌面服务和 single/ 目录后重试。');}
+    finally {if(alive.current&&version===listVersion.current)setLoading(false);}
+  };
 
   useEffect(() => {
-    WailsBridge.listSingles().then((list) => {
-      setSingles(list || []);
-      if (list && list.length) setSelected(list[0].name);
-    });
+    alive.current=true;void loadSingles();
+    return()=>{alive.current=false;listVersion.current++;};
   }, []);
 
-  const start = async (): Promise<void> => {
-    if (!selected) return;
-    const res = await WailsBridge.startSingle(selected, returnDeckTop);
-    if (res && res.success) {
-      onStart();
-    } else {
-      setError((res && res.error) || '加载谜题失败');
-    }
+  const start = async (name=selected): Promise<void> => {
+    if (!name||loading||listError||pending.current) return;
+    setSelected(name);
+    pending.current=true;setStarting(true);setError(null);
+    try {
+      const res = await WailsBridge.startSingle(name, returnDeckTop);
+      if(!alive.current)return;
+      if(res?.success)onStart();else setError(res?.error||'加载谜题失败，请检查脚本与引擎资源。');
+    } catch {if(alive.current)setError('启动失败，请检查桌面服务、规则脚本与引擎资源后重试。');}
+    finally {pending.current=false;if(alive.current)setStarting(false);}
   };
 
   const selectedInfo = singles.find((s) => s.name === selected);
@@ -67,14 +84,14 @@ export default function SingleModeWindow({ onNavigate, onStart }: SingleModeWind
                 key={s.name}
                 className={`gfw-list-item${s.name === selected ? ' gfw-selected' : ''}`}
                 onClick={() => setSelected(s.name)}
-                onDoubleClick={start}
+                onDoubleClick={()=>void start(s.name)}
               >
                 {s.name}
               </div>
             ))}
-            {!singles.length && (
-              <div className="gfw-list-item" style={{ color: '#64748b' }}>（没有找到谜题脚本）</div>
-            )}
+            {loading && <div className="single-empty-state" role="status">正在读取残局列表…</div>}
+            {listError && <div className="single-empty-state" role="alert">{listError}<br/><UiButton onClick={()=>void loadSingles()}>重新读取</UiButton></div>}
+            {!loading&&!listError&&!singles.length && <div className="single-empty-state" role="status">没有找到谜题脚本。<br/>桌面端请检查 single/ 中的 .lua 文件；script/ 规则目录不能代替残局目录。<br/><UiButton onClick={()=>void loadSingles()}>重新读取</UiButton></div>}
           </div>
 
           {/* 主要信息：右侧卡片 */}
@@ -93,19 +110,21 @@ export default function SingleModeWindow({ onNavigate, onStart }: SingleModeWind
             不洗切时回卡组改为回顶端
           </label>
 
-          {error && <div id="single-error" className="single-error">{error}</div>}
+          {!WailsBridge.isWails&&<div className="single-runtime-note">浏览器仅展示样例，运行残局请使用桌面窗口。左下角可查看运行帮助。</div>}
+          {error && <div id="single-error" className="single-error" role="alert">{error}</div>}
 
           {/* 确定 btnLoadSinglePlay / 退出 btnSinglePlayCancel */}
           <UiButton
             id="single-start"
             style={{ position: 'absolute', left: 430, top: 390, width: 105, height: 34 }}
-            disabled={!selected}
-            onClick={start}
-          >确定</UiButton>
+            disabled={!selected||loading||!!listError||starting}
+            onClick={()=>void start()}
+          >{starting?'正在加载…':'确定'}</UiButton>
           <UiButton
             id="single-exit"
             style={{ position: 'absolute', left: 545, top: 390, width: 100, height: 34 }}
             onClick={() => onNavigate('menu')}
+            disabled={starting}
           >退出</UiButton>
         </div>
       </div>
