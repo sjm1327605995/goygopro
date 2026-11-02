@@ -12,7 +12,9 @@
 
 | 主菜单 | 卡组编辑 |
 | --- | --- |
-| ![主菜单](docs/images/menu.webp) | ![卡组编辑：使用固定演示卡组与卡图](docs/images/deck-editor.webp) |
+| ![主菜单](docs/images/menu.webp) | ![卡组编辑：样例卡组与真实卡图加载效果](docs/images/deck-editor.webp) |
+
+卡组截图使用浏览器样例数据和实际卡图加载链路；图片来自本地 `pics/` 或图床，并不表示全部卡图已随 Git 打包。
 
 ![图片卡套与场地外观设置](docs/images/appearance.webp)
 

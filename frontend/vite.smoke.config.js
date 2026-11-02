@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import { cpSync, existsSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import cardArtPlugin from './plugins/card-art.js';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 
@@ -22,7 +23,7 @@ function copyTextures() {
 }
 
 export default defineConfig({
-  plugins: [copyTextures()],
+  plugins: [copyTextures(), cardArtPlugin(root)],
   base: './',
   build: {
     target: 'es2022', // 顶层 await（wails runtime 动态 import）
@@ -30,6 +31,7 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
+        card_art_smoke: resolve(root, 'card_art_smoke.html'),
         runtime_smoke: resolve(root, 'runtime_smoke.html'),
         hands_smoke: resolve(root, 'hands_smoke.html'),
         appearance_smoke: resolve(root, 'appearance_smoke.html'),

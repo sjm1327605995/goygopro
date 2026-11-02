@@ -62,6 +62,7 @@ flowchart TB
 - `DuelManager` 负责引擎指令、选位、选卡、连锁偏好及 3D 状态同步，不把规则判定移到浏览器。
 - `field3d.ts` 负责相机、纹理、拾取与卡片实例；`arena_architecture.ts` 生成场景，`arena_hand.ts` 计算手牌构图，`field3d_anim.ts` 驱动动画。
 - `field3d_geometry.ts` 与 `original_geometry.ts` 维护区域坐标。场景装饰不改变引擎的座位、区域和序号映射。
+- 浏览器开发/预览使用 `frontend/plugins/card-art.js` 提供的同源图片接口，绕过图床 CORS；它先读取本地卡图，再从固定图床获取。这里只代理图片，规则与文件保存仍需要 Wails。桌面卡图继续由 Go `GetCardImage` 处理。
 - 传统 `classic` 布局保留用于原版兼容验证与回放场景；实时决斗使用 `arena` 布局，回放的 `compact` 模式缩减 HUD。
 
 ## 对局事件与应答流程

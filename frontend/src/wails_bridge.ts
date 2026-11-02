@@ -226,6 +226,13 @@ export const WailsBridge = {
   isWails,
   _cardCache: new Map<number, any>(),
   _picCache: new Map<number, { url: string } | null>(),
+  _picMissUntil: new Map<number, number>(),
+  _picRequests: new Map<number, Promise<{url:string}|null>>(),
+  _picCacheEpoch: 0,
+  clearCardImageCache() {
+    WailsBridge._picCacheEpoch++;
+    WailsBridge._picCache.clear();WailsBridge._picMissUntil.clear();WailsBridge._picRequests.clear();
+  },
 
   async connectServer(addr: string, username: string, pass: string) {
     if (isWails) {
@@ -467,29 +474,36 @@ export const WailsBridge = {
   // Card picture lookup. Returns { url } or null — the URL is a complete card
   // face (pics/<code>.jpg on disk via Go GetCardImage, or the YGOProDeck CDN
   // whenever no local art is installed), drawn full-card by every consumer.
-  // Results (including misses) are cached per code.
+  // Share concurrent requests. Failed requests expire and can be retried manually.
   async getCardImage(code: number) {
     if (!code) return null;
     const cached = WailsBridge._picCache.get(code);
-    if (cached !== undefined) return cached;
-    let result: { url: string } | null = null;
-    if (isWails) {
-      const data = await callWails("GetCardImage", code);
-      if (data) {
-        result = { url: data as string };
+    if (cached) return cached;
+    if((WailsBridge._picMissUntil.get(code)||0)>Date.now())return null;
+    const existing=WailsBridge._picRequests.get(code);if(existing)return existing;
+    const epoch=WailsBridge._picCacheEpoch;
+    const request=(async()=>{
+      let result:{url:string}|null=null;
+      try{
+        if(isWails){const data=await callWails('GetCardImage',code);if(data)result={url:data as string};}
+        else result=await WailsBridge._fetchCdnCardImage(code);
+      }catch{/* A transient image failure must not reject card/deck rendering. */}
+      if(epoch===WailsBridge._picCacheEpoch){
+        if(result)WailsBridge._picCache.set(code,result);
+        else WailsBridge._picMissUntil.set(code,Date.now()+15000);
       }
-    }
-    if (!result) {
-      result = await WailsBridge._fetchCdnCardImage(code);
-    }
-    WailsBridge._picCache.set(code, result);
-    return result;
+      return result;
+    })();
+    WailsBridge._picRequests.set(code,request);
+    try{return await request;}finally{if(WailsBridge._picRequests.get(code)===request)WailsBridge._picRequests.delete(code);}
   },
 
   async _fetchCdnCardImage(code: number) {
     try {
-      const res = await fetch(`https://images.ygoprodeck.com/images/cards_small/${code}.jpg`);
-      if (!res.ok) return null;
+      // Vite serves a restricted same-origin image endpoint. Fetching the CDN
+      // in the browser is blocked by its missing CORS headers and taints canvas.
+      const res = await fetch(`/__goygopro/card-art/${code}`,{signal:AbortSignal.timeout(22000)});
+      if (!res.ok||!res.headers.get('content-type')?.startsWith('image/')) return null;
       const blob = await res.blob();
       const url = await new Promise<string | null>((resolve) => {
         const reader = new FileReader();

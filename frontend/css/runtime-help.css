@@ -28,4 +28,9 @@
 #deck-screen .deck-empty-state { padding: 16px 10px; font-size: 11px; line-height: 1.8; color: #9fb5c4; }
 #deck-screen .deck-empty-state strong { display: block; color: #d9e4d3; margin-bottom: 6px; }
 #deck-screen .deck-load-message { position: absolute; left: 319px; top: 180px; width: 300px; z-index: 2; padding: 12px; font-size: 12px; line-height: 1.7; background: #0b1724ed; border: 1px solid #a4bc7f60; color: #cbdac0; }
+#deck-screen .deck-art-placeholder { position:absolute;bottom:0;left:0;right:0;background:#08121de8;color:#d4debf;font-size:8px;line-height:15px;text-align:center;pointer-events:none; }
+#deck-screen .deck-result-thumb { position:relative; }
+#deck-screen .deck-result-row > .deck-art-placeholder { left:0;right:auto;width:44px; }
+#deck-screen .deck-reload-art { position:absolute;bottom:4px;right:6px;border:1px solid #a7c87670;background:#0b1825;color:#c7dda7;padding:4px 7px;cursor:pointer;font-size:10px;z-index:2; }
+#deck-screen .search-results-grid { padding-bottom:32px; }
 @media(max-width:600px) { .runtime-help-dialog { padding: 18px; } .runtime-help-dialog h2 { font-size: 20px; } }

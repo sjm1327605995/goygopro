@@ -10,6 +10,7 @@ import SourceWindow from '../ui/SourceWindow.tsx';
 import DeckManageModal from './DeckManageModal.tsx';
 import BigCardPanel from './BigCardPanel.tsx';
 import CardAvailabilityBadge from './CardAvailabilityBadge.tsx';
+import {useCardImage} from '../ui/useCardImage.ts';
 import '../../css/runtime-help.css';
 import { compareDeckCards, type DeckSortMode } from '../domain/deck_sort.ts';
 import {formatCardName,formatCardType,formatCardTypeLine,formatCardStats} from '../domain/card_information.ts';
@@ -81,8 +82,9 @@ const LIMIT_OPTIONS: string[] = [
 // 卡图缩略格子（原版 deck editor 是纯图片网格）。拉一次卡图与卡名缓存。
 // lfLimit：禁限卡表档位（0 禁/1 限/2 准限，undefined = 无限制），画左上角
 // 角标（原版 DrawThumb 在缩略图左上叠 lim 贴图，drawing.cpp:1176-1198）。
-function CardChip({ code, lfLimit, style, onInspect, onZoom, onContextMenu, onDragStart, onDrop, onCopy, filter, defaultOT }: {
+function CardChip({ code, imageRevision, lfLimit, style, onInspect, onZoom, onContextMenu, onDragStart, onDrop, onCopy, filter, defaultOT }: {
   code: number;
+  imageRevision: number;
   filter: number;
   defaultOT: number;
   lfLimit?: number;
@@ -95,11 +97,10 @@ function CardChip({ code, lfLimit, style, onInspect, onZoom, onContextMenu, onDr
   onCopy?: () => void;
 }) {
   const [info, setInfo] = useState<any>(null);
-  const [pic, setPic] = useState<string | null>(null);
+  const {pic,loading,onError}=useCardImage(code,imageRevision);
   useEffect(() => {
     let alive = true;
-    WailsBridge.getCard(code).then((c) => { if (alive) setInfo(c); });
-    WailsBridge.getCardImage(code).then((p) => { if (alive && p) setPic(p.url); });
+    WailsBridge.getCard(code).then((c) => { if (alive) setInfo(c); }).catch(()=>{if(alive)setInfo(null);});
     return () => { alive = false; };
   }, [code]);
 
@@ -119,10 +120,11 @@ function CardChip({ code, lfLimit, style, onInspect, onZoom, onContextMenu, onDr
     >
       {/* 卡图只等比缩放（contain），不裁剪不拉升 */}
       {pic
-        ? <img src={pic} alt={info ? info.name : String(code)} draggable={false}
+        ? <img src={pic} alt={info ? info.name : String(code)} draggable={false} onError={onError}
             style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
         : <img src="textures/unknown.jpg" alt={info ? info.name : String(code)} draggable={false}
             style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />}
+      {!pic&&<span className="deck-art-placeholder" title={loading?'正在加载卡图':'卡图未找到或网络不可用，可点击右下角重载卡图'}>{loading?'加载中':'缺少卡图'}</span>}
       {lfLimit !== undefined && lfLimit < 3
         ? <span aria-label={LIMIT_BADGE_LABELS[lfLimit]} className={`deck-limit-badge deck-limit-${lfLimit}`} />
         : null}
@@ -176,8 +178,9 @@ export const parseDeckYdk = (text: string): { main: number[]; extra: number[]; s
 // 搜索结果行：纵向列表的一行（原版 DrawDeckBd 搜索区 drawing.cpp:1296-1360），
 // 左缩略图 + 右侧卡名/种类/属性/种族/星级/攻守文本；点击加入卡组，悬停进左侧
 // 预览，双击看大图。
-function SearchResultChip({ card, lfLimit, onInspect, onAdd, onZoom, onDragStart, filter, defaultOT }: {
+function SearchResultChip({ card, imageRevision, lfLimit, onInspect, onAdd, onZoom, onDragStart, filter, defaultOT }: {
   card: any;
+  imageRevision: number;
   filter:number;
   defaultOT:number;
   lfLimit?: number;
@@ -186,12 +189,7 @@ function SearchResultChip({ card, lfLimit, onInspect, onAdd, onZoom, onDragStart
   onDragStart: (e: React.DragEvent) => void;
   onZoom: (code: number) => void;
 }) {
-  const [pic, setPic] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    WailsBridge.getCardImage(card.code).then((p) => { if (alive && p) setPic(p.url); });
-    return () => { alive = false; };
-  }, [card.code]);
+  const {pic,loading,onError}=useCardImage(card.code,imageRevision);
 
   const t = card.type || 0;
   const isMonster = (t & TYPE_MONSTER) !== 0;
@@ -212,9 +210,10 @@ function SearchResultChip({ card, lfLimit, onInspect, onAdd, onZoom, onDragStart
       title={card.name}
     >
       <div className="deck-result-thumb">
-        <img src={pic || 'textures/unknown.jpg'} alt={card.name} draggable={false}
+        <img src={pic || 'textures/unknown.jpg'} alt={card.name} draggable={false} onError={pic?onError:undefined}
             style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
       </div>
+      {!pic&&<span className="deck-art-placeholder">{loading?'加载中':'缺少卡图'}</span>}
       <div className="deck-result-text">
         <div className="deck-result-name">{card.name}</div>
         <div className="deck-result-sub">
@@ -243,6 +242,7 @@ type SectionCounts = Record<DeckSection, Record<number, number>>;
 
 export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: string) => void }) {
   const [deckList, setDeckList] = useState<string[]>([]);
+  const [imageRevision,setImageRevision]=useState(0);
   const [deckLoading,setDeckLoading]=useState(true);
   const [deckLoadError,setDeckLoadError]=useState('');
   const [deckReload,setDeckReload]=useState(0);
@@ -362,9 +362,10 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
   useEffect(() => {
     if (!inspected) { setInspectedPic(null); return; }
     let alive = true;
-    WailsBridge.getCardImage(inspected.code).then((p) => { if (alive) setInspectedPic(p ? p.url : null); });
+    setInspectedPic(null);
+    WailsBridge.getCardImage(inspected.code).then((p) => { if (alive) setInspectedPic(p ? p.url : null); }).catch(()=>{if(alive)setInspectedPic(null);});
     return () => { alive = false; };
-  }, [inspected && inspected.code]);
+  }, [inspected && inspected.code,imageRevision]);
 
   // 同铭归组需要 alias，而 alias 来自 getCard（带 memo 缓存）——先把整副
   // 卡组的卡信息拉齐，再按 alias||code 归并计数。
@@ -781,6 +782,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
       <CardChip
         key={`${code}-${idx}`}
         code={code}
+        imageRevision={imageRevision}
         filter={Number(limitFilter)} defaultOT={Number(settingsSnap.default_ot)||1}
         lfLimit={limitOf(groupOf(code))}
         style={{ marginLeft: col > 0 ? step - 44 : 0 }}
@@ -862,7 +864,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
         <CardImageFrame className="inspector-pic-frame" imageClassName="inspector-pic-box">
           {inspectedPic
             ? <img id="deck-inspector-pic" src={inspectedPic} alt={inspected.name} draggable={false}
-                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} onClick={() => setZoomCode(inspected.code)} />
+                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} onError={()=>setInspectedPic(null)} onClick={() => setZoomCode(inspected.code)} />
             : <img src="textures/cover.jpg" alt="" style={{width:'100%',height:'100%',objectFit:'contain'}}/>}
         </CardImageFrame>
         <div className="inspector-infos">
@@ -1191,6 +1193,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
               <SearchResultChip
                 key={`${card.code}-${i}`}
                 card={card}
+                imageRevision={imageRevision}
                 filter={Number(limitFilter)} defaultOT={Number(settingsSnap.default_ot)||1}
                 lfLimit={limitOf(card.alias || groupOf(card.code))}
                 onInspect={inspectCard}
@@ -1200,6 +1203,7 @@ export default function DeckBuilder({ onNavigate }: { onNavigate: (screen: strin
               />
             ))}
           </div>
+          <button id="deck-reload-art" className="deck-reload-art" type="button" title="重新读取卡图。浏览器预览先读本地 pics，再由 Vite 代取网络图片；桌面仍使用 Go 卡图接口。" onClick={()=>{WailsBridge.clearCardImageCache();setImageRevision(value=>value+1);}}>卡图空白？重载卡图</button>
         </div>
       </DesignSpace>
 
