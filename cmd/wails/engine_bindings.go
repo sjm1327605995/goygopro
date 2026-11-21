@@ -20,7 +20,7 @@ import (
 //     （结构体的 json tag 即前端事件键名）；需要派生字段（布尔化、
 //     解包位置、多列表拆分、query blob 跳过）时给出该函数。
 //
-// 所有布局权威依据见 protocol/message.go 头部注释（source/ygopro 引擎源码）。
+// 所有布局权威依据见 protocol/message.go 头部注释（Fluorohydride/ygopro 引擎源码）。
 type engineBinding struct {
 	name     string
 	newMsg   func() any
@@ -704,7 +704,7 @@ func decoratePlayerHint(c *WailsDuelClient, _ byte, _ *utils.YGOBuffer, msg any)
 }
 
 // ------------------------------------------------------------------
-// 单人谜题的 Debug 消息（source/ygopro/ocgcore/libdebug.cpp）
+// 单人谜题的 Debug 消息（Fluorohydride/ygopro/ocgcore/libdebug.cpp）
 //
 //   - MSG_AI_NAME / MSG_SHOW_HINT（libdebug.cpp:168-190）：u16 长度 + UTF-8
 //     字节串 + NUL。原版 gframe 把 AI_NAME 写进 clientname、SHOW_HINT 弹

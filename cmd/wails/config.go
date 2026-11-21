@@ -15,7 +15,7 @@ import (
 
 // AppConfig：原版 gframe system.conf 配置项的完整翻译。
 //
-// 键名与 vendored source/ygopro/gframe/game.cpp:1395-1607 的
+// 键名与 Fluorohydride/ygopro gframe/game.cpp:1395-1607 的
 // LoadConfig/SaveConfig 一一对应（原版是 Game::Config 结构体字段
 // game.h:47-104），这样同一份 system.conf 可以在两个客户端间互换。
 // 原版中仅 conf 无 UI 的键也一并提供默认值，保持语义完整。

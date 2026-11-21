@@ -1,0 +1,37 @@
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import '@mantine/core/styles.css';
+import '../css/style.css';
+import '../css/gframe-window.css';
+import '../css/ui-kit.css';
+import UiRoot from '../src/ui/UiRoot.tsx';
+import DeckBuilder from '../src/components/DeckBuilder.tsx';
+import {WailsBridge} from '../src/wails_bridge.ts';
+import art from './assets/blue-eyes.jpg';
+const smoke=window.__card_artSmoke={checks:{},ready:false};
+const check=(name,ok)=>{smoke.checks[name]=!!ok;};
+const wait=async fn=>{for(let i=0;i<300;i++){if(fn())return;await new Promise(resolve=>setTimeout(resolve,15));}throw Error('card art wait timed out');};
+const original={...WailsBridge};let fail=true,calls=0;
+WailsBridge._fetchCdnCardImage=async()=>{calls++;await new Promise(resolve=>setTimeout(resolve,20));return fail?null:{url:art};};
+WailsBridge.listDecks=async()=>['art-test'];
+WailsBridge.loadDeck=async()=>({name:'art-test',main:[89631139,89631139],extra:[],side:[]});
+createRoot(document.getElementById('root')).render(<UiRoot><DeckBuilder onNavigate={()=>{}} /></UiRoot>);
+async function run(){
+ await wait(()=>document.querySelector('.deck-art-placeholder')?.textContent==='缺少卡图');
+ check('missing-art-explained',document.querySelectorAll('.deck-art-placeholder').length===2);
+ check('duplicate-card-image-request-coalesced',calls===1);
+ fail=false;document.getElementById('deck-reload-art').click();
+ await wait(()=>[...document.querySelectorAll('.select-card-item.deck-card-chip img')].every(img=>img.complete&&img.naturalWidth>0&&img.src.includes('blue-eyes')));
+ check('retry-recovers-all-copies',!document.querySelector('.deck-art-placeholder')&&calls===2);
+ const img=document.querySelector('.select-card-item.deck-card-chip img');img.dispatchEvent(new Event('error'));
+ await wait(()=>document.querySelector('.deck-art-placeholder')?.textContent==='缺少卡图');
+ check('decode-failure-is-visible',true);
+ document.getElementById('deck-reload-art').click();await wait(()=>!document.querySelector('.deck-art-placeholder'));
+ check('decode-failure-can-retry',calls===3);
+ WailsBridge.clearCardImageCache();fail=true;
+ await WailsBridge.getCardImage(1002);fail=false;
+ WailsBridge._picMissUntil.set(1002,Date.now()-1);
+ check('expired-miss-recovers-without-restart',!!(await WailsBridge.getCardImage(1002)));
+ check('no-fatal',true);
+}
+run().catch(error=>{smoke.checks.fatalMsg=String(error.stack||error);}).finally(()=>{Object.assign(WailsBridge,original);WailsBridge.clearCardImageCache();smoke.ready=true;});

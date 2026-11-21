@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/Fluorohydride/ygopro-scripts.git",
+  "commit": "0be9a8ac948f6ac38f4ed3ba45d439290d04415a",
+  "directory": "script",
+  "validation": "2026-10-26: both bundled single puzzles reached an engine prompt with the bundled Windows engine and cards.cdb; full card and historical replay compatibility is not implied"
+}

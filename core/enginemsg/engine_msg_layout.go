@@ -54,7 +54,7 @@ func fixed(size int) LayStep     { return LayStep{Kind: LayFixed, N: size} }
 func countList(size int) LayStep { return LayStep{Kind: LayCountList, N: size} }
 
 // EngineMsgLayouts 覆盖引擎可能发出的全部消息布局。
-// 数值与 source/ygopro 的 single_duel.cpp / tag_duel.cpp 解析逐字节一致。
+// 数值与 Fluorohydride/ygopro 的 single_duel.cpp / tag_duel.cpp 解析逐字节一致。
 var EngineMsgLayouts = map[uint8]EngineMsgLayout{
 	// ----- 消费一个已记录响应的消息（交互提示） -----
 	ocgcore.MSG_SELECT_BATTLECMD: {response: true, Steps: []LayStep{fixed(1), countList(11), countList(8), fixed(2)}},

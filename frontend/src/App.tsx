@@ -15,6 +15,7 @@ import ReplayTheater from './components/ReplayTheater.tsx';
 import SideDecking from './components/SideDecking.tsx';
 import ReplaySavePrompt from './components/ReplaySavePrompt.tsx';
 import SettingsPanel from './components/SettingsPanel.tsx';
+import RuntimeHelp from './components/RuntimeHelp.tsx';
 
 /**
  * Root React component: screen router + global chrome.
@@ -160,6 +161,7 @@ export default function App() {
       {/* 录像保存确认（决斗结束 STOC_REPLAY；平时自隐藏） */}
       <ReplaySavePrompt />
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      {['menu','single','lobby','replay'].includes(screen) && <RuntimeHelp />}
     </div>
     </UiRoot>
   );

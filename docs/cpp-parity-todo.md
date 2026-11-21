@@ -270,7 +270,7 @@ netserver/single/tag/replay/deck_manager/data_manager 逐行复核，排除已�
   `tmp_dbg/ui-smoke-results.json`、`tmp_dbg/ui-parity-results.json`。
   这些是源码公式、渲染像素和当前客户端验证，尚未运行 C++ 可执行程序进行整屏截图差分。
 
-> 来源：2024 年对 `source/ygopro`（C++ 原版客户端/服务端）与当前 Go+Web 实现（`core/duel`、`cmd/wails`、`frontend/src`）的逐模块核验。
+> 来源：2024 年对 `Fluorohydride/ygopro`（C++ 原版客户端/服务端）与当前 Go+Web 实现（`core/duel`、`cmd/wails`、`frontend/src`）的逐模块核验。
 > 状态图例：`[ ]` 未开始 / `[~]` 进行中 / `[x]` 完成
 > 结论基线：**服务端协议层与原版 1:1 对齐；差距集中在前端表现层与外围功能。**
 
@@ -278,7 +278,7 @@ netserver/single/tag/replay/deck_manager/data_manager 逐行复核，排除已�
 
 - [x] **Tag 模式计时器不重武装**
   - 位置：`core/duel/tag_duel.go:591`（`TagTimer` 非超时路径不 `event_add`）
-  - 原版依据：`source/ygopro/gframe/tag_duel.cpp:1740-1741` 每秒重新武装
+  - 原版依据：`Fluorohydride/ygopro/gframe/tag_duel.cpp:1740-1741` 每秒重新武装
   - 后果：tag 模式计时器走一秒后停止，超时判负永不触发；代码注释"与原版一致"与实际不符
   - 验证：新增 tag 计时器测试（快进虚拟时钟断言超时判负触发）
   - 完成（2026-09）：`core/duel/tag_duel.go:594` 非超时路径补 `AfterFunc` 每秒重武装；

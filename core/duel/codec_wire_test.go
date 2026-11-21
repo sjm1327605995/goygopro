@@ -20,12 +20,12 @@ import (
 //   - 健壮性：每个前缀长度截断都必须返回 *codec.Error 且不 panic。
 //
 // C++ 语义对照：
-//   - STOC/CTOS 帧长度前缀：source/ygopro/gframe/netserver.h 的
+//   - STOC/CTOS 帧长度前缀：Fluorohydride/ygopro/gframe/netserver.h 的
 //     SendPacketToPlayer/SendBufferToPlayer 写 (uint16)(1 + len) + proto，
 //     即线长含 proto 字节本身、不含 2 字节长度前缀自身；
 //   - STOC_ErrorMsg：{ uint8 msg; uint8 padding[3]; uint32 code }；
 //   - ReplayHeader/ExtendedReplayHeader/DuelParameters 字段序见
-//     source/ygopro/gframe/replay.h，其线宽测试随结构体一起移到
+//     Fluorohydride/ygopro/gframe/replay.h，其线宽测试随结构体一起移到
 //     core/replay/replay_wire_test.go。
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-// DataManager::deck_sort_{lv,atk,def,name}, source/ygopro/gframe/data_manager.cpp.
+// DataManager::deck_sort_{lv,atk,def,name}, Fluorohydride/ygopro gframe/data_manager.cpp.
 export type DeckSortMode = 'level' | 'attack' | 'defense' | 'name';
 const monsterType = (type: number) => type & 0x48020c0 ? type & 0x48020c1 : type & 0x31;
 export function compareDeckCards(a: any, b: any, mode: DeckSortMode = 'level'): number {

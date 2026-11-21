@@ -31,7 +31,7 @@ func newTimedTagDuelForTest(t *testing.T) (*TagDuel, []*recordConn) {
 }
 
 // TestTagTimerRearmsEverySecond 守住原版 TagTimer 的每秒重武装语义
-//（source/ygopro/gframe/tag_duel.cpp:1740-1741 的 event_add）：非超时路径
+//（Fluorohydride/ygopro gframe/tag_duel.cpp:1740-1741 的 event_add）：非超时路径
 // 必须重新武装定时器，否则计时器走一秒后停走、超时判负永不触发。
 // 这正是旧 Go 实现的回归场景。
 func TestTagTimerRearmsEverySecond(t *testing.T) {

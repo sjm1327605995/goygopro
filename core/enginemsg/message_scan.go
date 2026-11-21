@@ -5,7 +5,7 @@ import (
 )
 
 // This file mirrors the message-walk of the C++ client's
-// ReplayMode::ReplayAnalyze (source/ygopro/gframe/replay_mode.cpp): it walks an
+// ReplayMode::ReplayAnalyze (Fluorohydride/ygopro gframe/replay_mode.cpp): it walks an
 // engine message batch message by message and reports whether the batch
 // contains a message the driver must answer with a recorded response.
 //

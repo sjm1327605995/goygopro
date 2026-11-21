@@ -19,7 +19,7 @@
 
 ## 对比条件与限制
 
-- C++ 基准：本仓库 `source/ygopro/gframe`。
+- C++ 基准：`Fluorohydride/ygopro` 的 `gframe`（对照时使用的源码快照已从本仓库移除）。
 - 当前程序：`bin/goygopro.exe`，通过 WebView2 CDP 操作真实 Wails 服务、真实卡库及「青眼一击.lua」引擎。
 - WebView 内容视口分别设为 1024×640、1600×900；通过 DOM 边界、逐帧采样和截图检查当前表现。
 - 未找到原版 C++ 可执行文件；`go version -m client.exe` 确认根目录 `client.exe` 也是 Go/Wails。工作区仅包含 C++ 源码，缺少完整构建入口、编译器和 Irrlicht 等依赖。

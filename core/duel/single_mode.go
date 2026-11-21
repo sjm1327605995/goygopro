@@ -37,7 +37,7 @@ const (
 // the caller's goroutine, every message batch is handed to a handler (the
 // frontend parser), and whenever the batch ends with an interaction prompt the
 // human's answer is read from a response channel — the Go equivalent of
-// source/ygopro/gframe/single_mode.cpp (SinglePlayThread / SinglePlayAnalyze,
+// Fluorohydride/ygopro gframe/single_mode.cpp (SinglePlayThread / SinglePlayAnalyze,
 // singleSignal.Wait / SingleMode::SetResponse).
 //
 // Unlike the C++ client, prompts are NOT answered mid-batch: the engine only

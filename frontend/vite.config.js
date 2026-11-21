@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { cpSync, existsSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import cardArtPlugin from './plugins/card-art.js';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 
@@ -27,7 +28,7 @@ function copyTextures() {
 // Relative base so the built assets load correctly from the Wails v3
 // AssetFileServerFS handler (file-like custom scheme), not just over http.
 export default defineConfig({
-  plugins: [react(), copyTextures()],
+  plugins: [react(), copyTextures(), cardArtPlugin(root)],
   base: './',
   build: {
     target: 'es2022', // 顶层 await（wails runtime 动态 import）
