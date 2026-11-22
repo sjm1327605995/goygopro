@@ -1,0 +1,610 @@
+//go:generate codecgen
+package replay
+
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"unicode/utf16"
+
+	"github.com/sjm1327605995/goygopro/protocol"
+	"github.com/ulikunitz/xz/lzma"
+)
+
+// Replay flags
+const (
+	REPLAY_COMPRESSED  = 0x1
+	REPLAY_TAG         = 0x2
+	REPLAY_DECODED     = 0x4
+	REPLAY_SINGLE_MODE = 0x8
+	REPLAY_UNIFORM     = 0x10
+)
+
+const (
+	REPLAY_ID_YRP1 = 0x31707279
+	REPLAY_ID_YRP2 = 0x32707279
+)
+
+const (
+	MAX_REPLAY_SIZE = 0x80000
+	MAX_COMP_SIZE   = 0x10000
+	SEED_COUNT      = 8
+)
+
+type ReplayHeader struct {
+	ID        uint32
+	Version   uint32
+	Flag      uint32
+	Seed      uint32
+	DataSize  uint32
+	StartTime uint32
+	Props     [8]uint8
+}
+
+type ExtendedReplayHeader struct {
+	Base          ReplayHeader
+	SeedSequence  [SEED_COUNT]uint32
+	HeaderVersion uint32
+	Value1        uint32
+	Value2        uint32
+	Value3        uint32
+}
+
+type DuelParameters struct {
+	StartLP   int32
+	StartHand int32
+	DrawCount int32
+	DuelFlag  uint32
+}
+
+type DeckArray struct {
+	Main  []uint32
+	Extra []uint32
+}
+
+type Replay struct {
+	fp         *os.File
+	pheader    ExtendedReplayHeader
+	compData   []byte
+	compSize   int
+	players    []string
+	params     DuelParameters
+	decks      []DeckArray
+	scriptName string
+
+	replayData   []byte
+	replaySize   int
+	dataPosition int
+	infoOffset   int
+	isRecording  bool
+	isReplaying  bool
+	canRead      bool
+}
+
+func NewReplay() *Replay {
+	return &Replay{
+		replayData: make([]byte, MAX_REPLAY_SIZE),
+		compData:   make([]byte, MAX_COMP_SIZE),
+	}
+}
+
+func (r *Replay) BeginRecord() {
+	if _, err := os.Stat(dataPath("replay")); os.IsNotExist(err) {
+		if err := os.Mkdir(dataPath("replay"), 0755); err != nil {
+			return
+		}
+	}
+	if r.isRecording && r.fp != nil {
+		r.fp.Close()
+	}
+	fp, err := os.Create(dataPath("replay", "_LastReplay.yrp"))
+	if err != nil {
+		return
+	}
+	r.fp = fp
+	r.Reset()
+	r.isRecording = true
+}
+
+func (r *Replay) WriteHeader(header ExtendedReplayHeader) {
+	r.pheader = header
+	binary.Write(r.fp, binary.LittleEndian, header)
+	r.fp.Sync()
+}
+
+func (r *Replay) WriteData(data []byte, flush bool) {
+	if !r.isRecording {
+		return
+	}
+	if r.replaySize+len(data) > MAX_REPLAY_SIZE {
+		return
+	}
+	copy(r.replayData[r.replaySize:], data)
+	r.replaySize += len(data)
+	r.fp.Write(data)
+	if flush {
+		r.fp.Sync()
+	}
+}
+
+func (r *Replay) WriteInt32(data int32, flush bool) {
+	b := make([]byte, 4)
+	binary.LittleEndian.PutUint32(b, uint32(data))
+	r.WriteData(b, flush)
+}
+
+func (r *Replay) Flush() {
+	if !r.isRecording {
+		return
+	}
+	r.fp.Sync()
+}
+
+func (r *Replay) EndRecord() {
+	if !r.isRecording {
+		return
+	}
+	r.fp.Close()
+	r.pheader.Base.DataSize = uint32(r.replaySize)
+
+	// LZMA compression using ulikunitz/xz/lzma
+	// C++: LzmaCompress(compData, &comp_size, replayData, replay_size, pheader.Base.Props, &propsize, 5, 0x1U << 24, 3, 0, 2, 32, 1)
+	var buf bytes.Buffer
+	cfg := lzma.WriterConfig{
+		Properties:   &lzma.Properties{LC: 3, LP: 0, PB: 2},
+		DictCap:      1 << 24,
+		SizeInHeader: false,
+	}
+	w, err := cfg.NewWriter(&buf)
+	if err != nil {
+		// fallback to uncompressed
+		r.pheader.Base.Flag &^= REPLAY_COMPRESSED
+		copy(r.compData, r.replayData[:r.replaySize])
+		r.compSize = r.replaySize
+		r.isRecording = false
+		return
+	}
+	if _, err = w.Write(r.replayData[:r.replaySize]); err != nil {
+		w.Close()
+		r.pheader.Base.Flag &^= REPLAY_COMPRESSED
+		copy(r.compData, r.replayData[:r.replaySize])
+		r.compSize = r.replaySize
+		r.isRecording = false
+		return
+	}
+	if err = w.Close(); err != nil {
+		r.pheader.Base.Flag &^= REPLAY_COMPRESSED
+		copy(r.compData, r.replayData[:r.replaySize])
+		r.compSize = r.replaySize
+		r.isRecording = false
+		return
+	}
+
+	output := buf.Bytes()
+	if len(output) < 13 || len(output)-8 > MAX_COMP_SIZE {
+		// compressed data too large or error, fallback to uncompressed
+		r.pheader.Base.Flag &^= REPLAY_COMPRESSED
+		copy(r.compData, r.replayData[:r.replaySize])
+		r.compSize = r.replaySize
+		r.isRecording = false
+		return
+	}
+
+	// output format: 13-byte LZMA file header + compressed data
+	// header: 1 byte props + 4 bytes dict size + 8 bytes uncompressed size
+	// YGOPro expects: 5 bytes props (props[0] + dict size) + raw compressed data
+	r.pheader.Base.Flag |= REPLAY_COMPRESSED
+	copy(r.pheader.Base.Props[:], output[0:5])
+	compLen := len(output) - 13
+	copy(r.compData, output[0:5])
+	copy(r.compData[5:], output[13:])
+	r.compSize = 5 + compLen
+	r.isRecording = false
+}
+
+func (r *Replay) compressedStream() []byte {
+	stream := r.compData[:r.compSize]
+	if len(stream) >= 5 && stream[0] != 0 {
+		return stream[5:]
+	}
+	return stream
+}
+
+func (r *Replay) SaveReplay(baseName string) bool {
+	if _, err := os.Stat(dataPath("replay")); os.IsNotExist(err) {
+		if err := os.Mkdir(dataPath("replay"), 0755); err != nil {
+			return false
+		}
+	}
+	filename := strings.ReplaceAll(baseName, "/", "_")
+	filename = strings.ReplaceAll(filename, "\\", "_")
+	path := filepath.Join(dataPath("replay"), filename+".yrp")
+
+	rfp, err := os.Create(path)
+	if err != nil {
+		return false
+	}
+	defer rfp.Close()
+
+	// Write header: YRP1 writes only Base, YRP2 writes full ExtendedReplayHeader
+	if r.pheader.Base.ID == REPLAY_ID_YRP2 {
+		binary.Write(rfp, binary.LittleEndian, r.pheader)
+	} else {
+		binary.Write(rfp, binary.LittleEndian, r.pheader.Base)
+	}
+	rfp.Write(r.compressedStream())
+	return true
+}
+
+func (r *Replay) OpenReplay(name string) bool {
+	path := name
+	rfp, err := os.Open(path)
+	if err != nil {
+		path = filepath.Join("./replay", name)
+		rfp, err = os.Open(path)
+		if err != nil {
+			return false
+		}
+	}
+	defer rfp.Close()
+
+	r.Reset()
+
+	var correctHeader bool
+	_ = correctHeader
+	if err := binary.Read(rfp, binary.LittleEndian, &r.pheader.Base); err != nil {
+		return false
+	}
+
+	if r.pheader.Base.ID != REPLAY_ID_YRP1 && r.pheader.Base.ID != REPLAY_ID_YRP2 {
+		return false
+	}
+	if r.pheader.Base.Version < 0x12d0 {
+		return false
+	}
+	if r.pheader.Base.Version >= 0x1353 && (r.pheader.Base.Flag&REPLAY_UNIFORM) == 0 {
+		return false
+	}
+
+	if r.pheader.Base.ID == REPLAY_ID_YRP2 {
+		// Read only the extended fields (after Base)
+		var extra struct {
+			SeedSequence  [SEED_COUNT]uint32
+			HeaderVersion uint32
+			Value1        uint32
+			Value2        uint32
+			Value3        uint32
+		}
+		if err := binary.Read(rfp, binary.LittleEndian, &extra); err != nil {
+			return false
+		}
+		r.pheader.SeedSequence = extra.SeedSequence
+		r.pheader.HeaderVersion = extra.HeaderVersion
+		r.pheader.Value1 = extra.Value1
+		r.pheader.Value2 = extra.Value2
+		r.pheader.Value3 = extra.Value3
+	}
+
+	if r.pheader.Base.Flag&REPLAY_COMPRESSED != 0 {
+		r.compSize, _ = rfp.Read(r.compData)
+		r.replaySize = int(r.pheader.Base.DataSize)
+
+		// LZMA decompression
+		// compData format: 5 bytes props + compressed data
+		// Construct fake LZMA file header for ulikunitz/xz/lzma.Reader
+		var fakeHeader [13]byte
+		copy(fakeHeader[0:5], r.pheader.Base.Props[:5])
+		for i := 5; i < 13; i++ {
+			fakeHeader[i] = 0xFF
+		}
+		fullData := append(fakeHeader[:], r.compressedStream()...)
+		reader, err := lzma.NewReader(bytes.NewReader(fullData))
+		if err != nil {
+			r.Reset()
+			return false
+		}
+		var decompressed bytes.Buffer
+		if _, err := decompressed.ReadFrom(reader); err != nil {
+			r.Reset()
+			return false
+		}
+		if decompressed.Len() != r.replaySize {
+			r.Reset()
+			return false
+		}
+		copy(r.replayData, decompressed.Bytes())
+	} else {
+		r.replaySize, _ = rfp.Read(r.replayData)
+		r.compSize = 0
+	}
+
+	r.isReplaying = true
+	r.canRead = true
+	if !r.ReadInfo() {
+		r.Reset()
+		return false
+	}
+	r.infoOffset = r.dataPosition
+	r.dataPosition = 0
+	return true
+}
+
+func (r *Replay) DeleteReplay(name string) bool {
+	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		return false
+	}
+	path := filepath.Join("./replay", name)
+	return os.Remove(path) == nil
+}
+
+func (r *Replay) RenameReplay(oldName, newName string) bool {
+	if strings.Contains(oldName, "/") || strings.Contains(oldName, "\\") {
+		return false
+	}
+	if strings.Contains(newName, "/") || strings.Contains(newName, "\\") {
+		return false
+	}
+	oldPath := filepath.Join("./replay", oldName)
+	newPath := filepath.Join("./replay", newName)
+	return os.Rename(oldPath, newPath) == nil
+}
+
+func (r *Replay) ReadNextResponse(resp []byte) bool {
+	var length uint8
+	if !r.ReadData([]byte{length}, 1) {
+		return false
+	}
+	length = r.replayData[r.dataPosition-1]
+	if !r.ReadData(resp, int(length)) {
+		return false
+	}
+	return true
+}
+
+// ReadName 读取一个 40 字节的 UTF-16 玩家名。bool 返回值表示是否读满 40 字节
+// （与 C++ ReadName 一致：空名字是合法的，不代表失败）。
+func (r *Replay) ReadName() (string, bool) {
+	var buffer [20]uint16
+	if !r.ReadData(buffer[:], 40) {
+		return "", false
+	}
+	// Convert UTF-16 LE to string
+	runes := utf16.Decode(buffer[:])
+	// Trim null terminators
+	end := len(runes)
+	for end > 0 && runes[end-1] == 0 {
+		end--
+	}
+	return string(runes[:end]), true
+}
+
+func (r *Replay) ReadHeader() ExtendedReplayHeader {
+	return r.pheader
+}
+
+func (r *Replay) ReadData(data interface{}, length int) bool {
+	if !r.isReplaying || !r.canRead {
+		return false
+	}
+	if r.dataPosition+length > r.replaySize {
+		r.canRead = false
+		return false
+	}
+	if length > 0 {
+		switch d := data.(type) {
+		case []byte:
+			copy(d, r.replayData[r.dataPosition:r.dataPosition+length])
+		case []uint16:
+			for i := 0; i < length/2 && i < len(d); i++ {
+				d[i] = binary.LittleEndian.Uint16(r.replayData[r.dataPosition+i*2:])
+			}
+		case []uint32:
+			for i := 0; i < length/4 && i < len(d); i++ {
+				d[i] = binary.LittleEndian.Uint32(r.replayData[r.dataPosition+i*4:])
+			}
+		}
+	}
+	r.dataPosition += length
+	return true
+}
+
+func (r *Replay) ReadInt32() int32 {
+	var b [4]byte
+	r.ReadData(b[:], 4)
+	return int32(binary.LittleEndian.Uint32(b[:]))
+}
+
+func (r *Replay) Rewind() {
+	r.dataPosition = 0
+	r.canRead = true
+}
+
+func (r *Replay) Reset() {
+	r.isRecording = false
+	r.isReplaying = false
+	r.canRead = false
+	r.replaySize = 0
+	r.compSize = 0
+	r.dataPosition = 0
+	r.infoOffset = 0
+	r.players = nil
+	r.params = DuelParameters{}
+	r.decks = nil
+	r.scriptName = ""
+}
+
+func (r *Replay) SkipInfo() {
+	if r.dataPosition == 0 {
+		r.dataPosition = r.infoOffset
+	}
+}
+
+func (r *Replay) IsReplaying() bool {
+	return r.isReplaying
+}
+
+// Players 返回录像中记录的玩家名（非 tag 2 个，tag 4 个）。
+func (r *Replay) Players() []string {
+	return r.players
+}
+
+// Params 返回录像头里记录的决斗参数（起始 LP/手牌/抽牌数与决斗规则 flag）。
+func (r *Replay) Params() DuelParameters {
+	return r.params
+}
+
+// Decks 返回录像中记录的卡组（每个玩家一个 DeckArray，tag 录像为 4 个）。
+func (r *Replay) Decks() []DeckArray {
+	return r.decks
+}
+
+// ScriptName 返回单人模式录像的脚本名（非单人录像为空串）。
+func (r *Replay) ScriptName() string {
+	return r.scriptName
+}
+
+func (r *Replay) SaveDeck(index int, filename string) bool {
+	if index >= len(r.decks) {
+		return false
+	}
+	deck := r.decks[index]
+	// C++ reverses main/extra before saving — follow the same behavior
+	// so the exported .ydk matches the original deck order.
+	main := make([]uint32, len(deck.Main))
+	copy(main, deck.Main)
+	for i, j := 0, len(main)-1; i < j; i, j = i+1, j-1 {
+		main[i], main[j] = main[j], main[i]
+	}
+	extra := make([]uint32, len(deck.Extra))
+	copy(extra, deck.Extra)
+	for i, j := 0, len(extra)-1; i < j; i, j = i+1, j-1 {
+		extra[i], extra[j] = extra[j], extra[i]
+	}
+
+	dir := filepath.Dir(filename)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return false
+		}
+	}
+	fp, err := os.Create(filename)
+	if err != nil {
+		return false
+	}
+	defer fp.Close()
+
+	if _, err := fp.WriteString("#created by ...\n#main\n"); err != nil {
+		return false
+	}
+	for _, code := range main {
+		if _, err := fp.WriteString(fmt.Sprintf("%d\n", code)); err != nil {
+			return false
+		}
+	}
+	if _, err := fp.WriteString("#extra\n"); err != nil {
+		return false
+	}
+	for _, code := range extra {
+		if _, err := fp.WriteString(fmt.Sprintf("%d\n", code)); err != nil {
+			return false
+		}
+	}
+	if _, err := fp.WriteString("!side\n"); err != nil {
+		return false
+	}
+	return true
+}
+
+func (r *Replay) ReadInfo() bool {
+	playerCount := 2
+	if r.pheader.Base.Flag&REPLAY_TAG != 0 {
+		playerCount = 4
+	}
+
+	for i := 0; i < playerCount; i++ {
+		name, ok := r.ReadName()
+		if !ok {
+			return false
+		}
+		r.players = append(r.players, name)
+	}
+
+	var paramsBuf [16]byte
+	if !r.ReadData(paramsBuf[:], 16) {
+		return false
+	}
+	r.params.StartLP = int32(binary.LittleEndian.Uint32(paramsBuf[0:4]))
+	r.params.StartHand = int32(binary.LittleEndian.Uint32(paramsBuf[4:8]))
+	r.params.DrawCount = int32(binary.LittleEndian.Uint32(paramsBuf[8:12]))
+	r.params.DuelFlag = binary.LittleEndian.Uint32(paramsBuf[12:16])
+
+	isTag1 := r.pheader.Base.Flag&REPLAY_TAG != 0
+	isTag2 := r.params.DuelFlag&0x20 != 0 // DUEL_TAG_MODE
+	if isTag1 != isTag2 {
+		return false
+	}
+
+	if r.pheader.Base.Flag&REPLAY_SINGLE_MODE != 0 {
+		var lenBuf [2]byte
+		if !r.ReadData(lenBuf[:], 2) {
+			return false
+		}
+		slen := binary.LittleEndian.Uint16(lenBuf[:])
+		if slen == 0 || slen > 255 {
+			return false
+		}
+		var filename [256]byte
+		if !r.ReadData(filename[:], int(slen)) {
+			return false
+		}
+		filename[slen] = 0
+		nameStr := string(filename[:slen])
+		if !strings.HasPrefix(nameStr, "./single/") {
+			return false
+		}
+		r.scriptName = nameStr[9:]
+		if strings.Contains(r.scriptName, "/") || strings.Contains(r.scriptName, "\\") {
+			return false
+		}
+	} else {
+		for p := 0; p < playerCount; p++ {
+			var deck DeckArray
+			main := r.ReadInt32()
+			if main > protocol.MAINC_MAX {
+				return false
+			}
+			if main > 0 {
+				deck.Main = make([]uint32, main)
+				if !r.ReadData(deck.Main, int(main)*4) {
+					return false
+				}
+			}
+			extra := r.ReadInt32()
+			if extra > protocol.MAINC_MAX {
+				return false
+			}
+			if extra > 0 {
+				deck.Extra = make([]uint32, extra)
+				if !r.ReadData(deck.Extra, int(extra)*4) {
+					return false
+				}
+			}
+			r.decks = append(r.decks, deck)
+		}
+	}
+	return true
+}
+
+func GetDeckPlayer(deckIndex int) int {
+	switch deckIndex {
+	case 2:
+		return 3
+	case 3:
+		return 2
+	default:
+		return deckIndex
+	}
+}

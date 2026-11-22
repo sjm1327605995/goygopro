@@ -54,7 +54,7 @@ core/duel/replay/
 pics/
 
 # 运行时/调试产物
-replay/
+/replay/
 tmp_dbg/
 debug_net.log
 system.conf
